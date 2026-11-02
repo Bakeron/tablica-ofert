@@ -9,6 +9,7 @@ import { AiSettings } from "./AiSettings";
 import { DataSettings } from "./DataSettings";
 import { SourcesSettings } from "./SourcesSettings";
 import { SyncSettings } from "./SyncSettings";
+import { isPhone } from "../lib/platform";
 
 const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: string[] }[] = [
   { key: "language", label: "settings.language", values: ["system", "pl", "en"] },
@@ -19,7 +20,8 @@ const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: s
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
 export type SettingsSection = "look" | "sources" | "ai" | "sync" | "data" | "about";
-const SECTIONS: SettingsSection[] = ["sources", "ai", "look", "sync", "data", "about"];
+/** The phone is a helper - collecting offers, AI and data tools stay on the PC. */
+const SECTIONS: SettingsSection[] = isPhone() ? ["sync", "look", "about"] : ["sources", "ai", "look", "sync", "data", "about"];
 
 const FEATURES = ["feature_dates", "feature_contacts", "feature_keys"] as const;
 
@@ -28,7 +30,7 @@ export function SettingsDialog({
   api,
   settings,
   profiles,
-  initialSection = "sources",
+  initialSection = isPhone() ? "sync" : "sources",
   onClose,
   onChange,
   onOpenLink,

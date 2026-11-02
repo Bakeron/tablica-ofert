@@ -212,6 +212,28 @@ pub fn agenda(conn: &Connection, offer_id: i64) -> AppResult<Agenda> {
     Ok(Agenda { events, contacts, log })
 }
 
+/// A future date with its offer - the phone plans its own reminders from these.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Upcoming {
+    pub id: i64,
+    pub kind: String,
+    pub at: String,
+    pub title: String,
+    pub company: String,
+}
+
+pub fn upcoming(conn: &Connection, now: OffsetDateTime) -> AppResult<Vec<Upcoming>> {
+    let mut stmt = conn.prepare(
+        "SELECT e.id, e.kind, e.at, o.title, o.company FROM events e JOIN offers o ON o.id = e.offer_id
+         WHERE e.at > ?1 AND o.deleted_at IS NULL ORDER BY e.at LIMIT 200",
+    )?;
+    let rows = stmt
+        .query_map([utc(now)], |r| Ok(Upcoming { id: r.get(0)?, kind: r.get(1)?, at: r.get(2)?, title: r.get(3)?, company: r.get(4)? }))?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
+}
+
 // ---------- calendar ----------
 
 fn compact(t: OffsetDateTime) -> String {

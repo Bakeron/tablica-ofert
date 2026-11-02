@@ -483,3 +483,12 @@ export type SyncOutcome =
   | { status: "done"; changed: number; removed: number }
   /** Several offers would be deleted - ask first. */
   | { status: "confirm"; removed: number };
+
+/** A future date with its offer - for reminders planned on the phone. */
+export interface Upcoming {
+  id: number;
+  kind: EventKind;
+  at: string;
+  title: string;
+  company: string;
+}

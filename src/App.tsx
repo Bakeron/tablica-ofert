@@ -33,6 +33,7 @@ import { ProfileTabs } from "./components/ProfileTabs";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
 import { playClack, playGong } from "./lib/sound";
+import { isPhone, scheduleReminders } from "./lib/platform";
 import { isWebUrl } from "./lib/format";
 import { viewFor } from "./lib/profile";
 
@@ -76,6 +77,22 @@ export default function App() {
   /** The preview window shows the page of this offer ("Fill in the full description"). */
   const [fullFor, setFullFor] = useState<{ id: number; title: string } | null>(null);
   const [capturing, setCapturing] = useState(false);
+  /** "Share" from the phone's browser - opens "Add offer" with the shared text. */
+  const [shared, setShared] = useState<{ id: number; text: string } | null>(null);
+
+  useEffect(() => {
+    const onShare = (e: Event) => {
+      const text = (e as CustomEvent<unknown>).detail;
+      if (typeof text !== "string" || !text.trim()) return;
+      setShared({ id: Date.now(), text: text.slice(0, 100_000) });
+      setAdding(true);
+    };
+    window.addEventListener("tablica-share", onShare);
+    // A share that started the app arrives before React - it waits in a global.
+    const early = (window as unknown as { __tablicaShared?: unknown }).__tablicaShared;
+    if (typeof early === "string") onShare(new CustomEvent("tablica-share", { detail: early }));
+    return () => window.removeEventListener("tablica-share", onShare);
+  }, []);
   const cardHeading = useRef<HTMLHeadingElement>(null);
 
   // ----- language, theme, motion -----
@@ -327,6 +344,28 @@ export default function App() {
       setFetching(false);
     }
   }
+
+  // Phone: reminders planned with the system's own notifications (a day and an hour before).
+  useEffect(() => {
+    if (!api || !isPhone() || settings.notify_reminders !== "on") return;
+    api
+      .upcomingEvents()
+      .then((list) =>
+        scheduleReminders(
+          list.flatMap((e) => {
+            const at = new Date(e.at);
+            const what = `${e.title} - ${e.company}`;
+            const when = at.toLocaleString(lang === "pl" ? "pl-PL" : "en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+            const interview = e.kind === "interview";
+            return [
+              { id: e.id * 2, at: new Date(at.getTime() - 24 * 3_600_000), title: t(interview ? "phone.tomorrowInterview" : "phone.tomorrowDate"), body: `${what}, ${when}` },
+              { id: e.id * 2 + 1, at: new Date(at.getTime() - 3_600_000), title: t(interview ? "phone.hourInterview" : "phone.hourDate"), body: `${what}, ${when}` },
+            ];
+          }),
+        ),
+      )
+      .catch(() => {});
+  }, [api, rows, settings.notify_reminders, lang, t]);
 
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
 
@@ -700,6 +739,7 @@ export default function App() {
 
         <AddOfferDialog
           open={adding}
+          shared={shared}
           aiOn={settings.ai_provider !== "none"}
           onClose={() => {
             setAdding(false);

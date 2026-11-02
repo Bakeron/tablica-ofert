@@ -15,6 +15,7 @@ import type {
   DeviceCode,
   SyncOutcome,
   SyncStatus,
+  Upcoming,
   FetchReport,
   SecretHints,
   SecretName,
@@ -127,6 +128,10 @@ export interface Api {
   syncDeleteRemote(): Promise<void>;
   /** Forgets the Google login on this computer. */
   syncDisconnect(): Promise<void>;
+  /** The phone saves the key scanned from the PC's QR code. */
+  syncSetKey(key: string): Promise<void>;
+  /** Future dates of all offers (phone reminders). */
+  upcomingEvents(): Promise<Upcoming[]>;
   /** Saves a longer description from the offer page; returns whether it changed. */
   updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
@@ -203,6 +208,8 @@ async function tauriApi(): Promise<Api> {
     syncNewKey: () => invoke("sync_new_key"),
     syncDeleteRemote: () => invoke("sync_delete_remote"),
     syncDisconnect: () => invoke("sync_disconnect"),
+    syncSetKey: (key) => invoke("sync_set_key", { key }),
+    upcomingEvents: () => invoke("upcoming_events"),
     onReminder: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");
       return listen("reminder", () => listener());

@@ -620,4 +620,14 @@ export const pl = {
   "sync.newKey": "Odłącz urządzenia (nowy klucz)",
   "sync.newKeyConfirm": "Utworzyć nowy klucz? Telefon przestanie odczytywać dane, dopóki nie zeskanuje nowego kodu QR.",
   "sync.newKeyDone": "Utworzono nowy klucz - zeskanuj nowy kod QR na telefonie",
+
+  "sync.scanTitle": "Klucz z komputera",
+  "sync.scanText": "Na komputerze: Ustawienia → Synchronizacja → „Pokaż kod QR dla telefonu”. Potem zeskanuj kod tutaj - klucz zostanie w sejfie telefonu (Android Keystore).",
+  "sync.scan": "Zeskanuj kod QR",
+  "sync.scanNone": "To nie jest kod Tablicy Ofert albo skanowanie przerwano.",
+  "sync.scanDone": "Zapisano klucz - możesz synchronizować",
+  "phone.tomorrowInterview": "Jutro rozmowa",
+  "phone.tomorrowDate": "Jutro termin",
+  "phone.hourInterview": "Rozmowa za godzinę",
+  "phone.hourDate": "Termin za godzinę",
 };

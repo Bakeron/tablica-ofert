@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
@@ -62,6 +63,7 @@ interface Props {
 }
 
 export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash }: Props) {
+  const touch = useRef<{ id: number; x: number; y: number } | null>(null);
   const { t, lang } = useI18n();
   const index = rows.findIndex((r) => r.id === selectedId);
 
@@ -138,8 +140,25 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                 className={[selected && "is-selected", o.interest === "no" && "is-dim", o.expired && "is-expired"]
                   .filter(Boolean)
                   .join(" ")}
-                onClick={() => onSelect(o.id)}
+                onClick={() => {
+                  onSelect(o.id);
+                  // On a phone the card is below the list - go to it.
+                  if (window.matchMedia("(max-width: 600px)").matches) onOpen();
+                }}
                 onDoubleClick={onOpen}
+                onTouchStart={(e) => (touch.current = { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY })}
+                onTouchEnd={(e) => {
+                  const start = touch.current;
+                  touch.current = null;
+                  if (!start || start.id !== o.id) return;
+                  const dx = e.changedTouches[0].clientX - start.x;
+                  const dy = e.changedTouches[0].clientY - start.y;
+                  // A clear sideways swipe: right = "very", left = "no" (zalozenia.md §9).
+                  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 2) {
+                    e.preventDefault();
+                    onInterest(o.id, dx > 0 ? "high" : "no");
+                  }
+                }}
               >
                 <td className="c-added">
                   <Flap className="mono" text={addedLabel(o.addedAt, lang, t)} fresh={fresh} />

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { Captured, Draft, OfferInput, Remote, SalaryPeriod } from "../api/types";
 import { useI18n } from "../i18n";
 import { IconClose } from "./Icons";
@@ -30,6 +30,7 @@ const orNull = (value: string) => (value.trim() === "" ? null : value.trim());
 
 export function AddOfferDialog({
   open,
+  shared,
   aiOn,
   onClose,
   onSave,
@@ -38,6 +39,8 @@ export function AddOfferDialog({
   onFill,
 }: {
   open: boolean;
+  /** Text shared from the phone's browser ("Share" → Tablica Ofert). */
+  shared?: { id: number; text: string } | null;
   /** An AI provider is set - "Fill in the fields" uses AI. */
   aiOn: boolean;
   onClose: () => void;
@@ -55,6 +58,20 @@ export function AddOfferDialog({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [working, setWorking] = useState<"capture" | "fill" | null>(null);
   const [filledBy, setFilledBy] = useState<"ai" | "code" | null>(null);
+
+  // Shared from the phone: the link goes to the link field, the rest is the offer text.
+  useEffect(() => {
+    if (!open || !shared) return;
+    const url = shared.text.match(/https?:\/\/\S+/)?.[0] ?? "";
+    const rest = shared.text.replace(url, "").trim();
+    setLink(url);
+    setForm((f) => ({ ...f, url: url || f.url }));
+    if (rest) {
+      setPasted(rest);
+      fill(rest, null, url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, shared?.id]);
 
   async function openPreview() {
     if (await onOpenPreview(link.trim())) setPreviewOpen(true);

@@ -30,6 +30,12 @@ pub fn init() -> AppResult<()> {
             .map_err(|e| AppError::Secret(e.to_string()))?;
         keyring_core::set_default_store(store);
     }
+    // Android Keystore (Tauri prepares the Android context the store needs).
+    #[cfg(target_os = "android")]
+    {
+        let store = android_native_keyring_store::Store::new().map_err(|e| AppError::Secret(e.to_string()))?;
+        keyring_core::set_default_store(store);
+    }
     Ok(())
 }
 

@@ -1,14 +1,28 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: app commands, window state and opening web links (http/https only) in the browser",
-  "windows": ["main"],
+  "description": "Desktop main window: app commands, window state and opening web links (http/https only) in the browser",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "window-state:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        }
+      ]
     }
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macOS"
   ]
 }

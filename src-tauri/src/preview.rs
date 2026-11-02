@@ -9,7 +9,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager};
+#[cfg(desktop)]
+use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 
 use crate::error::{AppError, AppResult};
@@ -31,7 +33,14 @@ pub struct Captured {
     pub text: String,
 }
 
+/// The phone has no separate windows - "Share" from the browser does this job there.
+#[cfg(mobile)]
+pub fn open(_app: &AppHandle, _url: &str) -> AppResult<()> {
+    Err(AppError::Invalid("the page preview is available on the computer".into()))
+}
+
 /// Opens (or reuses) the preview window with an offer page.
+#[cfg(desktop)]
 pub fn open(app: &AppHandle, url: &str) -> AppResult<()> {
     let url = crate::offers::safe_url(Some(url.to_string()))?.ok_or_else(|| AppError::Invalid("the link is empty".into()))?;
     let parsed = Url::parse(&url).map_err(|_| AppError::Invalid("the link must start with http:// or https://".into()))?;
@@ -58,6 +67,7 @@ pub fn open(app: &AppHandle, url: &str) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(desktop)]
 fn receive(app: &AppHandle, target: &Url) {
     let Some(pending) = app.try_state::<Pending>() else { return };
     let Ok(mut slot) = pending.0.lock() else { return };
@@ -87,6 +97,7 @@ pub fn parse_capture(json: &str) -> Option<Captured> {
     Some(Captured { url, title: one_line(&raw.h, 300), text: cut(&squeeze(&raw.t), MAX_TEXT) })
 }
 
+#[cfg_attr(mobile, allow(dead_code))]
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());

@@ -2338,3 +2338,65 @@ fieldset.plain {
   border: 8px solid #ffffff;
   border-radius: 4px;
 }
+
+/* ---------- phone: rows become cards, one under another ---------- */
+
+@media (max-width: 600px) {
+  .topbar {
+    padding: 0.4rem 0.6rem;
+  }
+
+  .clock,
+  .btn-fetch {
+    display: none;
+  }
+
+  .brand h1 {
+    font-size: 1.3rem;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .board thead {
+    display: none;
+  }
+
+  .board,
+  .board tbody {
+    display: block;
+  }
+
+  .board tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "offer match"
+      "place salary"
+      "status added";
+    gap: 0.2rem 0.6rem;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid var(--row-line);
+    touch-action: pan-y;
+  }
+
+  .board td {
+    display: block;
+    width: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  .board .c-offer { grid-area: offer; }
+  .board .c-match { grid-area: match; justify-self: end; }
+  .board .c-place { grid-area: place; }
+  .board .c-salary { grid-area: salary; justify-self: end; }
+  .board .c-status { grid-area: status; }
+  .board .c-added { grid-area: added; justify-self: end; }
+
+  .pass {
+    border-radius: 0;
+  }
+}

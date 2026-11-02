@@ -3,6 +3,7 @@ import type { Api } from "../api";
 import type { DeviceCode, SecretHints, Settings, SyncStatus } from "../api/types";
 import { useI18n } from "../i18n";
 import { fullDate } from "../lib/format";
+import { isPhone, scanSyncKey } from "../lib/platform";
 import { IconWarning } from "./Icons";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
@@ -217,6 +218,31 @@ export function SyncSettings({
             </div>
           </section>
 
+          {isPhone() ? (
+            <section className="source" aria-labelledby="phone-title">
+              <h3 id="phone-title" className="source-title">{t("sync.scanTitle")}</h3>
+              <p>{t("sync.scanText")}</p>
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-sign btn-small"
+                  onClick={async () => {
+                    try {
+                      const key = await scanSyncKey();
+                      if (!key) return onToast(t("sync.scanNone"));
+                      await api.syncSetKey(key);
+                      onToast(t("sync.scanDone"));
+                      await load();
+                    } catch (e) {
+                      onError(e);
+                    }
+                  }}
+                >
+                  {t("sync.scan")}
+                </button>
+              </div>
+            </section>
+          ) : (
           <section className="source" aria-labelledby="phone-title">
             <h3 id="phone-title" className="source-title">{t("sync.phoneTitle")}</h3>
             <p>{t("sync.phoneText")}</p>
@@ -247,6 +273,7 @@ export function SyncSettings({
               </div>
             )}
           </section>
+          )}
         </>
       )}
     </div>

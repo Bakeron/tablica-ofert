@@ -58,6 +58,12 @@ pub fn run() {
             .plugin(tauri_plugin_window_state::Builder::default().build());
     }
 
+    // Phone: scanning the PC's QR code with the sync key.
+    #[cfg(mobile)]
+    {
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    }
+
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -160,6 +166,8 @@ pub fn run() {
             commands::sync_new_key,
             commands::sync_delete_remote,
             commands::sync_disconnect,
+            commands::sync_set_key,
+            commands::upcoming_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

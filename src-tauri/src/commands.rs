@@ -539,3 +539,15 @@ pub async fn sync_delete_remote(state: State<'_, AppState>) -> AppResult<()> {
 pub async fn sync_disconnect() -> AppResult<()> {
     secrets::delete(crate::sync::drive::REFRESH_SECRET)
 }
+
+/// The phone saves the sync key scanned from the PC's QR code.
+#[tauri::command]
+pub async fn sync_set_key(key: String) -> AppResult<()> {
+    let key = crate::sync::crypto::key_from_hex(&key)?;
+    secrets::set(crate::sync::KEY_SECRET, &crate::sync::crypto::key_to_hex(&key))
+}
+
+#[tauri::command]
+pub async fn upcoming_events(state: State<'_, AppState>) -> AppResult<Vec<crate::agenda::Upcoming>> {
+    with_db(&state, |c| crate::agenda::upcoming(c, time::OffsetDateTime::now_utc()))
+}
