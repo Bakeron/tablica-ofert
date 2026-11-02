@@ -10,10 +10,17 @@ mod offers;
 mod profiles;
 mod secrets;
 mod settings;
+mod sources;
+mod text;
+mod usage;
+mod net;
 
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
-use tauri::Manager;
+use std::time::Duration;
+
+use tauri::{Emitter, Manager};
 
 use commands::AppState;
 
@@ -44,7 +51,8 @@ pub fn run() {
                     Err(e.to_string())
                 }
             };
-            app.manage(AppState { db: Mutex::new(state) });
+            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false) });
+            start_auto_fetch(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -67,9 +75,36 @@ pub fn run() {
             commands::delete_profile,
             commands::get_experience,
             commands::set_experience,
+            commands::secret_hints,
+            commands::set_secret,
+            commands::delete_secret,
+            commands::source_status,
+            commands::fetch_offers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// While the app is open: a first look shortly after start, then every 30 minutes.
+/// Each source decides by itself whether it is due (its own interval and daily limit).
+fn start_auto_fetch(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        loop {
+            let state = handle.state::<AppState>();
+            let auto = commands::with_db(&state, |c| settings::is_on(c, "fetch_auto")).unwrap_or(false);
+            if auto {
+                match sources::fetch(&state, false).await {
+                    Ok(report) if !report.runs.is_empty() => {
+                        let _ = handle.emit("offers-fetched", &report);
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("automatic fetch failed: {e}"),
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(30 * 60)).await;
+        }
+    });
 }
 
 fn open_database(app: &tauri::App) -> error::AppResult<rusqlite::Connection> {

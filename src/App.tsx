@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Api } from "./api";
 import {
+  DEFAULT_SETTINGS,
   isAppError,
   type AppStatus,
+  type FetchReport,
   type Interest,
   type OfferDetail,
   type OfferInput,
@@ -18,7 +20,7 @@ import { AddOfferDialog } from "./components/AddOfferDialog";
 import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
-import { IconBriefcase, IconGear, IconPlus, IconWarning } from "./components/Icons";
+import { IconBriefcase, IconDownload, IconGear, IconPlus, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
@@ -27,7 +29,6 @@ import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18
 import { isWebUrl } from "./lib/format";
 import { viewFor } from "./lib/profile";
 
-const DEFAULT_SETTINGS: Settings = { theme: "system", language: "system", motion: "system", sound: "off", onboarding: "done" };
 const VIEWS: View[] = ["board", "review", "rejected", "trash"];
 
 interface Toast {
@@ -60,6 +61,7 @@ export default function App() {
   const [firstSteps, setFirstSteps] = useState(false);
   /** Offer to select once the list of a newly opened tab has loaded. */
   const [pendingSelect, setPendingSelect] = useState<number | null>(null);
+  const [fetching, setFetching] = useState(false);
   const cardHeading = useRef<HTMLHeadingElement>(null);
 
   // ----- language, theme, motion -----
@@ -93,7 +95,8 @@ export default function App() {
   const fail = useCallback(
     (e: unknown) => {
       if (isAppError(e)) {
-        const key = (["locked", "invalid", "not_found"].includes(e.code) ? `error.${e.code}` : "error.generic") as TextKey;
+        const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy"];
+        const key = (known.includes(e.code) ? `error.${e.code}` : "error.generic") as TextKey;
         setError({ text: t(key), detail: e.detail });
       } else {
         setError({ text: t("error.generic"), detail: String(e) });
@@ -160,6 +163,41 @@ export default function App() {
     const timer = setTimeout(() => setToast(null), toast.undo ? 8000 : 4000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Offers collected in the background (at start and every few hours) - refresh the board.
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    if (!api) return;
+    let stop: (() => void) | undefined;
+    let alive = true;
+    api
+      .onFetched((report) => {
+        if (report.added > 0) {
+          reloadRef.current();
+          setToast({ text: fetchSummary(report, t) });
+        }
+      })
+      .then((unlisten) => (alive ? (stop = unlisten) : unlisten()));
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, [api, t]);
+
+  async function fetchNow() {
+    if (!api || fetching) return;
+    setFetching(true);
+    try {
+      const report = await api.fetchOffers();
+      await reload();
+      setToast({ text: fetchSummary(report, t) });
+    } catch (e) {
+      fail(e);
+    } finally {
+      setFetching(false);
+    }
+  }
 
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
 
@@ -348,6 +386,9 @@ export default function App() {
                 {t("trash.empty")}
               </button>
             )}
+            <button type="button" className="btn btn-ghost btn-fetch" onClick={fetchNow} disabled={locked || fetching} aria-busy={fetching}>
+              <IconDownload /> {fetching ? t("fetch.busy") : t("fetch.button")}
+            </button>
             <button type="button" className="btn btn-sign" onClick={() => setAdding(true)} disabled={locked}>
               <IconPlus /> {t("add.button")}
             </button>
@@ -473,7 +514,16 @@ export default function App() {
           onDelete={deleteProfile}
         />
         <FirstSteps open={firstSteps} onSaveProfile={saveProfile} onFinish={finishFirstSteps} />
-        <SettingsDialog open={settingsOpen} settings={settings} onClose={() => setSettingsOpen(false)} onChange={changeSetting} />
+        <SettingsDialog
+          open={settingsOpen}
+          api={api}
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onChange={changeSetting}
+          onOpenLink={openLink}
+          onError={fail}
+          onToast={(text) => setToast({ text })}
+        />
         <ConfirmDialog
           message={confirm?.message ?? null}
           confirmLabel={t("trash.confirm")}
@@ -483,6 +533,26 @@ export default function App() {
       </div>
     </I18nContext.Provider>
   );
+}
+
+/** One sentence about a fetch: new offers, or why nothing came. */
+export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Record<string, string | number>) => string): string {
+  const failed = report.runs.filter((r) => r.error);
+  const parts: string[] = [];
+  if (report.added > 0) parts.push(t("fetch.new", { count: report.added, board: report.newOnBoard }));
+  if (failed.length > 0) {
+    const names = failed.map((r) => t(`source.${r.source}` as TextKey)).join(", ");
+    const code = failed[0].error?.code;
+    const known = ["net", "auth", "limit", "missing", "busy"];
+    const why = code && known.includes(code) ? ` ${t(`error.${code}` as TextKey)}` : "";
+    parts.push(`${t("fetch.failed", { list: names })}.${why}`);
+  }
+  if (parts.length > 0) return parts.join(" · ");
+  if (report.runs.length === 0) return t("fetch.noSources");
+  const ran = report.runs.some((r) => !r.skipped);
+  const skipped = report.runs.find((r) => r.skipped);
+  if (!ran && skipped?.skipped) return t(`fetch.skip.${skipped.skipped}` as TextKey);
+  return t("fetch.none");
 }
 
 /** Station clock in the top bar - updates every 15 s. */

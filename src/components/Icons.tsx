@@ -87,3 +87,9 @@ export const IconArrowRight = () => (
     <path d="M4 12h15M13 6l6 6-6 6" />
   </Icon>
 );
+
+export const IconDownload = () => (
+  <Icon>
+    <path d="M12 3v12M7 10l5 5 5-5M4 20h16" />
+  </Icon>
+);

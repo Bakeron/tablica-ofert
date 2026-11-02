@@ -7,15 +7,67 @@ use rusqlite::{Connection, params};
 
 use crate::error::{AppError, AppResult};
 
-/// Allowed keys and their allowed values.
-const ALLOWED: &[(&str, &[&str])] = &[
-    ("theme", &["system", "dark", "light"]),
-    ("language", &["system", "pl", "en"]),
-    ("motion", &["system", "full", "reduced"]),
-    ("sound", &["off", "on"]),
-    // "First steps" shown at the first start until finished or skipped.
-    ("onboarding", &["pending", "done"]),
+/// What a setting may hold.
+enum Rule {
+    /// One of the listed words; the first one is the default.
+    One(&'static [&'static str]),
+    /// Free text checked by a function; `default` when nothing is stored.
+    Text { max: usize, default: &'static str, check: fn(&str) -> bool },
+}
+
+/// Countries the Adzuna API covers (code used in its address). Poland first - the default.
+pub const ADZUNA_COUNTRIES: &[&str] = &[
+    "pl", "at", "au", "be", "br", "ca", "ch", "de", "es", "fr", "gb", "in", "it", "mx", "nl", "nz", "sg", "us", "za",
 ];
+
+/// Allowed keys and their rules.
+const ALLOWED: &[(&str, Rule)] = &[
+    ("theme", Rule::One(&["system", "dark", "light"])),
+    ("language", Rule::One(&["system", "pl", "en"])),
+    ("motion", Rule::One(&["system", "full", "reduced"])),
+    ("sound", Rule::One(&["off", "on"])),
+    // "First steps" shown at the first start until finished or skipped.
+    ("onboarding", Rule::One(&["pending", "done"])),
+    // Collect offers at start and every few hours while the app is open.
+    ("fetch_auto", Rule::One(&["on", "off"])),
+    ("fetch_every", Rule::One(&["6", "3", "12"])),
+    ("source_adzuna", Rule::One(&["off", "on"])),
+    ("source_remotive", Rule::One(&["off", "on"])),
+    ("adzuna_country", Rule::One(ADZUNA_COUNTRIES)),
+    ("source_mail", Rule::One(&["off", "on"])),
+    ("mail_host", Rule::Text { max: 253, default: "imap.gmail.com", check: is_host }),
+    ("mail_port", Rule::Text { max: 5, default: "993", check: is_port }),
+    ("mail_user", Rule::Text { max: 254, default: "", check: is_mail_login }),
+];
+
+fn is_host(v: &str) -> bool {
+    !v.is_empty()
+        && !v.starts_with(['.', '-'])
+        && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+}
+
+fn is_port(v: &str) -> bool {
+    v.parse::<u16>().is_ok_and(|p| p > 0)
+}
+
+/// A login is usually the e-mail address; empty = not set yet.
+fn is_mail_login(v: &str) -> bool {
+    v.chars().all(|c| !c.is_control() && !c.is_whitespace())
+}
+
+fn default_of(rule: &Rule) -> &'static str {
+    match rule {
+        Rule::One(values) => values[0],
+        Rule::Text { default, .. } => default,
+    }
+}
+
+fn accepts(rule: &Rule, value: &str) -> bool {
+    match rule {
+        Rule::One(values) => values.contains(&value),
+        Rule::Text { max, check, .. } => value.chars().count() <= *max && check(value),
+    }
+}
 
 pub fn all(conn: &Connection) -> AppResult<BTreeMap<String, String>> {
     let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
@@ -25,23 +77,35 @@ pub fn all(conn: &Connection) -> AppResult<BTreeMap<String, String>> {
     // Defaults first, stored values on top; unknown stored keys are ignored.
     Ok(ALLOWED
         .iter()
-        .map(|(key, values)| {
+        .map(|(key, rule)| {
             let value = stored
                 .get(*key)
-                .filter(|v| values.contains(&v.as_str()))
+                .filter(|v| accepts(rule, v))
                 .cloned()
-                .unwrap_or_else(|| values[0].to_string());
+                .unwrap_or_else(|| default_of(rule).to_string());
             (key.to_string(), value)
         })
         .collect())
 }
 
+/// One setting (its default when not stored).
+pub fn get(conn: &Connection, key: &str) -> AppResult<String> {
+    all(conn)?
+        .remove(key)
+        .ok_or_else(|| AppError::Invalid(format!("unknown setting {key}")))
+}
+
+pub fn is_on(conn: &Connection, key: &str) -> AppResult<bool> {
+    Ok(get(conn, key)? == "on")
+}
+
 pub fn set(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
-    let allowed = ALLOWED
+    let (_, rule) = ALLOWED
         .iter()
         .find(|(k, _)| *k == key)
         .ok_or_else(|| AppError::Invalid(format!("unknown setting {key}")))?;
-    if !allowed.1.contains(&value) {
+    let value = value.trim();
+    if !accepts(rule, value) {
         return Err(AppError::Invalid(format!("wrong value for {key}")));
     }
     conn.execute(
@@ -66,5 +130,22 @@ mod tests {
         assert_eq!(all(&conn).unwrap()["theme"], "light");
         assert!(set(&conn, "theme", "pink").is_err());
         assert!(set(&conn, "apiKey", "secret").is_err());
+        assert_eq!(get(&conn, "adzuna_country").unwrap(), "pl");
+        assert!(!is_on(&conn, "source_adzuna").unwrap());
+        assert!(is_on(&conn, "fetch_auto").unwrap());
+    }
+
+    #[test]
+    fn text_settings_are_checked() {
+        let conn = test_db();
+        set(&conn, "mail_host", " imap.example.com ").unwrap();
+        assert_eq!(get(&conn, "mail_host").unwrap(), "imap.example.com");
+        assert!(set(&conn, "mail_host", "imap.example.com/../x").is_err());
+        assert!(set(&conn, "mail_host", "").is_err());
+        assert!(set(&conn, "mail_port", "70000").is_err());
+        set(&conn, "mail_port", "143").unwrap();
+        assert!(set(&conn, "mail_user", "a b@example.com").is_err());
+        set(&conn, "mail_user", "oferty@example.com").unwrap();
+        assert!(set(&conn, "adzuna_country", "xx").is_err());
     }
 }

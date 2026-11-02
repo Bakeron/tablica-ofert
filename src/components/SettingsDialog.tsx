@@ -1,9 +1,12 @@
+import { useState } from "react";
+import type { Api } from "../api";
 import type { Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconClose } from "./Icons";
 import { Modal } from "./Modal";
+import { SourcesSettings } from "./SourcesSettings";
 
-const OPTIONS: { key: keyof Settings; label: TextKey; values: string[] }[] = [
+const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: string[] }[] = [
   { key: "language", label: "settings.language", values: ["system", "pl", "en"] },
   { key: "theme", label: "settings.theme", values: ["system", "dark", "light"] },
   { key: "motion", label: "settings.motion", values: ["system", "full", "reduced"] },
@@ -11,28 +14,90 @@ const OPTIONS: { key: keyof Settings; label: TextKey; values: string[] }[] = [
 
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
+export type SettingsSection = "look" | "sources";
+const SECTIONS: SettingsSection[] = ["sources", "look"];
+
 export function SettingsDialog({
   open,
+  api,
   settings,
+  initialSection = "sources",
   onClose,
   onChange,
+  onOpenLink,
+  onError,
+  onToast,
 }: {
   open: boolean;
+  api: Api | null;
   settings: Settings;
+  initialSection?: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onOpenLink: (url: string) => void;
+  onError: (e: unknown) => void;
+  onToast: (text: string) => void;
 }) {
   const { t } = useI18n();
   return (
-    <Modal open={open} onClose={onClose} labelledBy="settings-title">
-      <div className="sheet">
-        <header className="sheet-head">
-          <h2 id="settings-title">{t("settings.title")}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label={t("settings.close")}>
-            <IconClose />
+    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide">
+      <SettingsBody
+        api={api}
+        settings={settings}
+        initialSection={initialSection}
+        onClose={onClose}
+        onChange={onChange}
+        onOpenLink={onOpenLink}
+        onError={onError}
+        onToast={onToast}
+        closeLabel={t("settings.close")}
+      />
+    </Modal>
+  );
+}
+
+/** Inside the dialog, so the chosen section starts fresh every time the window opens. */
+function SettingsBody({
+  api,
+  settings,
+  initialSection,
+  onClose,
+  onChange,
+  onOpenLink,
+  onError,
+  onToast,
+  closeLabel,
+}: {
+  api: Api | null;
+  settings: Settings;
+  initialSection: SettingsSection;
+  onClose: () => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onOpenLink: (url: string) => void;
+  onError: (e: unknown) => void;
+  onToast: (text: string) => void;
+  closeLabel: string;
+}) {
+  const { t } = useI18n();
+  const [section, setSection] = useState<SettingsSection>(initialSection);
+  return (
+    <div className="sheet">
+      <header className="sheet-head">
+        <h2 id="settings-title">{t("settings.title")}</h2>
+        <button type="button" className="icon-btn" onClick={onClose} aria-label={closeLabel}>
+          <IconClose />
+        </button>
+      </header>
+      <nav className="settings-nav" aria-label={t("settings.section")}>
+        {SECTIONS.map((s) => (
+          <button key={s} type="button" className="seg" aria-pressed={section === s} onClick={() => setSection(s)}>
+            {t(`settings.s.${s}` as TextKey)}
           </button>
-        </header>
-        {OPTIONS.map((option) => (
+        ))}
+      </nav>
+
+      {section === "look" &&
+        OPTIONS.map((option) => (
           <fieldset key={option.key} className="choice">
             <legend>{t(option.label)}</legend>
             {option.values.map((value) => (
@@ -53,12 +118,16 @@ export function SettingsDialog({
             ))}
           </fieldset>
         ))}
-        <footer className="sheet-foot">
-          <button type="button" className="btn btn-sign" onClick={onClose}>
-            {t("settings.close")}
-          </button>
-        </footer>
-      </div>
-    </Modal>
+
+      {section === "sources" && api && (
+        <SourcesSettings api={api} settings={settings} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />
+      )}
+
+      <footer className="sheet-foot">
+        <button type="button" className="btn btn-sign" onClick={onClose}>
+          {closeLabel}
+        </button>
+      </footer>
+    </div>
   );
 }

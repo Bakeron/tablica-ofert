@@ -184,6 +184,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
                   )}
                 </span>
               ))}
+              {/* Adzuna's terms: offers from their API carry their name. */}
+              {offer.sources.includes("adzuna") && <span className="adzuna-credit">{t("adzuna.credit")}</span>}
             </dd>
           </div>
         </dl>

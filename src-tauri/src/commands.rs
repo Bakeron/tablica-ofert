@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
 use rusqlite::Connection;
 use serde::Serialize;
@@ -10,14 +11,17 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 use crate::model::*;
-use crate::{offers, profiles, settings};
+use crate::sources::{self, FetchReport, SourceStatus};
+use crate::{offers, profiles, secrets, settings};
 
 pub struct AppState {
     /// `Err` = the database could not be opened safely; every call returns `Locked`.
     pub db: Mutex<Result<Connection, String>>,
+    /// Set while offers are being fetched - a second run waits for the first one.
+    pub fetching: AtomicBool,
 }
 
-fn with_db<T>(state: &AppState, f: impl FnOnce(&mut Connection) -> AppResult<T>) -> AppResult<T> {
+pub fn with_db<T>(state: &AppState, f: impl FnOnce(&mut Connection) -> AppResult<T>) -> AppResult<T> {
     let mut guard = state
         .db
         .lock()
@@ -137,4 +141,36 @@ pub async fn get_experience(state: State<'_, AppState>) -> AppResult<String> {
 #[tauri::command]
 pub async fn set_experience(state: State<'_, AppState>, text: String) -> AppResult<()> {
     with_db(&state, |c| profiles::set_experience(c, &text))
+}
+
+// ---------- secrets (keys, passwords) ----------
+
+/// Which user secrets are set, as name -> last 4 characters. Values never leave Rust.
+#[tauri::command]
+pub async fn secret_hints() -> AppResult<BTreeMap<String, String>> {
+    secrets::user_hints()
+}
+
+#[tauri::command]
+pub async fn set_secret(name: String, value: String) -> AppResult<()> {
+    secrets::set_user(&name, &value)
+}
+
+#[tauri::command]
+pub async fn delete_secret(name: String) -> AppResult<()> {
+    secrets::delete_user(&name)
+}
+
+// ---------- offer sources ----------
+
+#[tauri::command]
+pub async fn source_status(state: State<'_, AppState>) -> AppResult<Vec<SourceStatus>> {
+    let adzuna_ready = sources::adzuna::keys()?.is_some();
+    with_db(&state, |c| sources::status(c, adzuna_ready))
+}
+
+/// "Fetch now": every enabled source that may run (daily limits still apply).
+#[tauri::command]
+pub async fn fetch_offers(state: State<'_, AppState>) -> AppResult<FetchReport> {
+    sources::fetch(&state, true).await
 }

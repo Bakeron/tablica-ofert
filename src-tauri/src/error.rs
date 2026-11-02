@@ -17,6 +17,21 @@ pub enum AppError {
     Invalid(String),
     #[error("not found")]
     NotFound,
+    /// No connection, timeout or an unexpected answer from a service.
+    #[error("network: {0}")]
+    Net(String),
+    /// The service refused the key or login.
+    #[error("refused: {0}")]
+    Auth(String),
+    /// The service's limit is used up (HTTP 429 or our own daily cap).
+    #[error("limit: {0}")]
+    Limit(String),
+    /// A required key or login is not set in the settings.
+    #[error("missing: {0}")]
+    Missing(String),
+    /// The same long task (e.g. fetching offers) is already running.
+    #[error("already running")]
+    Busy,
 }
 
 impl AppError {
@@ -28,6 +43,11 @@ impl AppError {
             AppError::Locked(_) => "locked",
             AppError::Invalid(_) => "invalid",
             AppError::NotFound => "not_found",
+            AppError::Net(_) => "net",
+            AppError::Auth(_) => "auth",
+            AppError::Limit(_) => "limit",
+            AppError::Missing(_) => "missing",
+            AppError::Busy => "busy",
         }
     }
 }

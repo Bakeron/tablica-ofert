@@ -193,11 +193,94 @@ export interface Settings {
   sound: "off" | "on";
   /** "First steps" at the first start, until finished or skipped. */
   onboarding: "pending" | "done";
+  /** Collect offers at start and every few hours while the app is open. */
+  fetch_auto: "on" | "off";
+  fetch_every: "3" | "6" | "12";
+  source_adzuna: "off" | "on";
+  source_remotive: "off" | "on";
+  adzuna_country: AdzunaCountry;
+  source_mail: "off" | "on";
+  mail_host: string;
+  mail_port: string;
+  mail_user: string;
+}
+
+/** Defaults - the same as the first value of every rule in settings.rs. */
+export const DEFAULT_SETTINGS: Settings = {
+  theme: "system",
+  language: "system",
+  motion: "system",
+  sound: "off",
+  onboarding: "done",
+  fetch_auto: "on",
+  fetch_every: "6",
+  source_adzuna: "off",
+  source_remotive: "off",
+  adzuna_country: "pl",
+  source_mail: "off",
+  mail_host: "imap.gmail.com",
+  mail_port: "993",
+  mail_user: "",
+};
+
+/** Countries covered by Adzuna (mirrors `ADZUNA_COUNTRIES` in settings.rs). */
+export const ADZUNA_COUNTRIES = [
+  "pl", "at", "au", "be", "br", "ca", "ch", "de", "es", "fr", "gb", "in", "it", "mx", "nl", "nz", "sg", "us", "za",
+] as const;
+export type AdzunaCountry = (typeof ADZUNA_COUNTRIES)[number];
+
+/** Secrets the user can type in the settings (mirrors `USER_SECRETS` in secrets.rs). */
+export type SecretName =
+  | "adzuna-app-id"
+  | "adzuna-app-key"
+  | "mail-password"
+  | "ai-key-gemini"
+  | "ai-key-groq"
+  | "ai-key-openrouter"
+  | "ai-key-anthropic"
+  | "ai-key-openai";
+
+/** Set secrets: name -> last 4 characters ("••••1234"). */
+export type SecretHints = Partial<Record<SecretName, string>>;
+
+export type SourceName = "adzuna" | "remotive" | "mail";
+
+export interface SourceStatus {
+  source: SourceName;
+  enabled: boolean;
+  /** Key / login present. */
+  ready: boolean;
+  lastTry: string | null;
+  lastOk: string | null;
+  lastError: string | null;
+  added: number;
+  merged: number;
+  callsToday: number;
+  callsADay: number;
+}
+
+export type SkipReason = "off" | "missing_key" | "no_profiles" | "no_keywords" | "not_due" | "limit";
+
+export interface SourceRun {
+  source: SourceName;
+  skipped: SkipReason | null;
+  added: number;
+  merged: number;
+  blocked: number;
+  invalid: number;
+  error: { code: AppError["code"]; detail: string } | null;
+}
+
+export interface FetchReport {
+  runs: SourceRun[];
+  added: number;
+  /** New offers that passed the filter of at least one profile. */
+  newOnBoard: number;
 }
 
 /** Error shape sent by the Rust side (`AppError`). */
 export interface AppError {
-  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found";
+  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy";
   detail: string;
 }
 

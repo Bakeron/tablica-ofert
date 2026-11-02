@@ -1,6 +1,10 @@
 import type {
   AddOutcome,
   AppStatus,
+  FetchReport,
+  SecretHints,
+  SecretName,
+  SourceStatus,
   Interest,
   OfferDetail,
   OfferInput,
@@ -36,6 +40,15 @@ export interface Api {
   deleteProfile(id: number): Promise<void>;
   getExperience(): Promise<string>;
   setExperience(text: string): Promise<void>;
+  /** Which secrets are set - only their last 4 characters ever reach the UI. */
+  secretHints(): Promise<SecretHints>;
+  setSecret(name: SecretName, value: string): Promise<void>;
+  deleteSecret(name: SecretName): Promise<void>;
+  sourceStatus(): Promise<SourceStatus[]>;
+  /** "Fetch now" - every enabled source that may run. */
+  fetchOffers(): Promise<FetchReport>;
+  /** Background fetch finished (the app collects at start and every few hours). Returns "stop listening". */
+  onFetched(listener: (report: FetchReport) => void): Promise<() => void>;
 }
 
 function insideTauri(): boolean {
@@ -64,6 +77,15 @@ async function tauriApi(): Promise<Api> {
     deleteProfile: (id) => invoke("delete_profile", { id }),
     getExperience: () => invoke("get_experience"),
     setExperience: (text) => invoke("set_experience", { text }),
+    secretHints: () => invoke("secret_hints"),
+    setSecret: (name, value) => invoke("set_secret", { name, value }),
+    deleteSecret: (name) => invoke("delete_secret", { name }),
+    sourceStatus: () => invoke("source_status"),
+    fetchOffers: () => invoke("fetch_offers"),
+    onFetched: async (listener) => {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<FetchReport>("offers-fetched", (e) => listener(e.payload));
+    },
   };
 }
 

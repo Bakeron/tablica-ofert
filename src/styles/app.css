@@ -1689,3 +1689,157 @@ fieldset.plain {
   transition: none !important;
   scroll-behavior: auto !important;
 }
+
+/* ---------- settings: sections and offer sources ---------- */
+
+.settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 2px dashed var(--perf);
+}
+
+.settings-part {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-part .crit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-part select {
+  max-width: 18rem;
+}
+
+/* Every source is a wayfinding sign: yellow edge on the left, name in board letters. */
+.source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+  border: 1.5px solid var(--perf);
+  border-left: 8px solid var(--signal);
+  border-radius: 4px;
+}
+
+.source p {
+  margin: 0;
+}
+
+.source-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.source-head h3 {
+  margin: 0;
+  font-family: var(--font-board);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.source-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.secret-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.6rem 1rem;
+}
+
+.secret {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.secret .field > span {
+  font-weight: 700;
+}
+
+.secret-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.secret-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1.5px solid var(--field-line);
+  border-radius: 3px;
+  background: var(--field);
+  color: inherit;
+  font: inherit;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.source-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.92rem;
+  color: var(--paper-dim);
+}
+
+.source-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.source-warn svg {
+  flex: none;
+  margin-top: 0.1rem;
+}
+
+.adzuna-credit {
+  display: inline-block;
+  margin-left: 0.6rem;
+  padding: 0 0.4rem;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topbar .btn-fetch {
+  color: var(--signal-ink);
+}
+
+/* While fetching the button stays readable - the moving arrow says "working". */
+.topbar .btn-fetch[aria-busy="true"] {
+  opacity: 1;
+}
+
+.topbar .btn-fetch[aria-busy="true"] svg {
+  animation: fetch-bob 0.9s steps(2, end) infinite;
+}
+
+@keyframes fetch-bob {
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+[data-motion="reduced"] .topbar .btn-fetch[aria-busy="true"] svg {
+  animation: none;
+}

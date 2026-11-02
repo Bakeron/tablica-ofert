@@ -16,6 +16,7 @@ const BACKUPS_KEPT: usize = 5;
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/001_init.sql"),
     include_str!("migrations/002_profiles.sql"),
+    include_str!("migrations/003_sources.sql"),
 ];
 
 /// Opens a SQLCipher database with a raw 256-bit key (64 hex chars) and checks that

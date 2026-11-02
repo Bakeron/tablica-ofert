@@ -6,7 +6,7 @@
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
 import { bestResult, isKept } from "../lib/profile";
 import type { Api } from "./index";
-import type { OfferDetail, Profile, Settings, View } from "./types";
+import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type Settings, type SourceStatus, type View } from "./types";
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -21,12 +21,10 @@ export function createMockApi(): Api {
     : DEMO_PROFILES.map((p, i) => ({ id: i + 1, position: i, ...structuredClone(p) }));
   let nextProfileId = profiles.length + 1;
   let experience = firstRun ? "" : "4 lata jako frontend developer (React, TypeScript), angielski B2.";
-  const settings: Settings = {
-    theme: "system",
-    language: "system",
-    motion: "system",
-    sound: "off",
-    onboarding: firstRun ? "pending" : "done",
+  const settings: Settings = { ...DEFAULT_SETTINGS, onboarding: firstRun ? "pending" : "done", source_remotive: "on" };
+  const secrets: SecretHints = {};
+  const sourceRuns: Partial<Record<string, Pick<SourceStatus, "lastTry" | "lastOk" | "lastError" | "added" | "merged" | "callsToday">>> = {
+    remotive: { lastTry: hoursAgo(5), lastOk: hoursAgo(5), lastError: null, added: 4, merged: 1, callsToday: 2 },
   };
 
   for (const demo of DEMO_OFFERS) {
@@ -250,6 +248,63 @@ export function createMockApi(): Api {
     },
     async setExperience(text) {
       experience = text.trim();
+    },
+    async secretHints() {
+      return { ...secrets };
+    },
+    async setSecret(name, value) {
+      const v = value.trim();
+      if (!v || /\s/.test(v)) throw { code: "invalid", detail: "the key has a wrong format" };
+      secrets[name] = v.length > 8 ? `••••${v.slice(-4)}` : "••••";
+    },
+    async deleteSecret(name) {
+      delete secrets[name];
+    },
+    async sourceStatus() {
+      const one = (source: SourceStatus["source"], ready: boolean, callsADay: number): SourceStatus => ({
+        source,
+        enabled: settings[`source_${source}` as "source_adzuna"] === "on",
+        ready,
+        lastTry: null,
+        lastOk: null,
+        lastError: null,
+        added: 0,
+        merged: 0,
+        callsToday: 0,
+        ...sourceRuns[source],
+        callsADay,
+      });
+      return [
+        one("adzuna", Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]), 25),
+        one("remotive", true, 4),
+      ];
+    },
+    async fetchOffers() {
+      await new Promise((r) => setTimeout(r, 1200));
+      const runs = [];
+      let added = 0;
+      if (settings.source_remotive === "on") {
+        const outcome = await this.addOffer({
+          title: "Frontend Engineer (React)",
+          company: "Zmyślone Studio Zdalne",
+          source: "remotive",
+          url: "https://remotive.com/remote-jobs/software-dev/frontend-engineer-0",
+          remote: "yes",
+          description: "Candidate location: Europe\nJob type: full time\n\nWe build tools for small teams. React, TypeScript, CSS.",
+        });
+        const isNew = outcome.status === "added";
+        added += isNew ? 1 : 0;
+        sourceRuns.remotive = { lastTry: now(), lastOk: now(), lastError: null, added: isNew ? 1 : 0, merged: isNew ? 0 : 1, callsToday: 3 };
+        runs.push({ source: "remotive" as const, skipped: null, added: isNew ? 1 : 0, merged: isNew ? 0 : 1, blocked: 0, invalid: 0, error: null });
+      }
+      if (settings.source_adzuna === "on") {
+        const ready = Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]);
+        runs.push({ source: "adzuna" as const, skipped: ready ? null : ("missing_key" as const), added: 0, merged: 0, blocked: 0, invalid: 0, error: null });
+      }
+      return { runs, added, newOnBoard: added };
+    },
+    async onFetched() {
+      return () => {};
     },
   };
 }
