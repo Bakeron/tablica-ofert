@@ -3,6 +3,9 @@ import type {
   AiStatus,
   AppStatus,
   AssistKind,
+  Contact,
+  EventKind,
+  LogKind,
   Captured,
   Draft,
   Criteria,
@@ -85,6 +88,17 @@ export interface Api {
   backgroundStatus(): Promise<TaskStatus>;
   /** Turns collecting with the app closed on or off; returns the real state. */
   setBackground(on: boolean): Promise<TaskStatus>;
+  addEvent(offerId: number, event: { kind: EventKind; at: string; minutes: number; note: string }): Promise<number>;
+  deleteEvent(id: number): Promise<void>;
+  /** `contact.id = 0` - a new contact. */
+  saveContact(offerId: number, contact: Contact): Promise<number>;
+  deleteContact(id: number): Promise<void>;
+  addLog(offerId: number, entry: { at: string; kind: LogKind; note: string }): Promise<number>;
+  deleteLog(id: number): Promise<void>;
+  /** Opens Google Calendar with the event filled in (the person clicks "Save"). */
+  calendarGoogle(eventId: number): Promise<void>;
+  /** Saves an .ics file to Downloads and opens it; returns the path. */
+  calendarIcs(eventId: number): Promise<string>;
   /** Saves a longer description from the offer page; returns whether it changed. */
   updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
@@ -141,6 +155,14 @@ async function tauriApi(): Promise<Api> {
     closePreview: () => invoke("close_preview"),
     backgroundStatus: () => invoke("background_status"),
     setBackground: (on) => invoke("set_background", { on }),
+    addEvent: (offerId, event) => invoke("add_event", { offerId, event }),
+    deleteEvent: (id) => invoke("delete_event", { id }),
+    saveContact: (offerId, contact) => invoke("save_contact", { offerId, contact }),
+    deleteContact: (id) => invoke("delete_contact", { id }),
+    addLog: (offerId, entry) => invoke("add_log", { offerId, entry }),
+    deleteLog: (id) => invoke("delete_log", { id }),
+    calendarGoogle: (id) => invoke("calendar_google", { id }),
+    calendarIcs: (id) => invoke("calendar_ics", { id }),
     updateDescription: (id, text) => invoke("update_description", { id, text }),
     onRated: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");

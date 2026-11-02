@@ -131,6 +131,44 @@ export interface OfferRow {
   /** Reasons behind `filterResult` (for the chosen profile, or the best one). */
   filterReasons: Reason[];
   addedAt: string;
+  /** The nearest date (from 3 hours ago on) - for "INTERVIEW TODAY". */
+  nextEvent: string | null;
+  nextEventKind: EventKind | null;
+}
+
+export type EventKind = "interview" | "deadline" | "other";
+export type LogKind = "call" | "mail" | "meeting" | "message";
+
+export interface CalEvent {
+  id: number;
+  offerId: number;
+  kind: EventKind;
+  /** UTC, RFC 3339 */
+  at: string;
+  minutes: number;
+  note: string;
+}
+
+export interface Contact {
+  id: number;
+  name: string;
+  role: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+}
+
+export interface LogEntry {
+  id: number;
+  at: string;
+  kind: LogKind;
+  note: string;
+}
+
+export interface Agenda {
+  events: CalEvent[];
+  contacts: Contact[];
+  log: LogEntry[];
 }
 
 export interface SourceLink {
@@ -160,6 +198,8 @@ export interface OfferDetail extends OfferRow {
   filters: ProfileFilter[];
   /** What AI read from the offer and the match score for every profile. */
   ai: OfferAi;
+  /** Dates, contacts and contact history. */
+  agenda: Agenda;
 }
 
 export interface ScoreView {
@@ -261,6 +301,8 @@ export interface Settings {
   background_task: "on" | "off";
   /** Windows notification about new offers. */
   notify_new: "on" | "off";
+  /** Reminders: interviews and deadlines, follow-up, high scores. */
+  notify_reminders: "on" | "off";
   source_adzuna: "off" | "on";
   source_remotive: "off" | "on";
   adzuna_country: AdzunaCountry;
@@ -289,6 +331,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fetch_every: "6",
   background_task: "on",
   notify_new: "on",
+  notify_reminders: "on",
   source_adzuna: "off",
   source_remotive: "off",
   adzuna_country: "pl",

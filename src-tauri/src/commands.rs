@@ -333,3 +333,62 @@ pub async fn set_background(state: State<'_, AppState>, on: bool) -> AppResult<c
         .await
         .map_err(|e| AppError::Invalid(e.to_string()))?
 }
+
+// ---------- dates, contacts, calendar ----------
+
+use crate::agenda::{self, Contact, EventInput, LogInput};
+
+#[tauri::command]
+pub async fn add_event(state: State<'_, AppState>, offer_id: i64, event: EventInput) -> AppResult<i64> {
+    with_db(&state, |c| agenda::add_event(c, offer_id, event))
+}
+
+#[tauri::command]
+pub async fn delete_event(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    with_db(&state, |c| agenda::delete_event(c, id))
+}
+
+#[tauri::command]
+pub async fn save_contact(state: State<'_, AppState>, offer_id: i64, contact: Contact) -> AppResult<i64> {
+    with_db(&state, |c| agenda::save_contact(c, offer_id, contact))
+}
+
+#[tauri::command]
+pub async fn delete_contact(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    with_db(&state, |c| agenda::delete_contact(c, id))
+}
+
+#[tauri::command]
+pub async fn add_log(state: State<'_, AppState>, offer_id: i64, entry: LogInput) -> AppResult<i64> {
+    with_db(&state, |c| agenda::add_log(c, offer_id, entry))
+}
+
+#[tauri::command]
+pub async fn delete_log(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    with_db(&state, |c| agenda::delete_log(c, id))
+}
+
+/// "Add to Google Calendar": opens the filled-in event page in the browser (no login in the app).
+#[tauri::command]
+pub async fn calendar_google(state: State<'_, AppState>, app: tauri::AppHandle, id: i64) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let pl = crate::notify::polish(&state);
+    let link = with_db(&state, |c| agenda::google_link(c, id, pl))?;
+    app.opener().open_url(link, None::<&str>).map_err(|e| AppError::Invalid(e.to_string()))
+}
+
+/// "Save .ics file": into Downloads, then opened with the default calendar app. Returns the path.
+#[tauri::command]
+pub async fn calendar_ics(state: State<'_, AppState>, app: tauri::AppHandle, id: i64) -> AppResult<String> {
+    use tauri::Manager;
+    use tauri_plugin_opener::OpenerExt;
+    let pl = crate::notify::polish(&state);
+    let content = with_db(&state, |c| agenda::ics(c, id, pl))?;
+    let dir = app.path().download_dir().map_err(|e| AppError::Invalid(e.to_string()))?;
+    let path = dir.join(format!("tablica-ofert-{}-{id}.ics", crate::clock::file_stamp()));
+    std::fs::write(&path, content)?;
+    let shown = path.to_string_lossy().into_owned();
+    // Opening is a convenience - the file is saved even when no calendar app is set.
+    let _ = app.opener().open_path(shown.clone(), None::<&str>);
+    Ok(shown)
+}

@@ -23,6 +23,7 @@ export function createMockApi(): Api {
   let nextProfileId = profiles.length + 1;
   let experience = firstRun ? "" : "4 lata jako frontend developer (React, TypeScript), angielski B2.";
   let experiencePrev: string | null = null;
+  let nextEventId = 1;
   let aiCalls = 3;
 
   /** Made-up AI reading of a demo offer (profile index -> profile id). */
@@ -85,6 +86,8 @@ export function createMockApi(): Api {
       filterResult: "pass",
       filterReasons: [],
       addedAt: added,
+      nextEvent: demo.event ? hoursAgo(-demo.event.inHours) : null,
+      nextEventKind: demo.event ? demo.event.kind : null,
       url: input.url ?? null,
       contract: input.contract ?? null,
       level: input.level ?? null,
@@ -102,6 +105,13 @@ export function createMockApi(): Api {
       history: stage === "new" ? [{ stage, at: added }] : [{ stage: "new", at: added }, { stage, at: added }],
       filters: [],
       ai: demoAi(demo.ai, demo.score ?? null, demo.scoreSource ?? null),
+      agenda: demo.event
+        ? {
+            events: [{ id: nextEventId++, offerId: id, kind: demo.event.kind, at: hoursAgo(-demo.event.inHours), minutes: 60, note: demo.event.note }],
+            contacts: demo.contact ? [{ id: nextEventId++, ...demo.contact }] : [],
+            log: [],
+          }
+        : { events: [], contacts: [], log: [] },
     });
     const byProfile = new Map<number, DemoFilter>();
     profiles.forEach((p, i) => byProfile.set(p.id, demo.filters?.[i] ?? { result: "pass" }));
@@ -197,6 +207,8 @@ export function createMockApi(): Api {
         filterResult: "pass",
         filterReasons: [],
         addedAt: at,
+        nextEvent: null,
+        nextEventKind: null,
         url: input.url ?? null,
         contract: input.contract ?? null,
         level: input.level ?? null,
@@ -210,6 +222,7 @@ export function createMockApi(): Api {
         history: [{ stage: "new", at }],
         filters: [],
         ai: demoAi(undefined, null, null),
+        agenda: { events: [], contacts: [], log: [] },
       });
       filters.set(id, new Map());
       return { status: "added", id };
@@ -485,6 +498,50 @@ export function createMockApi(): Api {
     async closePreview() {},
     async backgroundStatus() {
       return { exists: settings.background_task === "on" };
+    },
+    async addEvent(offerId, event) {
+      const o = find(offerId);
+      if (Number.isNaN(new Date(event.at).getTime())) throw { code: "invalid", detail: "date has a wrong format" };
+      const id = nextEventId++;
+      o.agenda.events.push({ id, offerId, ...event });
+      o.agenda.events.sort((a, b) => a.at.localeCompare(b.at));
+      o.nextEvent = o.agenda.events[0].at;
+      o.nextEventKind = o.agenda.events[0].kind;
+      return id;
+    },
+    async deleteEvent(id) {
+      for (const o of offers.values()) {
+        o.agenda.events = o.agenda.events.filter((e) => e.id !== id);
+        o.nextEvent = o.agenda.events[0]?.at ?? null;
+        o.nextEventKind = o.agenda.events[0]?.kind ?? null;
+      }
+    },
+    async saveContact(offerId, contact) {
+      const o = find(offerId);
+      if (!contact.name.trim()) throw { code: "invalid", detail: "name is required" };
+      if (contact.id) {
+        o.agenda.contacts = o.agenda.contacts.map((c) => (c.id === contact.id ? { ...contact } : c));
+        return contact.id;
+      }
+      const id = nextEventId++;
+      o.agenda.contacts.push({ ...contact, id });
+      return id;
+    },
+    async deleteContact(id) {
+      for (const o of offers.values()) o.agenda.contacts = o.agenda.contacts.filter((c) => c.id !== id);
+    },
+    async addLog(offerId, entry) {
+      const id = nextEventId++;
+      const o = find(offerId);
+      o.agenda.log = [{ id, ...entry }, ...o.agenda.log];
+      return id;
+    },
+    async deleteLog(id) {
+      for (const o of offers.values()) o.agenda.log = o.agenda.log.filter((l) => l.id !== id);
+    },
+    async calendarGoogle() {},
+    async calendarIcs() {
+      return "C:\\Users\\Przyklad\\Downloads\\tablica-ofert-rozmowa.ics";
     },
     async setBackground(on) {
       settings.background_task = on ? "on" : "off";

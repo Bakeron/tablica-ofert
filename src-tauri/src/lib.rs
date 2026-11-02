@@ -1,3 +1,4 @@
+mod agenda;
 mod ai;
 mod cities;
 mod clock;
@@ -136,6 +137,14 @@ pub fn run() {
             commands::update_description,
             commands::background_status,
             commands::set_background,
+            commands::add_event,
+            commands::delete_event,
+            commands::save_contact,
+            commands::delete_contact,
+            commands::add_log,
+            commands::delete_log,
+            commands::calendar_google,
+            commands::calendar_ics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -144,6 +153,7 @@ pub fn run() {
 /// While the app is open: a first look shortly after start, then every 30 minutes.
 /// Each source decides by itself whether it is due (its own interval and daily limit).
 fn start_auto_fetch(handle: tauri::AppHandle) {
+    let reminders = handle.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(20)).await;
         loop {
@@ -151,6 +161,34 @@ fn start_auto_fetch(handle: tauri::AppHandle) {
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;
         }
     });
+    // Reminders need a finer clock than fetching ("an hour before").
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5 * 60)).await;
+            remind(&reminders);
+        }
+    });
+}
+
+/// Shows reminders that are due (each one once).
+fn remind(handle: &tauri::AppHandle) {
+    let state = handle.state::<AppState>();
+    let on = commands::with_db(&state, |c| settings::is_on(c, "notify_reminders")).unwrap_or(false);
+    if !on {
+        return;
+    }
+    let due = match commands::with_db(&state, |c| agenda::due(c, time::OffsetDateTime::now_utc())) {
+        Ok(list) => list,
+        Err(e) => {
+            eprintln!("reminders failed: {e}");
+            return;
+        }
+    };
+    let pl = notify::polish(&state);
+    for r in due {
+        let (title, body) = agenda::reminder_text(&r, pl, agenda::local_label);
+        notify::show(handle, &title, &body);
+    }
 }
 
 /// One round of work: collect offers, let AI read them, remind, notify.
@@ -180,6 +218,7 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
             Err(e) => eprintln!("automatic AI run failed: {e}"),
         }
     }
+    remind(handle);
     // A notification only when the board is not in front of the person anyway.
     let focused = handle.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
     if new_on_board > 0 && on("notify_new") && !focused {

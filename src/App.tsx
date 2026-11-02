@@ -330,6 +330,19 @@ export default function App() {
     }
   }
 
+  /** Like `run`, but tells the form whether it worked (so it can close). */
+  async function act(action: () => Promise<unknown>): Promise<boolean> {
+    if (!api) return false;
+    try {
+      await action();
+      await reload();
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  }
+
   const onSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "offer" || key === "place" ? "asc" : "desc" }));
 
@@ -635,6 +648,17 @@ export default function App() {
             }
             aiOn={settings.ai_provider !== "none"}
             onFullText={() => detail && startFullText(detail)}
+            agenda={{
+              addEvent: (event) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addEvent(selectedId, event))),
+              deleteEvent: (id) => run(() => api!.deleteEvent(id)),
+              google: (id) => run(() => api!.calendarGoogle(id)),
+              ics: (id) => api!.calendarIcs(id).then((path) => setToast({ text: t("agenda.icsSaved", { path }) }), fail),
+              saveContact: (contact) => (selectedId === null ? Promise.resolve(false) : act(() => api!.saveContact(selectedId, contact))),
+              deleteContact: (id) => run(() => api!.deleteContact(id)),
+              addLog: (entry) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addLog(selectedId, entry))),
+              deleteLog: (id) => run(() => api!.deleteLog(id)),
+              openLink,
+            }}
             onRateAgain={() => selectedId !== null && rateAgain(selectedId)}
             onAssist={(kind) => selectedId !== null && runAssist(selectedId, kind)}
           />

@@ -231,7 +231,11 @@ const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_
     o.salary_currency, o.salary_period, o.stage, o.stage_changed_at, o.interest, o.favorite,
     o.score, o.score_source,
     (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
-    o.expired, {result}, o.added_at, {reasons}";
+    o.expired, {result}, o.added_at, {reasons}, {next}";
+
+/// The nearest date of an offer from 3 hours ago on (an interview that just started still counts).
+const NEXT_EVENT: &str = "(SELECT e.at || '|' || e.kind FROM events e WHERE e.offer_id = o.id
+    AND e.at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-3 hours') ORDER BY e.at LIMIT 1)";
 
 /// The user already acted on these offers - they stay on the board whatever the filter says.
 const KEPT: &str = "(o.stage != 'new' OR o.favorite = 1 OR COALESCE(o.interest, '') IN ('high', 'maybe'))";
@@ -253,11 +257,14 @@ fn filter_sql(profile: Option<i64>) -> (&'static str, &'static str) {
 
 fn columns(profile: Option<i64>) -> String {
     let (result, reasons) = filter_sql(profile);
-    ROW_COLUMNS.replace("{result}", result).replace("{reasons}", reasons)
+    ROW_COLUMNS.replace("{result}", result).replace("{reasons}", reasons).replace("{next}", NEXT_EVENT)
 }
 
 fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
     let sources: Option<String> = r.get(15)?;
+    let next: Option<(String, String)> = r
+        .get::<_, Option<String>>(20)?
+        .and_then(|v| v.split_once('|').map(|(a, k)| (a.to_string(), k.to_string())));
     let mut sources: Vec<String> = sources
         .map(|s| s.split(',').map(str::to_string).collect())
         .unwrap_or_default();
@@ -283,6 +290,8 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         filter_result: r.get(17)?,
         added_at: r.get(18)?,
         filter_reasons: profiles::reasons_from(r.get(19)?),
+        next_event: next.as_ref().map(|(at, _)| at.clone()),
+        next_event_kind: next.map(|(_, kind)| kind),
     })
 }
 
@@ -361,19 +370,20 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         .query_row(&sql, [id], |r| {
             Ok(OfferDetail {
                 row: row_from(r)?,
-                url: r.get(20)?,
-                contract: r.get(21)?,
-                level: r.get(22)?,
-                language: r.get(23)?,
-                requirements: r.get(24)?,
-                description: r.get(25)?,
-                notes: r.get(26)?,
-                expires_at: r.get(27)?,
-                deleted_at: r.get(28)?,
+                url: r.get(21)?,
+                contract: r.get(22)?,
+                level: r.get(23)?,
+                language: r.get(24)?,
+                requirements: r.get(25)?,
+                description: r.get(26)?,
+                notes: r.get(27)?,
+                expires_at: r.get(28)?,
+                deleted_at: r.get(29)?,
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),
                 ai: crate::ai::OfferAi::default(),
+                agenda: crate::agenda::Agenda::default(),
             })
         })
         .optional()?
@@ -392,6 +402,7 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         .collect::<Result<_, _>>()?;
     detail.filters = profiles::offer_filters(conn, id)?;
     detail.ai = crate::ai::offer_ai(conn, id)?;
+    detail.agenda = crate::agenda::agenda(conn, id)?;
     Ok(detail)
 }
 

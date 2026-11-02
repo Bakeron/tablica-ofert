@@ -61,6 +61,9 @@ export interface DemoOffer {
   notes?: string;
   /** One entry per DEMO_PROFILES item. */
   filters?: [DemoFilter, DemoFilter];
+  /** A date in the agenda (made up), `inHours` from now. */
+  event?: { kind: "interview" | "deadline" | "other"; inHours: number; note: string };
+  contact?: { name: string; role: string; email: string; phone: string; linkedin: string };
   /** What AI "read" (made up); scores use the profile index instead of the id. */
   ai?: Omit<OfferAi, "scores"> & { scores: { profile: number; score: number; why: string; quote: string | null }[] };
 }
@@ -170,6 +173,8 @@ export const DEMO_OFFERS: DemoOffer[] = [
     score: 92,
     scoreSource: "ai",
     stage: "hr_interview",
+    event: { kind: "interview", inHours: 3, note: "Rozmowa wideo - link w mailu od rekruterki." },
+    contact: { name: "Anna Przykładowa", role: "Rekruterka", email: "anna@example.com", phone: "", linkedin: "" },
     interest: "high",
     favorite: true,
     extraSources: ["remotive"],

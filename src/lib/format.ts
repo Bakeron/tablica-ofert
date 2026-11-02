@@ -79,3 +79,21 @@ export function isWebUrl(value: string | null | undefined): value is string {
     return false;
   }
 }
+
+/** Is this moment today on the person's own clock? */
+export function isToday(iso: string, now = new Date()): boolean {
+  const d = new Date(iso);
+  return !Number.isNaN(d.getTime()) && d.toDateString() === now.toDateString();
+}
+
+/** "2026-11-05T14:00" (local, for <input type="datetime-local">) -> UTC RFC 3339. */
+export function localInputToUtc(value: string): string | null {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** Now as a value for <input type="datetime-local">. */
+export function nowLocalInput(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}

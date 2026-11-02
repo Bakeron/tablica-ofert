@@ -35,6 +35,8 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("background_task", Rule::One(&["on", "off"])),
     // Windows notification about new offers on the board.
     ("notify_new", Rule::One(&["on", "off"])),
+    // Reminders: interviews and deadlines (a day and an hour before), follow-up, high scores.
+    ("notify_reminders", Rule::One(&["on", "off"])),
     ("source_adzuna", Rule::One(&["off", "on"])),
     ("source_remotive", Rule::One(&["off", "on"])),
     ("adzuna_country", Rule::One(ADZUNA_COUNTRIES)),

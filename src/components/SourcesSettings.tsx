@@ -127,6 +127,10 @@ export function SourcesSettings({
           <input type="checkbox" checked={settings.notify_new === "on"} onChange={(e) => onChange("notify_new", e.target.checked ? "on" : "off")} />
           <span>{t("bg.notify")}</span>
         </label>
+        <label className="choice-item">
+          <input type="checkbox" checked={settings.notify_reminders === "on"} onChange={(e) => onChange("notify_reminders", e.target.checked ? "on" : "off")} />
+          <span>{t("bg.reminders")}</span>
+        </label>
       </fieldset>
 
       <section className="source" aria-labelledby="src-adzuna">

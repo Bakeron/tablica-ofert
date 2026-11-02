@@ -2196,3 +2196,90 @@ fieldset.plain {
 .preview-bar .btn-ghost {
   color: var(--ink);
 }
+
+/* ---------- dates, contacts, history ---------- */
+
+.agenda {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.agenda p {
+  margin: 0;
+}
+
+.agenda-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agenda-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px dashed var(--perf);
+}
+
+.agenda-when {
+  font-weight: 700;
+}
+
+.agenda-what {
+  flex: 1 1 12rem;
+}
+
+.agenda-sub {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--paper-dim);
+}
+
+.agenda-tools {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.agenda-sub-title {
+  margin: 0.4rem 0 0;
+}
+
+.agenda-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem 0.7rem;
+  padding: 0.6rem;
+  border: 1.5px solid var(--perf);
+  border-radius: 3px;
+}
+
+.agenda-form .agenda-note,
+.agenda-form .hint {
+  grid-column: 1 / -1;
+}
+
+.agenda-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  grid-column: 1 / -1;
+}
+
+.icon-btn-small {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+}
+
+/* "Interview today": black on yellow, like a gate change on the board. */
+.tag-today {
+  background: var(--signal);
+  color: var(--signal-ink);
+  border-color: var(--signal);
+}

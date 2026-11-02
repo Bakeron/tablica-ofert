@@ -230,6 +230,9 @@ pub struct OfferRow {
     /// Reasons behind `filter_result` (for the chosen profile, or the best one).
     pub filter_reasons: Vec<Reason>,
     pub added_at: String,
+    /// The nearest date (interview, deadline) from 3 hours ago on - for "INTERVIEW TODAY".
+    pub next_event: Option<String>,
+    pub next_event_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -268,6 +271,8 @@ pub struct OfferDetail {
     pub filters: Vec<ProfileFilter>,
     /// What AI read from the offer and the match score for every profile.
     pub ai: crate::ai::OfferAi,
+    /// Dates, contacts and contact history.
+    pub agenda: crate::agenda::Agenda,
 }
 
 /// A new offer - typed in by hand now, later also from e-mail alerts and aggregators.

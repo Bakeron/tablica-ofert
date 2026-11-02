@@ -5,6 +5,7 @@ import { fullDate, isWebUrl, placeLabel, salaryFull } from "../lib/format";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
 import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
+import { AgendaPart, type AgendaActions } from "./AgendaPart";
 import { StatusTag } from "./StatusTag";
 
 interface Props {
@@ -23,11 +24,12 @@ interface Props {
   onAssist: (kind: AssistKind) => void;
   /** Opens the offer page in the preview window to take its full text. */
   onFullText: () => void;
+  agenda: AgendaActions;
 }
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onFullText },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onFullText, agenda },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -162,6 +164,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             </button>
           </div>
         )}
+
+        {!inTrash && <AgendaPart agenda={offer.agenda} actions={agenda} />}
 
         <AiPart offer={offer} aiOn={aiOn && !inTrash} onRateAgain={onRateAgain} onAssist={onAssist} />
 
