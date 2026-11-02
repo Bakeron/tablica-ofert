@@ -7,6 +7,7 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::clock;
 use crate::dedup;
+use crate::profiles;
 use crate::error::{AppError, AppResult};
 use crate::model::*;
 
@@ -178,6 +179,8 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
         params![id, input.source, input.url, now],
     )?;
+    // New or merged data - check it against every profile before it shows up anywhere.
+    profiles::recheck_offer(&tx, id)?;
     tx.commit()?;
     Ok(outcome)
 }
@@ -223,11 +226,35 @@ fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str
 
 // ---------- reading ----------
 
+/// Columns of a board row. `{result}` and `{reasons}` depend on the chosen profile (see `filter_sql`).
 const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max,
     o.salary_currency, o.salary_period, o.stage, o.stage_changed_at, o.interest, o.favorite,
     o.score, o.score_source,
     (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
-    o.expired, o.filter_result, o.added_at";
+    o.expired, {result}, o.added_at, {reasons}";
+
+/// The user already acted on these offers - they stay on the board whatever the filter says.
+const KEPT: &str = "(o.stage != 'new' OR o.favorite = 1 OR COALESCE(o.interest, '') IN ('high', 'maybe'))";
+
+/// Filter result and reasons: for one profile (`?1`), or the best over all profiles.
+fn filter_sql(profile: Option<i64>) -> (&'static str, &'static str) {
+    match profile {
+        Some(_) => (
+            "COALESCE((SELECT f.result FROM offer_filters f WHERE f.offer_id = o.id AND f.profile_id = ?1), 'pass')",
+            "(SELECT f.reasons FROM offer_filters f WHERE f.offer_id = o.id AND f.profile_id = ?1)",
+        ),
+        None => (
+            "o.filter_result",
+            "(SELECT f.reasons FROM offer_filters f JOIN profiles p ON p.id = f.profile_id
+              WHERE f.offer_id = o.id AND f.result = o.filter_result ORDER BY p.position, p.id LIMIT 1)",
+        ),
+    }
+}
+
+fn columns(profile: Option<i64>) -> String {
+    let (result, reasons) = filter_sql(profile);
+    ROW_COLUMNS.replace("{result}", result).replace("{reasons}", reasons)
+}
 
 fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
     let sources: Option<String> = r.get(15)?;
@@ -255,43 +282,76 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         expired: r.get(16)?,
         filter_result: r.get(17)?,
         added_at: r.get(18)?,
+        filter_reasons: profiles::reasons_from(r.get(19)?),
     })
 }
 
-pub fn list(conn: &Connection, view: View) -> AppResult<Vec<OfferRow>> {
-    let condition = match view {
-        View::Board => "o.deleted_at IS NULL AND o.filter_result != 'fail'",
-        View::Rejected => "o.deleted_at IS NULL AND o.filter_result = 'fail'",
-        View::Trash => "o.deleted_at IS NOT NULL",
-    };
-    let sql = format!("SELECT {ROW_COLUMNS} FROM offers o WHERE {condition} ORDER BY o.added_at DESC, o.id DESC");
+fn view_condition(view: View, result: &str) -> String {
+    match view {
+        View::Board => format!("o.deleted_at IS NULL AND ({result} = 'pass' OR {KEPT})"),
+        View::Review => format!("o.deleted_at IS NULL AND {result} = 'unsure' AND NOT {KEPT}"),
+        View::Rejected => format!("o.deleted_at IS NULL AND {result} = 'fail' AND NOT {KEPT}"),
+        View::Trash => "o.deleted_at IS NOT NULL".to_string(),
+    }
+}
+
+/// Offers of one tab. `profile = None` - all profiles together (one fitting profile is enough).
+pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Vec<OfferRow>> {
+    let (result, _) = filter_sql(profile);
+    let sql = format!(
+        "SELECT {} FROM offers o WHERE {} ORDER BY o.added_at DESC, o.id DESC",
+        columns(profile),
+        view_condition(view, result)
+    );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], row_from)?.collect::<Result<Vec<_>, _>>()?;
+    let rows = match profile {
+        Some(p) => stmt.query_map([p], row_from)?.collect::<Result<Vec<_>, _>>()?,
+        None => stmt.query_map([], row_from)?.collect::<Result<Vec<_>, _>>()?,
+    };
     Ok(rows)
+}
+
+/// Number of offers in every tab, for the tab labels.
+pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> {
+    let (result, _) = filter_sql(profile);
+    let count = |view| format!("COALESCE(SUM(CASE WHEN {} THEN 1 ELSE 0 END), 0)", view_condition(view, result));
+    let sql = format!(
+        "SELECT {}, {}, {}, {} FROM offers o",
+        count(View::Board),
+        count(View::Review),
+        count(View::Rejected),
+        count(View::Trash)
+    );
+    let read = |r: &Row| Ok(ViewCounts { board: r.get(0)?, review: r.get(1)?, rejected: r.get(2)?, trash: r.get(3)? });
+    Ok(match profile {
+        Some(p) => conn.query_row(&sql, [p], read)?,
+        None => conn.query_row(&sql, [], read)?,
+    })
 }
 
 pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
     let sql = format!(
-        "SELECT {ROW_COLUMNS}, o.url, o.contract, o.level, o.language, o.requirements, o.description,
-            o.notes, o.filter_reason, o.expires_at, o.deleted_at
-         FROM offers o WHERE o.id = ?1"
+        "SELECT {}, o.url, o.contract, o.level, o.language, o.requirements, o.description,
+            o.notes, o.expires_at, o.deleted_at
+         FROM offers o WHERE o.id = ?1",
+        columns(None)
     );
     let mut detail = conn
         .query_row(&sql, [id], |r| {
             Ok(OfferDetail {
                 row: row_from(r)?,
-                url: r.get(19)?,
-                contract: r.get(20)?,
-                level: r.get(21)?,
-                language: r.get(22)?,
-                requirements: r.get(23)?,
-                description: r.get(24)?,
-                notes: r.get(25)?,
-                filter_reason: r.get(26)?,
+                url: r.get(20)?,
+                contract: r.get(21)?,
+                level: r.get(22)?,
+                language: r.get(23)?,
+                requirements: r.get(24)?,
+                description: r.get(25)?,
+                notes: r.get(26)?,
                 expires_at: r.get(27)?,
                 deleted_at: r.get(28)?,
                 links: Vec::new(),
                 history: Vec::new(),
+                filters: Vec::new(),
             })
         })
         .optional()?
@@ -308,6 +368,7 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
     detail.history = stmt
         .query_map([id], |r| Ok(StageEvent { stage: r.get(0)?, at: r.get(1)? }))?
         .collect::<Result<_, _>>()?;
+    detail.filters = profiles::offer_filters(conn, id)?;
     Ok(detail)
 }
 
@@ -421,7 +482,7 @@ mod tests {
     fn adds_and_lists_an_offer_with_history() {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("Frontend Developer", "Firma Testowa", "manual")).unwrap());
-        let rows = list(&conn, View::Board).unwrap();
+        let rows = list(&conn, View::Board, None).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].stage, Stage::New);
         assert_eq!(rows[0].sources, vec!["manual"]);
@@ -448,7 +509,7 @@ mod tests {
         assert_eq!(d.row.salary_currency.as_deref(), Some("PLN"));
         assert_eq!(d.row.remote, Remote::Yes);
         assert_eq!(d.description.as_deref(), Some("Longer description of the role"));
-        assert_eq!(list(&conn, View::Board).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -472,12 +533,12 @@ mod tests {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap());
         trash(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board).unwrap().len(), 0);
-        assert_eq!(list(&conn, View::Trash).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 0);
+        assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 1);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Blocked);
 
         assert_eq!(purge(&mut conn, Some(id)).unwrap(), 1);
-        assert_eq!(list(&conn, View::Trash).unwrap().len(), 0);
+        assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 0);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap(), AddOutcome::Blocked);
     }
 
@@ -487,7 +548,7 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma C", "manual")).unwrap());
         assert!(matches!(purge(&mut conn, Some(id)), Err(AppError::NotFound)));
         assert_eq!(purge(&mut conn, None).unwrap(), 0);
-        assert_eq!(list(&conn, View::Board).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -496,7 +557,7 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma D", "manual")).unwrap());
         trash(&conn, id).unwrap();
         restore(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
         assert!(matches!(restore(&conn, id), Err(AppError::NotFound)));
     }
 

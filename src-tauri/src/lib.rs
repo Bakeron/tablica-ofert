@@ -1,10 +1,13 @@
+mod cities;
 mod clock;
 mod commands;
 mod db;
 mod dedup;
 mod error;
+mod filter;
 mod model;
 mod offers;
+mod profiles;
 mod secrets;
 mod settings;
 
@@ -47,6 +50,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_status,
             commands::list_offers,
+            commands::count_offers,
             commands::get_offer,
             commands::add_offer,
             commands::set_stage,
@@ -58,6 +62,11 @@ pub fn run() {
             commands::purge_offers,
             commands::get_settings,
             commands::set_setting,
+            commands::list_profiles,
+            commands::save_profile,
+            commands::delete_profile,
+            commands::get_experience,
+            commands::set_experience,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

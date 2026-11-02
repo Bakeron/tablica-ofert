@@ -54,7 +54,152 @@ word_enum!(SalaryPeriod { Month => "month", Hour => "hour" });
 
 word_enum!(FilterResult { Pass => "pass", Fail => "fail", Unsure => "unsure" });
 
-word_enum!(View { Board => "board", Rejected => "rejected", Trash => "trash" });
+word_enum!(View { Board => "board", Review => "review", Rejected => "rejected", Trash => "trash" });
+
+word_enum!(Contract { Uop => "uop", B2b => "b2b", Mandate => "mandate" });
+
+word_enum!(Level { Junior => "junior", Mid => "mid", Senior => "senior" });
+
+word_enum!(OfferLanguage { Pl => "pl", En => "en" });
+
+word_enum!(PayBasis { Gross => "gross", Net => "net" });
+
+// `fail` and `unsure` decide the filter result; `note` is only shown (e.g. "no salary range").
+word_enum!(ReasonKind { Fail => "fail", Unsure => "unsure", Note => "note" });
+
+/// Why the hard filter gave its result. The UI translates `code`; `value` is a detail
+/// taken from the offer or the profile (e.g. the matched phrase).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reason {
+    pub kind: ReasonKind,
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CityRule {
+    pub name: String,
+    /// 0 = only this city.
+    pub radius_km: u16,
+}
+
+impl Default for CityRule {
+    fn default() -> Self {
+        Self { name: String::new(), radius_km: 0 }
+    }
+}
+
+/// Salary expectation for one kind of contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SalaryRule {
+    /// Hard filter: offers that cannot reach this amount are rejected.
+    pub min: Option<i64>,
+    /// Only for the match score (AI) - never rejects.
+    pub expected: Option<i64>,
+    pub basis: PayBasis,
+    pub period: SalaryPeriod,
+}
+
+impl Default for SalaryRule {
+    fn default() -> Self {
+        Self { min: None, expected: None, basis: PayBasis::Gross, period: SalaryPeriod::Month }
+    }
+}
+
+/// Which criteria are hard filters; the rest is left to the match score (AI).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HardFlags {
+    pub location: bool,
+    pub contract: bool,
+    pub salary: bool,
+    pub level: bool,
+    pub language: bool,
+    pub companies: bool,
+    pub exclude_words: bool,
+    pub keywords: bool,
+}
+
+impl Default for HardFlags {
+    fn default() -> Self {
+        Self {
+            location: true,
+            contract: true,
+            salary: true,
+            level: true,
+            language: true,
+            companies: true,
+            exclude_words: true,
+            keywords: false,
+        }
+    }
+}
+
+/// Criteria of one profile. An empty list means "no requirement".
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Criteria {
+    pub keywords: Vec<String>,
+    /// Accepted forms of work: `yes` (remote), `hybrid`, `no` (office).
+    pub work_modes: Vec<Remote>,
+    pub cities: Vec<CityRule>,
+    /// Trips to an office outside my cities: `None` = no, `Some(n)` = up to n a month.
+    pub commute_per_month: Option<u8>,
+    pub contracts: Vec<Contract>,
+    pub levels: Vec<Level>,
+    pub languages: Vec<OfferLanguage>,
+    /// Employment contract and contract of mandate (amounts usually gross).
+    pub salary_uop: SalaryRule,
+    /// B2B (amounts usually net, without VAT).
+    pub salary_b2b: SalaryRule,
+    pub skip_companies: Vec<String>,
+    pub exclude_words: Vec<String>,
+    pub hard: HardFlags,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub criteria: Criteria,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileInput {
+    /// `None` = new profile.
+    pub id: Option<i64>,
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub criteria: Criteria,
+}
+
+/// Filter result of one offer for one profile (shown on the offer card).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileFilter {
+    pub profile_id: i64,
+    pub profile_name: String,
+    pub result: FilterResult,
+    pub reasons: Vec<Reason>,
+}
+
+/// Number of offers in every tab (for the chosen profile or all of them).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewCounts {
+    pub board: i64,
+    pub review: i64,
+    pub rejected: i64,
+    pub trash: i64,
+}
 
 /// One line on the board.
 #[derive(Debug, Clone, Serialize)]
@@ -78,6 +223,8 @@ pub struct OfferRow {
     pub sources: Vec<String>,
     pub expired: bool,
     pub filter_result: FilterResult,
+    /// Reasons behind `filter_result` (for the chosen profile, or the best one).
+    pub filter_reasons: Vec<Reason>,
     pub added_at: String,
 }
 
@@ -109,11 +256,12 @@ pub struct OfferDetail {
     pub requirements: Option<String>,
     pub description: Option<String>,
     pub notes: String,
-    pub filter_reason: Option<String>,
     pub expires_at: Option<String>,
     pub deleted_at: Option<String>,
     pub links: Vec<SourceLink>,
     pub history: Vec<StageEvent>,
+    /// Hard filter result for every profile.
+    pub filters: Vec<ProfileFilter>,
 }
 
 /// A new offer - typed in by hand now, later also from e-mail alerts and aggregators.

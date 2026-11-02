@@ -10,7 +10,7 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 use crate::model::*;
-use crate::{offers, settings};
+use crate::{offers, profiles, settings};
 
 pub struct AppState {
     /// `Err` = the database could not be opened safely; every call returns `Locked`.
@@ -46,9 +46,15 @@ pub async fn app_status(state: State<'_, AppState>, app: tauri::AppHandle) -> Ap
     })
 }
 
+/// `profile = null` - all profiles together.
 #[tauri::command]
-pub async fn list_offers(state: State<'_, AppState>, view: View) -> AppResult<Vec<OfferRow>> {
-    with_db(&state, |c| offers::list(c, view))
+pub async fn list_offers(state: State<'_, AppState>, view: View, profile: Option<i64>) -> AppResult<Vec<OfferRow>> {
+    with_db(&state, |c| offers::list(c, view, profile))
+}
+
+#[tauri::command]
+pub async fn count_offers(state: State<'_, AppState>, profile: Option<i64>) -> AppResult<ViewCounts> {
+    with_db(&state, |c| offers::counts(c, profile))
 }
 
 #[tauri::command]
@@ -105,4 +111,30 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<BTreeMap<Stri
 #[tauri::command]
 pub async fn set_setting(state: State<'_, AppState>, key: String, value: String) -> AppResult<()> {
     with_db(&state, |c| settings::set(c, &key, &value))
+}
+
+#[tauri::command]
+pub async fn list_profiles(state: State<'_, AppState>) -> AppResult<Vec<Profile>> {
+    with_db(&state, |c| profiles::list(c))
+}
+
+/// Saves the profile and re-checks every offer against it. Returns the profile id.
+#[tauri::command]
+pub async fn save_profile(state: State<'_, AppState>, profile: ProfileInput) -> AppResult<i64> {
+    with_db(&state, |c| profiles::save(c, profile))
+}
+
+#[tauri::command]
+pub async fn delete_profile(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    with_db(&state, |c| profiles::delete(c, id))
+}
+
+#[tauri::command]
+pub async fn get_experience(state: State<'_, AppState>) -> AppResult<String> {
+    with_db(&state, |c| profiles::experience(c))
+}
+
+#[tauri::command]
+pub async fn set_experience(state: State<'_, AppState>, text: String) -> AppResult<()> {
+    with_db(&state, |c| profiles::set_experience(c, &text))
 }

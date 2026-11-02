@@ -13,7 +13,10 @@ const BACKUP_DIR: &str = "kopie";
 const BACKUPS_KEPT: usize = 5;
 
 /// Schema changes, in order. A database at `user_version = n` has the first `n` applied.
-const MIGRATIONS: &[&str] = &[include_str!("migrations/001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/001_init.sql"),
+    include_str!("migrations/002_profiles.sql"),
+];
 
 /// Opens a SQLCipher database with a raw 256-bit key (64 hex chars) and checks that
 /// the key actually decrypts it.

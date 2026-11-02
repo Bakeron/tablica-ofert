@@ -7,21 +7,28 @@ import {
   type OfferDetail,
   type OfferInput,
   type OfferRow,
+  type Profile,
+  type ProfileInput,
   type Settings,
   type Stage,
   type View,
+  type ViewCounts,
 } from "./api/types";
 import { AddOfferDialog } from "./components/AddOfferDialog";
 import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { FirstSteps } from "./components/FirstSteps";
 import { IconBriefcase, IconGear, IconPlus, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
+import { ProfileDialog } from "./components/ProfileDialog";
+import { ProfileTabs } from "./components/ProfileTabs";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
 import { isWebUrl } from "./lib/format";
+import { viewFor } from "./lib/profile";
 
-const DEFAULT_SETTINGS: Settings = { theme: "system", language: "system", motion: "system", sound: "off" };
-const VIEWS: View[] = ["board", "rejected", "trash"];
+const DEFAULT_SETTINGS: Settings = { theme: "system", language: "system", motion: "system", sound: "off", onboarding: "done" };
+const VIEWS: View[] = ["board", "review", "rejected", "trash"];
 
 interface Toast {
   text: string;
@@ -43,6 +50,16 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirm, setConfirm] = useState<{ message: string; action: () => void } | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  /** null = all profiles together */
+  const [profileId, setProfileId] = useState<number | null>(null);
+  const [counts, setCounts] = useState<ViewCounts | null>(null);
+  /** Open profile window: `profile = null` - a new one. */
+  const [editing, setEditing] = useState<{ profile: Profile | null } | null>(null);
+  const [experience, setExperience] = useState("");
+  const [firstSteps, setFirstSteps] = useState(false);
+  /** Offer to select once the list of a newly opened tab has loaded. */
+  const [pendingSelect, setPendingSelect] = useState<number | null>(null);
   const cardHeading = useRef<HTMLHeadingElement>(null);
 
   // ----- language, theme, motion -----
@@ -91,7 +108,11 @@ export default function App() {
       setApi(a);
       const s = await a.appStatus();
       setStatus(s);
-      if (s.ok) setSettings(await a.getSettings());
+      if (!s.ok) return;
+      const [loaded, list] = await Promise.all([a.getSettings(), a.listProfiles()]);
+      setSettings(loaded);
+      setProfiles(list);
+      setFirstSteps(loaded.onboarding === "pending" && list.length === 0);
     }, fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -100,19 +121,27 @@ export default function App() {
     async (keepSelection = true) => {
       if (!api || !status?.ok) return;
       try {
-        const list = await api.listOffers(view);
+        const [list, numbers] = await Promise.all([api.listOffers(view, profileId), api.countOffers(profileId)]);
         setRows(list);
+        setCounts(numbers);
         setSelectedId((id) => (keepSelection && id !== null && list.some((r) => r.id === id) ? id : (list[0]?.id ?? null)));
       } catch (e) {
         fail(e);
       }
     },
-    [api, status, view, fail],
+    [api, status, view, profileId, fail],
   );
 
   useEffect(() => {
     reload(false);
   }, [reload]);
+
+  useEffect(() => {
+    if (pendingSelect !== null && rows.some((r) => r.id === pendingSelect)) {
+      setSelectedId(pendingSelect);
+      setPendingSelect(null);
+    }
+  }, [rows, pendingSelect]);
 
   useEffect(() => {
     if (!api || selectedId === null) {
@@ -152,14 +181,24 @@ export default function App() {
   const setInterest = (id: number, interest: Interest | null) => run(() => api!.setInterest(id, interest));
   const toggleInterest = (id: number, interest: Interest) => {
     const row = rows.find((r) => r.id === id);
-    setInterest(id, row?.interest === interest ? null : interest);
+    const next = row?.interest === interest ? null : interest;
+    // "Very" / "maybe" in "To check" or "Rejected": the offer moves to the board - keep the keyboard flow.
+    if ((view === "review" || view === "rejected") && (next === "high" || next === "maybe")) {
+      selectNeighbour(id);
+      return run(() => api!.setInterest(id, next), () => setToast({ text: t("board.movedToBoard") }));
+    }
+    return setInterest(id, next);
   };
 
-  const trash = (id: number) => {
-    // Keep the keyboard flow: the next row (or the previous one at the end) becomes selected.
+  /** The row is about to leave the list: the next one (or the previous one at the end) becomes selected. */
+  function selectNeighbour(id: number) {
     const i = sorted.findIndex((r) => r.id === id);
     const neighbour = sorted[i + 1] ?? sorted[i - 1];
     if (id === selectedId) setSelectedId(neighbour?.id ?? null);
+  }
+
+  const trash = (id: number) => {
+    selectNeighbour(id);
     return run(
       () => api!.trashOffer(id),
       () =>
@@ -178,16 +217,83 @@ export default function App() {
         setToast({ text: t("add.blocked") });
         return true;
       }
-      setToast({ text: t(outcome.status === "added" ? "add.added" : "add.merged") });
-      if (view !== "board") setView("board");
+      // Show the offer in the tab where the filter put it (all profiles together).
+      const added = await api.getOffer(outcome.id);
+      const target = viewFor(added);
+      const text =
+        outcome.status === "merged"
+          ? t("add.merged")
+          : target === "board"
+            ? t("add.added")
+            : t(target === "review" ? "add.landed.review" : "add.landed.rejected");
+      setToast({ text });
       setFreshIds(new Set([outcome.id]));
-      await reload();
-      setSelectedId(outcome.id);
+      if (view !== target || profileId !== null) {
+        // The list reloads for the new tab; the offer gets selected once it is there.
+        setPendingSelect(outcome.id);
+        setProfileId(null);
+        setView(target);
+      } else {
+        await reload();
+        setSelectedId(outcome.id);
+      }
       return true;
     } catch (e) {
       fail(e);
       return false;
     }
+  }
+
+  async function saveProfile(input: ProfileInput, newExperience: string): Promise<boolean> {
+    if (!api) return false;
+    try {
+      await api.saveProfile(input);
+      if (newExperience.trim() !== experience.trim()) {
+        await api.setExperience(newExperience);
+        setExperience(newExperience.trim());
+      }
+      setProfiles(await api.listProfiles());
+      await reload();
+      setToast({ text: t("profile.saved") });
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  }
+
+  function deleteProfile(profile: Profile) {
+    setConfirm({
+      message: t("profile.deleteConfirm", { name: profile.name }),
+      action: async () => {
+        if (!api) return;
+        try {
+          await api.deleteProfile(profile.id);
+          setEditing(null);
+          setProfiles(await api.listProfiles());
+          if (profileId === profile.id) setProfileId(null);
+          else await reload();
+          setToast({ text: t("profile.deleted") });
+        } catch (e) {
+          fail(e);
+        }
+      },
+    });
+  }
+
+  async function openProfile(profile: Profile | null) {
+    if (!api) return;
+    try {
+      setExperience(await api.getExperience());
+      setEditing({ profile });
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  function finishFirstSteps() {
+    setFirstSteps(false);
+    changeSetting("onboarding", "done");
   }
 
   function changeSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
@@ -221,6 +327,9 @@ export default function App() {
             {VIEWS.map((v) => (
               <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
                 {t(`tabs.${v}`)}
+                {counts && (v === "review" || v === "rejected") && counts[v] > 0 && (
+                  <span className="tab-count">{counts[v]}</span>
+                )}
               </button>
             ))}
           </nav>
@@ -280,9 +389,23 @@ export default function App() {
 
         <main className="split">
           <section className="board-panel" aria-labelledby="board-heading">
+            {view !== "trash" && (
+              <ProfileTabs
+                profiles={profiles}
+                current={profileId}
+                onPick={setProfileId}
+                onEdit={(p) => openProfile(p)}
+                onAdd={() => openProfile(null)}
+                disabled={locked}
+              />
+            )}
             <div className="board-head">
               <h2 id="board-heading">
-                {t(`tabs.${view}`)} <span className="count">· {t(plural(lang, "board.count", rows.length), { count: rows.length })}</span>
+                {t(`tabs.${view}`)}
+                {view !== "trash" && profileId !== null && (
+                  <span className="count"> · {profiles.find((p) => p.id === profileId)?.name}</span>
+                )}{" "}
+                <span className="count">· {t(plural(lang, "board.count", rows.length), { count: rows.length })}</span>
               </h2>
               <p className="keys-hint">{t("board.keys")}</p>
             </div>
@@ -341,6 +464,15 @@ export default function App() {
         </div>
 
         <AddOfferDialog open={adding} onClose={() => setAdding(false)} onSave={addOffer} />
+        <ProfileDialog
+          open={editing !== null}
+          profile={editing?.profile ?? null}
+          experience={experience}
+          onClose={() => setEditing(null)}
+          onSave={saveProfile}
+          onDelete={deleteProfile}
+        />
+        <FirstSteps open={firstSteps} onSaveProfile={saveProfile} onFinish={finishFirstSteps} />
         <SettingsDialog open={settingsOpen} settings={settings} onClose={() => setSettingsOpen(false)} onChange={changeSetting} />
         <ConfirmDialog
           message={confirm?.message ?? null}

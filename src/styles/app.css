@@ -1091,6 +1091,527 @@ textarea {
   accent-color: var(--signal);
 }
 
+/* ---------- profiles: direction signs on a gantry above the board ---------- */
+
+.gantry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.45rem 1rem;
+  background: var(--board-head);
+  border-bottom: 3px solid var(--signal);
+}
+
+.signs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sign-pair {
+  display: flex;
+}
+
+.sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.7rem;
+  border: 2px solid var(--signal);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--signal);
+  font-family: var(--font-board);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sign svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sign[aria-current="true"] {
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+.sign:hover:not(:disabled):not([aria-current="true"]) {
+  background: rgb(255 198 26 / 0.14);
+}
+
+.sign-pair .sign:first-child {
+  border-right-width: 1px;
+}
+
+.sign-edit {
+  padding: 0.2rem 0.45rem;
+  border-left-width: 1px;
+}
+
+.sign-add {
+  border-style: dashed;
+}
+
+.sign:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gantry-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--signal);
+}
+
+.tab-count {
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 2px;
+  background: var(--signal-ink);
+  color: var(--signal);
+  font-size: 0.85rem;
+}
+
+/* Why an offer is in "To check" / "Rejected by filter" */
+.offer-reason {
+  display: block;
+  margin-top: 0.2rem;
+  padding-left: 0.45rem;
+  border-left: 3px dashed var(--signal);
+  font-family: var(--font-text);
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.offer-reason-fail {
+  border-left-style: solid;
+  border-left-color: var(--danger);
+}
+
+/* ---------- filter result on the boarding pass ---------- */
+
+.verdicts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verdict-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.verdict-profile {
+  font-weight: 700;
+}
+
+.verdict {
+  padding: 0 0.45rem;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  font-family: var(--font-board);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.verdict-pass {
+  color: var(--hue-offer);
+}
+
+.verdict-unsure {
+  color: var(--accent-text);
+  border-style: dashed;
+}
+
+.verdict-fail {
+  color: var(--danger);
+}
+
+.verdict-why {
+  margin: 0.15rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+}
+
+span.verdict-why {
+  display: block;
+  padding-left: 0;
+  color: var(--paper-dim);
+}
+
+.why-note {
+  color: var(--paper-dim);
+}
+
+/* ---------- "?" help ---------- */
+
+.help-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.2rem;
+  padding: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--font-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: normal;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.help-btn[aria-expanded="true"] {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+}
+
+.help-text {
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-left: 3px solid var(--signal);
+  background: var(--field);
+  color: var(--paper-ink);
+  font-family: var(--font-text);
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.help-text[hidden] {
+  display: none;
+}
+
+/* ---------- profile window ---------- */
+
+fieldset.plain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.field-name {
+  max-width: 22rem;
+}
+
+.describe {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+.describe-questions {
+  align-self: start;
+  margin-top: 1.55rem;
+  padding: 0.5rem 0.8rem;
+  border: 1.5px dashed var(--perf);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: var(--paper-dim);
+}
+
+.describe-questions p {
+  margin: 0 0 0.3rem;
+  font-weight: 700;
+}
+
+.describe-questions ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.crit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 2px dashed var(--perf);
+}
+
+.crit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.crit-head h3 {
+  margin: 0;
+  font-family: var(--font-board);
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.crit-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.crit-group legend {
+  margin-bottom: 0.35rem;
+  padding: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.crit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.crit-row > .field {
+  flex: 1 1 18rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.chip input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border: 2px solid var(--paper-ink);
+  border-radius: 2px;
+  font-family: var(--font-board);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Ticked = yellow sign with a check mark - never colour alone. */
+.chip input:checked + span {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+}
+
+.chip input:checked + span::before {
+  content: "✓";
+}
+
+.chip input:focus-visible + span {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.hard-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hard-switch .help-btn {
+  margin-left: 0.4rem;
+}
+
+.hard-switch .help-text {
+  flex-basis: 100%;
+  max-width: 24rem;
+}
+
+.seg-small {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+.seg-small[aria-pressed="true"]::before {
+  content: "✓";
+}
+
+.city-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 11rem auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.btn-small {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.95rem;
+}
+
+.commute {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.commute .choice-item input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--signal);
+}
+
+.commute-count {
+  width: 4.5rem;
+}
+
+.salary-grid {
+  display: grid;
+  grid-template-columns: auto repeat(4, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+}
+
+.salary-head {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--paper-dim);
+}
+
+.salary-name {
+  font-weight: 700;
+}
+
+.sheet-foot-start {
+  margin-right: auto;
+}
+
+/* ---------- first steps: a route of three stops ---------- */
+
+.first-count {
+  font-family: var(--font-board);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+}
+
+.route {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-board);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+}
+
+.route-no {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+}
+
+.route li.is-here {
+  color: var(--paper-ink);
+}
+
+.route li.is-here .route-no {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+}
+
+.route li.is-done .route-no {
+  background: var(--paper-ink);
+  border-color: var(--paper-ink);
+  color: var(--paper);
+}
+
+.route svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.first-text {
+  max-width: 40rem;
+  font-size: 1.05rem;
+}
+
+@media (max-width: 700px) {
+  .describe {
+    grid-template-columns: 1fr;
+  }
+
+  .describe-questions {
+    margin-top: 0;
+  }
+
+  .salary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .salary-grid > span:empty,
+  .salary-head {
+    display: none;
+  }
+
+  .salary-name {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ---------- toast: one line on a small black board ---------- */
 
 .toast-zone {
@@ -1123,6 +1644,20 @@ textarea {
 @media (max-width: 1100px) {
   .keys-hint {
     display: none;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  .tabs {
+    order: 3;
+    width: 100%;
+  }
+
+  .tab {
+    white-space: nowrap;
   }
 
   .c-place {

@@ -1,16 +1,33 @@
 // In-memory stand-in for the Rust side, used only when the UI runs in a normal browser
 // (`npm run dev`) - for design work and screenshots. Data is made up and not saved.
+// Filter results are precomputed in the demo data; the real filter runs only in Rust.
+// `?firstrun` in the address starts without profiles, with "First steps".
 
-import { DEMO_OFFERS } from "../demo/offers";
+import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
+import { bestResult, isKept } from "../lib/profile";
 import type { Api } from "./index";
-import type { OfferDetail, Settings } from "./types";
+import type { OfferDetail, Profile, Settings, View } from "./types";
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 export function createMockApi(): Api {
+  const firstRun = typeof location !== "undefined" && new URLSearchParams(location.search).has("firstrun");
   let nextId = 1;
   const offers = new Map<number, OfferDetail>();
-  const settings: Settings = { theme: "system", language: "system", motion: "system", sound: "off" };
+  /** offer id → profile id → filter result */
+  const filters = new Map<number, Map<number, DemoFilter>>();
+  let profiles: Profile[] = firstRun
+    ? []
+    : DEMO_PROFILES.map((p, i) => ({ id: i + 1, position: i, ...structuredClone(p) }));
+  let nextProfileId = profiles.length + 1;
+  let experience = firstRun ? "" : "4 lata jako frontend developer (React, TypeScript), angielski B2.";
+  const settings: Settings = {
+    theme: "system",
+    language: "system",
+    motion: "system",
+    sound: "off",
+    onboarding: firstRun ? "pending" : "done",
+  };
 
   for (const demo of DEMO_OFFERS) {
     const id = nextId++;
@@ -36,6 +53,7 @@ export function createMockApi(): Api {
       sources: [input.source, ...(demo.extraSources ?? [])].sort(),
       expired: false,
       filterResult: "pass",
+      filterReasons: [],
       addedAt: added,
       url: input.url ?? null,
       contract: input.contract ?? null,
@@ -44,7 +62,6 @@ export function createMockApi(): Api {
       requirements: input.requirements ?? null,
       description: input.description ?? null,
       notes: demo.notes ?? "",
-      filterReason: null,
       expiresAt: null,
       deletedAt: null,
       links: [input.source, ...(demo.extraSources ?? [])].map((source) => ({
@@ -53,7 +70,11 @@ export function createMockApi(): Api {
         firstSeen: added,
       })),
       history: stage === "new" ? [{ stage, at: added }] : [{ stage: "new", at: added }, { stage, at: added }],
+      filters: [],
     });
+    const byProfile = new Map<number, DemoFilter>();
+    profiles.forEach((p, i) => byProfile.set(p.id, demo.filters?.[i] ?? { result: "pass" }));
+    filters.set(id, byProfile);
   }
 
   const find = (id: number) => {
@@ -63,20 +84,54 @@ export function createMockApi(): Api {
   };
   const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
+  /** Result and reasons for one profile, or the best one over all profiles. */
+  function filterOf(id: number, profile: number | null): DemoFilter {
+    const byProfile = filters.get(id) ?? new Map();
+    if (profile !== null) return byProfile.get(profile) ?? { result: "pass" };
+    const ordered = profiles.map((p) => byProfile.get(p.id) ?? { result: "pass" as const });
+    const result = bestResult(ordered.map((f) => f.result));
+    return ordered.find((f) => f.result === result) ?? { result };
+  }
+
+  function row(o: OfferDetail, profile: number | null): OfferDetail {
+    const f = filterOf(o.id, profile);
+    return { ...o, filterResult: f.result, filterReasons: f.reasons ?? [] };
+  }
+
+  function inView(o: OfferDetail, view: View): boolean {
+    if (view === "trash") return o.deletedAt !== null;
+    if (o.deletedAt) return false;
+    if (view === "board") return o.filterResult === "pass" || isKept(o);
+    return !isKept(o) && o.filterResult === (view === "review" ? "unsure" : "fail");
+  }
+
+  const rowsOf = (view: View, profile: number | null) =>
+    [...offers.values()].map((o) => row(o, profile)).filter((o) => inView(o, view));
+
   return {
     async appStatus() {
       return { ok: true, problem: null, version: "0.1.0-preview" };
     },
-    async listOffers(view) {
-      return [...offers.values()]
-        .filter((o) =>
-          view === "trash" ? o.deletedAt : !o.deletedAt && (view === "rejected") === (o.filterResult === "fail"),
-        )
-        .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
-        .map((o) => ({ ...o }));
+    async listOffers(view, profile) {
+      return rowsOf(view, profile).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+    },
+    async countOffers(profile) {
+      return {
+        board: rowsOf("board", profile).length,
+        review: rowsOf("review", profile).length,
+        rejected: rowsOf("rejected", profile).length,
+        trash: rowsOf("trash", profile).length,
+      };
     },
     async getOffer(id) {
-      return structuredClone(find(id));
+      const o = find(id);
+      return {
+        ...structuredClone(row(o, null)),
+        filters: profiles.map((p) => {
+          const f = filterOf(id, p.id);
+          return { profileId: p.id, profileName: p.name, result: f.result, reasons: f.reasons ?? [] };
+        }),
+      };
     },
     async addOffer(input) {
       const key = (input.company + "|" + input.title).toLowerCase();
@@ -108,6 +163,7 @@ export function createMockApi(): Api {
         sources: [input.source],
         expired: false,
         filterResult: "pass",
+        filterReasons: [],
         addedAt: at,
         url: input.url ?? null,
         contract: input.contract ?? null,
@@ -116,12 +172,13 @@ export function createMockApi(): Api {
         requirements: input.requirements ?? null,
         description: input.description ?? null,
         notes: "",
-        filterReason: null,
         expiresAt: null,
         deletedAt: null,
         links: [{ source: input.source, url: input.url ?? null, firstSeen: at }],
         history: [{ stage: "new", at }],
+        filters: [],
       });
+      filters.set(id, new Map());
       return { status: "added", id };
     },
     async setStage(id, stage) {
@@ -162,6 +219,37 @@ export function createMockApi(): Api {
     },
     async setSetting(key, value) {
       settings[key] = value;
+    },
+    async listProfiles() {
+      return structuredClone(profiles);
+    },
+    async saveProfile(input) {
+      if (!input.name.trim() || !input.description.trim()) throw { code: "invalid", detail: "name and description are required" };
+      if (input.id !== null) {
+        const p = profiles.find((x) => x.id === input.id);
+        if (!p) throw { code: "not_found", detail: "not found" };
+        Object.assign(p, structuredClone({ name: input.name.trim(), description: input.description.trim(), criteria: input.criteria }));
+        return p.id;
+      }
+      const id = nextProfileId++;
+      profiles.push({
+        id,
+        position: profiles.length,
+        name: input.name.trim(),
+        description: input.description.trim(),
+        criteria: structuredClone(input.criteria),
+      });
+      return id;
+    },
+    async deleteProfile(id) {
+      profiles = profiles.filter((p) => p.id !== id);
+      for (const byProfile of filters.values()) byProfile.delete(id);
+    },
+    async getExperience() {
+      return experience;
+    },
+    async setExperience(text) {
+      experience = text.trim();
     },
   };
 }

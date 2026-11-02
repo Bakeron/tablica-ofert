@@ -74,3 +74,16 @@ export const IconClose = () => (
     <path d="M6 6l12 12M18 6 6 18" />
   </Icon>
 );
+
+export const IconPencil = () => (
+  <Icon>
+    <path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4" />
+  </Icon>
+);
+
+/** Wayfinding arrow, as on direction signs. */
+export const IconArrowRight = () => (
+  <Icon>
+    <path d="M4 12h15M13 6l6 6-6 6" />
+  </Icon>
+);

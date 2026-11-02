@@ -1,7 +1,53 @@
 // Made-up sample offers for screenshots and the design preview.
 // Every company, person and number here is invented.
 
-import type { Interest, OfferInput, Stage } from "../api/types";
+import type { Criteria, FilterResult, Interest, OfferInput, Reason, Stage } from "../api/types";
+import { emptyCriteria } from "../lib/profile";
+
+export interface DemoProfile {
+  name: string;
+  description: string;
+  criteria: Criteria;
+}
+
+/** Made-up job seeker with two plans. */
+export const DEMO_PROFILES: DemoProfile[] = [
+  {
+    name: "Plan A - zdalnie",
+    description:
+      "Szukam pracy jako frontend developer (React, TypeScript), w pełni zdalnie, w małym zespole produktowym. Nie chcę pracy w software house z ciągłą zmianą klientów.",
+    criteria: {
+      ...emptyCriteria(),
+      keywords: ["React", "TypeScript"],
+      workModes: ["yes"],
+      commutePerMonth: 2,
+      contracts: ["uop", "b2b"],
+      levels: ["mid"],
+      salaryUop: { min: 10000, expected: 13000, basis: "gross", period: "month" },
+      salaryB2b: { min: 13000, expected: 16000, basis: "net", period: "month" },
+      excludeWords: ["sprzedaż bezpośrednia"],
+    },
+  },
+  {
+    name: "Plan B - Wrocław",
+    description: "Praca w biurze albo hybrydowo we Wrocławiu lub okolicy, na umowę o pracę. Może być szerzej niż frontend.",
+    criteria: {
+      ...emptyCriteria(),
+      workModes: ["hybrid", "no"],
+      cities: [{ name: "Wrocław", radiusKm: 30 }],
+      contracts: ["uop"],
+      salaryUop: { min: 9000, expected: 11000, basis: "gross", period: "month" },
+    },
+  },
+];
+
+/** Precomputed filter result for one demo profile (the preview does not run the Rust filter). */
+export interface DemoFilter {
+  result: FilterResult;
+  reasons?: Reason[];
+}
+
+const fit: DemoFilter = { result: "pass" };
 
 export interface DemoOffer {
   input: OfferInput;
@@ -13,6 +59,8 @@ export interface DemoOffer {
   scoreSource?: "ai" | "keywords";
   hoursAgo: number;
   notes?: string;
+  /** One entry per DEMO_PROFILES item. */
+  filters?: [DemoFilter, DemoFilter];
 }
 
 export const DEMO_OFFERS: DemoOffer[] = [
@@ -21,6 +69,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
     score: 87,
     scoreSource: "ai",
     extraSources: ["jjit", "nfj"],
+    filters: [fit, fit],
     input: {
       title: "Frontend Developer (React)",
       company: "Latarnia Labs",
@@ -44,6 +93,10 @@ export const DEMO_OFFERS: DemoOffer[] = [
     scoreSource: "ai",
     stage: "interested",
     interest: "high",
+    filters: [
+      { result: "pass", reasons: [{ kind: "note", code: "commute_ok", value: "2" }] },
+      { result: "fail", reasons: [{ kind: "fail", code: "hybrid_outside", value: "Poznań" }] },
+    ],
     input: {
       title: "Android Developer",
       company: "Bursztyn Soft",
@@ -67,6 +120,22 @@ export const DEMO_OFFERS: DemoOffer[] = [
     stage: "applied",
     interest: "maybe",
     notes: "Wysłane przez formularz na stronie firmy.",
+    filters: [
+      {
+        result: "fail",
+        reasons: [
+          { kind: "unsure", code: "commute_unknown" },
+          { kind: "fail", code: "salary_low" },
+        ],
+      },
+      {
+        result: "fail",
+        reasons: [
+          { kind: "fail", code: "hybrid_outside", value: "Łódź" },
+          { kind: "fail", code: "contract_mismatch", value: "B2B" },
+        ],
+      },
+    ],
     input: {
       title: "Data Analyst",
       company: "Mewa Systems",
@@ -90,6 +159,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
     interest: "high",
     favorite: true,
     extraSources: ["remotive"],
+    filters: [fit, { result: "unsure", reasons: [{ kind: "unsure", code: "remote_not_wanted" }] }],
     input: {
       title: "Backend Developer (Node.js)",
       company: "Pieczątka.io",
@@ -110,6 +180,23 @@ export const DEMO_OFFERS: DemoOffer[] = [
     hoursAgo: 50,
     score: 55,
     scoreSource: "ai",
+    filters: [
+      {
+        result: "fail",
+        reasons: [
+          { kind: "unsure", code: "remote_unknown" },
+          { kind: "fail", code: "level_mismatch", value: "junior" },
+          { kind: "note", code: "no_salary" },
+        ],
+      },
+      {
+        result: "fail",
+        reasons: [
+          { kind: "fail", code: "office_outside", value: "Warszawa" },
+          { kind: "note", code: "no_salary" },
+        ],
+      },
+    ],
     input: {
       title: "QA Engineer",
       company: "Zielony Kwadrat",
@@ -129,6 +216,16 @@ export const DEMO_OFFERS: DemoOffer[] = [
     scoreSource: "ai",
     stage: "tech_stage",
     interest: "maybe",
+    filters: [
+      { result: "unsure", reasons: [{ kind: "unsure", code: "salary_currency", value: "EUR" }] },
+      {
+        result: "fail",
+        reasons: [
+          { kind: "unsure", code: "remote_not_wanted" },
+          { kind: "fail", code: "contract_mismatch", value: "B2B" },
+        ],
+      },
+    ],
     input: {
       title: "Full Stack Developer",
       company: "Szkło i Stal",
@@ -152,6 +249,16 @@ export const DEMO_OFFERS: DemoOffer[] = [
     scoreSource: "keywords",
     stage: "rejected",
     interest: "no",
+    filters: [
+      {
+        result: "fail",
+        reasons: [
+          { kind: "fail", code: "office_not_wanted" },
+          { kind: "fail", code: "level_mismatch", value: "junior" },
+        ],
+      },
+      { result: "fail", reasons: [{ kind: "fail", code: "office_outside", value: "Kraków" }] },
+    ],
     input: {
       title: "Junior Developer",
       company: "Kawiarnia Kodu",
@@ -165,6 +272,139 @@ export const DEMO_OFFERS: DemoOffer[] = [
       level: "junior",
       language: "pl",
       description: "Praca wyłącznie stacjonarna w biurze w Krakowie.",
+    },
+  },
+  {
+    hoursAgo: 0.3,
+    score: 79,
+    scoreSource: "keywords",
+    filters: [
+      { result: "pass", reasons: [{ kind: "note", code: "work_mode_in_text", value: "praca zdalna" }] },
+      { result: "unsure", reasons: [{ kind: "unsure", code: "remote_not_wanted" }] },
+    ],
+    input: {
+      title: "React Developer",
+      company: "Przystań Tech",
+      source: "manual",
+      url: "https://example.com/oferty/przystan-react",
+      city: "Katowice",
+      remote: "unknown",
+      salaryMin: 11000,
+      salaryMax: 14000,
+      contract: "UoP",
+      level: "mid",
+      language: "pl",
+      requirements: "React, TypeScript, React Query.",
+      description: "Aplikacja do rezerwacji kortów i hal sportowych. Biuro w Katowicach, możliwa praca zdalna.",
+    },
+  },
+  {
+    hoursAgo: 3,
+    filters: [
+      {
+        result: "unsure",
+        reasons: [
+          { kind: "unsure", code: "remote_unknown" },
+          { kind: "unsure", code: "level_unknown" },
+          { kind: "unsure", code: "contract_unknown" },
+          { kind: "note", code: "no_salary" },
+        ],
+      },
+      { result: "fail", reasons: [{ kind: "fail", code: "office_outside", value: "Gdańsk" }] },
+    ],
+    input: {
+      title: "Specjalista wsparcia IT",
+      company: "Wydma Serwis",
+      source: "pracuj",
+      url: "https://example.com/oferty/wydma-wsparcie",
+      city: "Gdańsk",
+      remote: "unknown",
+    },
+  },
+  {
+    hoursAgo: 5,
+    filters: [
+      {
+        result: "unsure",
+        reasons: [
+          { kind: "unsure", code: "remote_unknown" },
+          { kind: "unsure", code: "contract_unknown" },
+          { kind: "note", code: "no_salary" },
+        ],
+      },
+      {
+        result: "unsure",
+        reasons: [
+          { kind: "unsure", code: "contract_unknown" },
+          { kind: "note", code: "no_salary" },
+        ],
+      },
+    ],
+    input: {
+      title: "Frontend Developer (Vue)",
+      company: "Lampion Studio",
+      source: "jjit",
+      url: "https://example.com/oferty/lampion-vue",
+      city: "Wrocław",
+      remote: "unknown",
+      level: "mid",
+      description: "Sklep internetowy z ręcznie robioną ceramiką. Vue 3, Nuxt, Tailwind.",
+    },
+  },
+  {
+    hoursAgo: 8,
+    filters: [
+      {
+        result: "fail",
+        reasons: [
+          { kind: "fail", code: "commute_too_often", value: "12" },
+          { kind: "fail", code: "level_mismatch", value: "senior" },
+        ],
+      },
+      {
+        result: "fail",
+        reasons: [
+          { kind: "fail", code: "hybrid_outside", value: "Warszawa" },
+          { kind: "fail", code: "contract_mismatch", value: "B2B" },
+        ],
+      },
+    ],
+    input: {
+      title: "Senior Frontend Engineer",
+      company: "Kometa Group",
+      source: "nfj",
+      url: "https://example.com/oferty/kometa-senior",
+      city: "Warszawa",
+      remote: "hybrid",
+      salaryMin: 20000,
+      salaryMax: 26000,
+      contract: "B2B",
+      level: "senior",
+      language: "pl",
+      description: "Platforma rozliczeń dla sieci kin. Praca hybrydowa: 3 dni w tygodniu w biurze.",
+    },
+  },
+  {
+    hoursAgo: 28,
+    score: 66,
+    scoreSource: "keywords",
+    filters: [
+      { result: "pass", reasons: [{ kind: "note", code: "commute_ok", value: "1" }] },
+      { result: "fail", reasons: [{ kind: "fail", code: "hybrid_outside", value: "Poznań" }] },
+    ],
+    input: {
+      title: "Projektant UI (TypeScript)",
+      company: "Kreska i Punkt",
+      source: "adzuna",
+      url: "https://example.com/oferty/kreska-ui",
+      city: "Poznań",
+      remote: "hybrid",
+      salaryMin: 9000,
+      salaryMax: 11000,
+      contract: "UoP",
+      level: "mid",
+      language: "pl",
+      description: "Projektujemy i składamy interfejsy aplikacji dla bibliotek miejskich. Raz w miesiącu w biurze.",
     },
   },
 ];

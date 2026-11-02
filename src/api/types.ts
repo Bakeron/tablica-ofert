@@ -17,7 +17,93 @@ export type Interest = "high" | "maybe" | "no";
 export type Remote = "yes" | "hybrid" | "no" | "unknown";
 export type SalaryPeriod = "month" | "hour";
 export type FilterResult = "pass" | "fail" | "unsure";
-export type View = "board" | "rejected" | "trash";
+export type View = "board" | "review" | "rejected" | "trash";
+export type Contract = "uop" | "b2b" | "mandate";
+export type Level = "junior" | "mid" | "senior";
+export type OfferLanguage = "pl" | "en";
+export type PayBasis = "gross" | "net";
+export type ReasonKind = "fail" | "unsure" | "note";
+
+/** Why the hard filter gave its result; the UI translates `code` (`filter.reason.<code>`). */
+export interface Reason {
+  kind: ReasonKind;
+  code: string;
+  value?: string;
+}
+
+export interface CityRule {
+  name: string;
+  /** 0 = only this city. */
+  radiusKm: number;
+}
+
+export interface SalaryRule {
+  /** Hard filter - offers that cannot reach it are rejected. */
+  min: number | null;
+  /** Only for the match score. */
+  expected: number | null;
+  basis: PayBasis;
+  period: SalaryPeriod;
+}
+
+/** Which criteria are hard filters; the rest only feeds the match score. */
+export interface HardFlags {
+  location: boolean;
+  contract: boolean;
+  salary: boolean;
+  level: boolean;
+  language: boolean;
+  companies: boolean;
+  excludeWords: boolean;
+  keywords: boolean;
+}
+
+export interface Criteria {
+  keywords: string[];
+  /** Accepted forms of work: "yes" (remote), "hybrid", "no" (office). */
+  workModes: Remote[];
+  cities: CityRule[];
+  /** Office trips outside my cities: null = no, n = up to n a month. */
+  commutePerMonth: number | null;
+  contracts: Contract[];
+  levels: Level[];
+  languages: OfferLanguage[];
+  salaryUop: SalaryRule;
+  salaryB2b: SalaryRule;
+  skipCompanies: string[];
+  excludeWords: string[];
+  hard: HardFlags;
+}
+
+export interface Profile {
+  id: number;
+  name: string;
+  description: string;
+  criteria: Criteria;
+  position: number;
+}
+
+export interface ProfileInput {
+  /** null = new profile. */
+  id: number | null;
+  name: string;
+  description: string;
+  criteria: Criteria;
+}
+
+export interface ProfileFilter {
+  profileId: number;
+  profileName: string;
+  result: FilterResult;
+  reasons: Reason[];
+}
+
+export interface ViewCounts {
+  board: number;
+  review: number;
+  rejected: number;
+  trash: number;
+}
 
 export interface OfferRow {
   id: number;
@@ -38,6 +124,8 @@ export interface OfferRow {
   sources: string[];
   expired: boolean;
   filterResult: FilterResult;
+  /** Reasons behind `filterResult` (for the chosen profile, or the best one). */
+  filterReasons: Reason[];
   addedAt: string;
 }
 
@@ -60,11 +148,12 @@ export interface OfferDetail extends OfferRow {
   requirements: string | null;
   description: string | null;
   notes: string;
-  filterReason: string | null;
   expiresAt: string | null;
   deletedAt: string | null;
   links: SourceLink[];
   history: StageEvent[];
+  /** Hard filter result for every profile. */
+  filters: ProfileFilter[];
 }
 
 export interface OfferInput {
@@ -102,6 +191,8 @@ export interface Settings {
   language: "system" | "pl" | "en";
   motion: "system" | "full" | "reduced";
   sound: "off" | "on";
+  /** "First steps" at the first start, until finished or skipped. */
+  onboarding: "pending" | "done";
 }
 
 /** Error shape sent by the Rust side (`AppError`). */

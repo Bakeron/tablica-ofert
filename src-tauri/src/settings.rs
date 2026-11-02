@@ -13,6 +13,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("language", &["system", "pl", "en"]),
     ("motion", &["system", "full", "reduced"]),
     ("sound", &["off", "on"]),
+    // "First steps" shown at the first start until finished or skipped.
+    ("onboarding", &["pending", "done"]),
 ];
 
 pub fn all(conn: &Connection) -> AppResult<BTreeMap<String, String>> {

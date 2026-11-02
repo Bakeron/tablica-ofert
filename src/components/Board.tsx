@@ -2,6 +2,7 @@ import type { KeyboardEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { addedLabel, placeLabel, salaryShort } from "../lib/format";
+import { reasonText, sortedReasons } from "../lib/profile";
 import { Flap } from "./Flap";
 import { IconStar } from "./Icons";
 import { StatusTag } from "./StatusTag";
@@ -162,6 +163,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                       {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}
                     </span>
                   )}
+                  {(view === "review" || view === "rejected") && <RowReasons row={o} />}
                 </td>
                 <td className="c-place">
                   <Flap text={placeLabel(o, t)} fresh={fresh} />
@@ -188,6 +190,24 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Why the offer is in "To check" / "Rejected by filter" - the first two reasons, in words. */
+function RowReasons({ row }: { row: OfferRow }) {
+  const { t } = useI18n();
+  const reasons = sortedReasons(row.filterReasons).filter((r) => r.kind !== "note");
+  if (reasons.length === 0) return null;
+  const more = reasons.length > 2 ? ` · +${reasons.length - 2}` : "";
+  return (
+    <span className={`offer-reason offer-reason-${row.filterResult}`}>
+      <span className="sr-only">{t(`filter.result.${row.filterResult}`)}: </span>
+      {reasons
+        .slice(0, 2)
+        .map((r) => reasonText(r, t))
+        .join(" · ")}
+      {more}
+    </span>
   );
 }
 

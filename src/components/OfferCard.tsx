@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useState } from "react";
-import { STAGES, type Interest, type OfferDetail, type Stage } from "../api/types";
+import { STAGES, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { useI18n } from "../i18n";
 import { fullDate, isWebUrl, placeLabel, salaryFull } from "../lib/format";
+import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
 import { IconArrowOut, IconRestore, IconStar, IconTrash } from "./Icons";
 import { StatusTag } from "./StatusTag";
@@ -151,6 +152,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </div>
         )}
 
+        <FilterResults filters={offer.filters} />
+
         <dl className="pass-details">
           <div>
             <dt>{t("card.level")}</dt>
@@ -229,6 +232,48 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
     </aside>
   );
 });
+
+const VERDICT_MARK = { pass: "✓", unsure: "?", fail: "✕" } as const;
+
+/** Hard filter result for every profile, with the reasons in plain words. */
+function FilterResults({ filters }: { filters: ProfileFilter[] }) {
+  const { t } = useI18n();
+  return (
+    <section className="pass-text">
+      <h3 className="pass-label">{t("filter.title")}</h3>
+      {filters.length === 0 ? (
+        <p className="pass-meta">{t("filter.noProfiles")}</p>
+      ) : (
+        <ul className="verdicts">
+          {filters.map((f) => {
+            const reasons = sortedReasons(f.reasons);
+            return (
+              <li key={f.profileId}>
+                <span className="verdict-head">
+                  <span className="verdict-profile">{f.profileName}</span>
+                  <span className={`verdict verdict-${f.result}`}>
+                    <span aria-hidden="true">{VERDICT_MARK[f.result]}</span> {t(`filter.result.${f.result}`)}
+                  </span>
+                </span>
+                {reasons.length === 0 ? (
+                  <span className="verdict-why">{t("filter.allFine")}</span>
+                ) : (
+                  <ul className="verdict-why">
+                    {reasons.map((r, i) => (
+                      <li key={i} className={`why-${r.kind}`}>
+                        {reasonText(r, t)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function Stamp({ offer }: { offer: OfferDetail }) {
   const { t } = useI18n();
