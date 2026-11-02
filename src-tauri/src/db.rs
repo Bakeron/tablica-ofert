@@ -100,7 +100,9 @@ fn list_backups(dir: &Path) -> AppResult<Vec<PathBuf>> {
 /// Full startup: key from the credential store (created on first run), open, back up, migrate.
 /// Any failure leaves the app without a connection - writes stay blocked instead of
 /// silently starting with an empty list.
-pub fn open_app_database(data_dir: &Path) -> AppResult<Connection> {
+/// `backup` = false for the hourly background run - otherwise five hourly copies would push
+/// out the older, possibly still good ones.
+pub fn open_app_database(data_dir: &Path, backup: bool) -> AppResult<Connection> {
     fs::create_dir_all(data_dir)?;
     let path = data_dir.join(DB_FILE);
     let exists = path.exists();
@@ -118,7 +120,7 @@ pub fn open_app_database(data_dir: &Path) -> AppResult<Connection> {
         }
     };
     let mut conn = open(&path, &key)?;
-    if exists {
+    if exists && backup {
         // Not fatal: the app still works, the next start tries again.
         if let Err(e) = backup_if_changed(&path, &crate::clock::file_stamp()) {
             eprintln!("backup failed: {e}");

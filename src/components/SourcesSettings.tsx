@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Api } from "../api";
-import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
+import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type TaskStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate } from "../lib/format";
 import { IconArrowOut, IconWarning } from "./Icons";
@@ -30,6 +30,24 @@ export function SourcesSettings({
   const { t, lang } = useI18n();
   const [status, setStatus] = useState<SourceStatus[]>([]);
   const [hints, setHints] = useState<SecretHints>({});
+  const [task, setTask] = useState<TaskStatus | null>(null);
+  const [taskBusy, setTaskBusy] = useState(false);
+
+  useEffect(() => {
+    api.backgroundStatus().then(setTask, onError);
+  }, [api, onError]);
+
+  async function toggleBackground(on: boolean) {
+    setTaskBusy(true);
+    try {
+      setTask(await api.setBackground(on));
+      onChange("background_task", on ? "on" : "off");
+    } catch (e) {
+      onError(e);
+    } finally {
+      setTaskBusy(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +115,18 @@ export function SourcesSettings({
           </label>
         )}
         <p className="hint">{t("src.keywordsNote")}</p>
+        <label className="choice-item">
+          <input type="checkbox" checked={settings.background_task === "on"} disabled={taskBusy} onChange={(e) => toggleBackground(e.target.checked)} />
+          <span>{t("bg.label")}</span>
+        </label>
+        <p className="hint">
+          {t("bg.hint")}{" "}
+          {task && <strong>{task.exists ? t("bg.exists") : t("bg.missing")}</strong>}
+        </p>
+        <label className="choice-item">
+          <input type="checkbox" checked={settings.notify_new === "on"} onChange={(e) => onChange("notify_new", e.target.checked ? "on" : "off")} />
+          <span>{t("bg.notify")}</span>
+        </label>
       </fieldset>
 
       <section className="source" aria-labelledby="src-adzuna">

@@ -31,6 +31,10 @@ const ALLOWED: &[(&str, Rule)] = &[
     // Collect offers at start and every few hours while the app is open.
     ("fetch_auto", Rule::One(&["on", "off"])),
     ("fetch_every", Rule::One(&["6", "3", "12"])),
+    // Task Scheduler runs the app hourly without a window (only the installed app sets it up).
+    ("background_task", Rule::One(&["on", "off"])),
+    // Windows notification about new offers on the board.
+    ("notify_new", Rule::One(&["on", "off"])),
     ("source_adzuna", Rule::One(&["off", "on"])),
     ("source_remotive", Rule::One(&["off", "on"])),
     ("adzuna_country", Rule::One(ADZUNA_COUNTRIES)),

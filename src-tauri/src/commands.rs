@@ -315,3 +315,21 @@ pub async fn update_description(state: State<'_, AppState>, app: tauri::AppHandl
     }
     Ok(changed)
 }
+
+// ---------- collecting while the app is closed ----------
+
+#[tauri::command]
+pub async fn background_status() -> AppResult<crate::scheduler::TaskStatus> {
+    tauri::async_runtime::spawn_blocking(crate::scheduler::status)
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// Turns the Task Scheduler task on or off and returns its real state.
+#[tauri::command]
+pub async fn set_background(state: State<'_, AppState>, on: bool) -> AppResult<crate::scheduler::TaskStatus> {
+    with_db(&state, |c| settings::set(c, "background_task", if on { "on" } else { "off" }))?;
+    tauri::async_runtime::spawn_blocking(move || crate::scheduler::sync(on))
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?
+}

@@ -483,6 +483,13 @@ export function createMockApi(): Api {
       };
     },
     async closePreview() {},
+    async backgroundStatus() {
+      return { exists: settings.background_task === "on" };
+    },
+    async setBackground(on) {
+      settings.background_task = on ? "on" : "off";
+      return { exists: on };
+    },
     async updateDescription(id, text) {
       const o = find(id);
       if (text.trim().length <= (o.description ?? "").length) return false;

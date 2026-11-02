@@ -505,4 +505,10 @@ export const en: Record<keyof typeof pl, string> = {
   "full.cancel": "Close preview",
   "full.saved": "Full description saved - AI will score the offer again",
   "full.notLonger": "The page description is not longer than the saved one - nothing changed",
+
+  "bg.label": "Collect also while the app is closed",
+  "bg.hint": "Windows Task Scheduler starts the app every hour without a window: it collects offers, shows a notification and quits. The app does not start with Windows. Turning this off or uninstalling removes the task.",
+  "bg.exists": "State: the task is in Task Scheduler.",
+  "bg.missing": "State: the task is not in Task Scheduler.",
+  "bg.notify": "Windows notification about new offers on the board",
 };

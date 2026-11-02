@@ -8,6 +8,7 @@ import type {
   Criteria,
   Machine,
   RateReport,
+  TaskStatus,
   FetchReport,
   SecretHints,
   SecretName,
@@ -80,6 +81,10 @@ export interface Api {
   /** "Take the text from the page" in the preview window. */
   capturePreview(): Promise<Captured>;
   closePreview(): Promise<void>;
+  /** Is the Task Scheduler task really there? */
+  backgroundStatus(): Promise<TaskStatus>;
+  /** Turns collecting with the app closed on or off; returns the real state. */
+  setBackground(on: boolean): Promise<TaskStatus>;
   /** Saves a longer description from the offer page; returns whether it changed. */
   updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
@@ -134,6 +139,8 @@ async function tauriApi(): Promise<Api> {
     openPreview: (url) => invoke("open_preview", { url }),
     capturePreview: () => invoke("capture_preview"),
     closePreview: () => invoke("close_preview"),
+    backgroundStatus: () => invoke("background_status"),
+    setBackground: (on) => invoke("set_background", { on }),
     updateDescription: (id, text) => invoke("update_description", { id, text }),
     onRated: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");

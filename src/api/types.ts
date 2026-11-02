@@ -257,6 +257,10 @@ export interface Settings {
   /** Collect offers at start and every few hours while the app is open. */
   fetch_auto: "on" | "off";
   fetch_every: "3" | "6" | "12";
+  /** Task Scheduler runs the app hourly without a window. */
+  background_task: "on" | "off";
+  /** Windows notification about new offers. */
+  notify_new: "on" | "off";
   source_adzuna: "off" | "on";
   source_remotive: "off" | "on";
   adzuna_country: AdzunaCountry;
@@ -283,6 +287,8 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarding: "done",
   fetch_auto: "on",
   fetch_every: "6",
+  background_task: "on",
+  notify_new: "on",
   source_adzuna: "off",
   source_remotive: "off",
   adzuna_country: "pl",
@@ -391,4 +397,9 @@ export interface Captured {
   url: string;
   title: string;
   text: string;
+}
+
+/** The Task Scheduler task as Windows reports it. */
+export interface TaskStatus {
+  exists: boolean;
 }

@@ -9,10 +9,12 @@ mod extract;
 mod filter;
 mod hardware;
 mod model;
+mod notify;
 mod offers;
 mod preview;
 mod profiles;
 mod secrets;
+mod scheduler;
 mod score;
 mod settings;
 mod sources;
@@ -31,13 +33,20 @@ use commands::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    // Started by Task Scheduler: no window - collect, notify, quit.
+    let background = scheduler::is_background(&args);
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
     {
-        // A second copy of the app only brings the first window to the front.
+        // A second copy of the app only brings the first window to the front;
+        // a background run while the app is open simply ends (the open app collects itself).
         builder = builder
-            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+                if scheduler::is_background(&args) {
+                    return;
+                }
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.set_focus();
@@ -48,8 +57,9 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
-            let state = match open_database(app) {
+        .plugin(tauri_plugin_notification::init())
+        .setup(move |app| {
+            let state = match open_database(app, !background) {
                 Ok(conn) => Ok(conn),
                 Err(e) => {
                     eprintln!("database unavailable: {e}");
@@ -58,6 +68,30 @@ pub fn run() {
             };
             app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false) });
             app.manage(preview::Pending::default());
+            if background {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    one_pass(&handle, true).await;
+                    handle.exit(0);
+                });
+                return Ok(());
+            }
+            // The main window is created here (not from the config) so a background run has none.
+            if let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main") {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), config)?.build()?;
+            }
+            // Installed app: Task Scheduler follows the setting (on by default).
+            if !cfg!(debug_assertions) {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let state = handle.state::<AppState>();
+                    if let Ok(on) = commands::with_db(&state, |c| settings::is_on(c, "background_task")) {
+                        if let Err(e) = scheduler::sync(on) {
+                            eprintln!("task scheduler: {e}");
+                        }
+                    }
+                });
+            }
             start_auto_fetch(app.handle().clone());
             Ok(())
         })
@@ -100,6 +134,8 @@ pub fn run() {
             commands::capture_preview,
             commands::close_preview,
             commands::update_description,
+            commands::background_status,
+            commands::set_background,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -111,33 +147,48 @@ fn start_auto_fetch(handle: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(20)).await;
         loop {
-            let state = handle.state::<AppState>();
-            let auto = commands::with_db(&state, |c| settings::is_on(c, "fetch_auto")).unwrap_or(false);
-            if auto {
-                match sources::fetch(&state, false).await {
-                    Ok(report) if !report.runs.is_empty() => {
-                        let _ = handle.emit("offers-fetched", &report);
-                    }
-                    Ok(_) => {}
-                    Err(e) => eprintln!("automatic fetch failed: {e}"),
-                }
-            }
-            let ai_auto = commands::with_db(&state, |c| settings::is_on(c, "ai_auto")).unwrap_or(false);
-            if ai_auto {
-                match ai::process(&state, None).await {
-                    Ok(report) if report.rated > 0 => {
-                        let _ = handle.emit("offers-rated", &report);
-                    }
-                    Ok(_) => {}
-                    Err(e) => eprintln!("automatic AI run failed: {e}"),
-                }
-            }
+            one_pass(&handle, false).await;
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;
         }
     });
 }
 
-fn open_database(app: &tauri::App) -> error::AppResult<rusqlite::Connection> {
+/// One round of work: collect offers, let AI read them, remind, notify.
+/// `background` = started by Task Scheduler with no window.
+async fn one_pass(handle: &tauri::AppHandle, background: bool) {
+    let state = handle.state::<AppState>();
+    let on = |key: &str| commands::with_db(&state, |c| settings::is_on(c, key)).unwrap_or(false);
+    let mut new_on_board = 0;
+    if background || on("fetch_auto") {
+        match sources::fetch(&state, false).await {
+            Ok(report) => {
+                new_on_board = report.new_on_board;
+                if !report.runs.is_empty() {
+                    let _ = handle.emit("offers-fetched", &report);
+                }
+            }
+            Err(error::AppError::Busy) => {}
+            Err(e) => eprintln!("automatic fetch failed: {e}"),
+        }
+    }
+    if on("ai_auto") {
+        match ai::process(&state, None).await {
+            Ok(report) if report.rated > 0 => {
+                let _ = handle.emit("offers-rated", &report);
+            }
+            Ok(_) | Err(error::AppError::Busy) => {}
+            Err(e) => eprintln!("automatic AI run failed: {e}"),
+        }
+    }
+    // A notification only when the board is not in front of the person anyway.
+    let focused = handle.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
+    if new_on_board > 0 && on("notify_new") && !focused {
+        let (title, body) = notify::new_offers_text(new_on_board, notify::polish(&state));
+        notify::show(handle, &title, &body);
+    }
+}
+
+fn open_database(app: &tauri::App, backup: bool) -> error::AppResult<rusqlite::Connection> {
     secrets::init()?;
     let mut dir = app
         .path()
@@ -147,5 +198,5 @@ fn open_database(app: &tauri::App) -> error::AppResult<rusqlite::Connection> {
     if cfg!(debug_assertions) {
         dir.push("dev");
     }
-    db::open_app_database(&dir)
+    db::open_app_database(&dir, backup)
 }

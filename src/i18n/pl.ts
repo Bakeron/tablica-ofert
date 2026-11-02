@@ -505,4 +505,10 @@ export const pl = {
   "full.cancel": "Zamknij podgląd",
   "full.saved": "Zapisano pełny opis - AI oceni ofertę jeszcze raz",
   "full.notLonger": "Opis na stronie nie jest dłuższy od zapisanego - nic nie zmieniono",
+
+  "bg.label": "Pobieraj też przy zamkniętej aplikacji",
+  "bg.hint": "Harmonogram zadań Windows uruchamia aplikację co godzinę bez okna: pobiera oferty, pokazuje powiadomienie i zamyka się. Aplikacja nie startuje razem z Windows. Wyłączenie albo odinstalowanie usuwa zadanie.",
+  "bg.exists": "Stan: zadanie jest w Harmonogramie zadań.",
+  "bg.missing": "Stan: zadania nie ma w Harmonogramie zadań.",
+  "bg.notify": "Powiadomienie Windows o nowych ofertach na tablicy",
 };
