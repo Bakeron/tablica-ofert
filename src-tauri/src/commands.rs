@@ -12,6 +12,7 @@ use tauri::State;
 use crate::error::{AppError, AppResult};
 use crate::model::*;
 use crate::sources::{self, FetchReport, SourceStatus};
+use crate::ai::{self, AiStatus, Assist, RateReport};
 use crate::{offers, profiles, secrets, settings};
 
 pub struct AppState {
@@ -19,6 +20,8 @@ pub struct AppState {
     pub db: Mutex<Result<Connection, String>>,
     /// Set while offers are being fetched - a second run waits for the first one.
     pub fetching: AtomicBool,
+    /// Set while AI reads offers.
+    pub rating: AtomicBool,
 }
 
 pub fn with_db<T>(state: &AppState, f: impl FnOnce(&mut Connection) -> AppResult<T>) -> AppResult<T> {
@@ -52,8 +55,13 @@ pub async fn app_status(state: State<'_, AppState>, app: tauri::AppHandle) -> Ap
 
 /// `profile = null` - all profiles together.
 #[tauri::command]
-pub async fn list_offers(state: State<'_, AppState>, view: View, profile: Option<i64>) -> AppResult<Vec<OfferRow>> {
-    with_db(&state, |c| offers::list(c, view, profile))
+pub async fn list_offers(
+    state: State<'_, AppState>,
+    view: View,
+    profile: Option<i64>,
+    show_low: Option<bool>,
+) -> AppResult<Vec<OfferRow>> {
+    with_db(&state, |c| offers::list(c, view, profile, show_low.unwrap_or(false)))
 }
 
 #[tauri::command]
@@ -67,8 +75,31 @@ pub async fn get_offer(state: State<'_, AppState>, id: i64) -> AppResult<OfferDe
 }
 
 #[tauri::command]
-pub async fn add_offer(state: State<'_, AppState>, offer: OfferInput) -> AppResult<AddOutcome> {
-    with_db(&state, |c| offers::add(c, offer))
+pub async fn add_offer(state: State<'_, AppState>, app: tauri::AppHandle, offer: OfferInput) -> AppResult<AddOutcome> {
+    let outcome = with_db(&state, |c| offers::add(c, offer))?;
+    if matches!(outcome, AddOutcome::Added { .. }) {
+        spawn_ai(app);
+    }
+    Ok(outcome)
+}
+
+/// AI reads new offers in the background; the board refreshes when it is done.
+pub fn spawn_ai(app: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let on = with_db(&state, |c| settings::is_on(c, "ai_auto")).unwrap_or(false);
+        if !on {
+            return;
+        }
+        match ai::process(&state, None).await {
+            Ok(report) if report.rated > 0 || report.error.is_some() => {
+                let _ = app.emit("offers-rated", &report);
+            }
+            Ok(_) | Err(AppError::Busy) => {}
+            Err(e) => eprintln!("AI run failed: {e}"),
+        }
+    });
 }
 
 #[tauri::command]
@@ -139,6 +170,11 @@ pub async fn get_experience(state: State<'_, AppState>) -> AppResult<String> {
 }
 
 #[tauri::command]
+pub async fn get_experience_prev(state: State<'_, AppState>) -> AppResult<Option<String>> {
+    with_db(&state, |c| profiles::experience_prev(c))
+}
+
+#[tauri::command]
 pub async fn set_experience(state: State<'_, AppState>, text: String) -> AppResult<()> {
     with_db(&state, |c| profiles::set_experience(c, &text))
 }
@@ -183,6 +219,56 @@ pub async fn mail_test(state: State<'_, AppState>) -> AppResult<u32> {
 
 /// "Fetch now": every enabled source that may run (daily limits still apply).
 #[tauri::command]
-pub async fn fetch_offers(state: State<'_, AppState>) -> AppResult<FetchReport> {
-    sources::fetch(&state, true).await
+pub async fn fetch_offers(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<FetchReport> {
+    let report = sources::fetch(&state, true).await?;
+    if report.added > 0 {
+        spawn_ai(app);
+    }
+    Ok(report)
+}
+
+/// "Check my computer" next to Ollama.
+#[tauri::command]
+pub async fn check_hardware() -> AppResult<crate::hardware::Machine> {
+    tauri::async_runtime::spawn_blocking(crate::hardware::check)
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+// ---------- AI ----------
+
+#[tauri::command]
+pub async fn ai_status(state: State<'_, AppState>) -> AppResult<AiStatus> {
+    let keys = secrets::user_hints()?;
+    with_db(&state, |c| {
+        ai::status(c, |p| p.key_name().is_some_and(|k| keys.contains_key(k)))
+    })
+}
+
+/// AI reads waiting offers now (the same as after every fetch).
+#[tauri::command]
+pub async fn ai_rate_now(state: State<'_, AppState>) -> AppResult<RateReport> {
+    ai::process(&state, None).await
+}
+
+/// "Rate again" on the offer card.
+#[tauri::command]
+pub async fn ai_rate_offer(state: State<'_, AppState>, id: i64) -> AppResult<RateReport> {
+    with_db(&state, |c| ai::reset(c, id))?;
+    ai::process(&state, Some(id)).await
+}
+
+#[tauri::command]
+pub async fn ai_assist(state: State<'_, AppState>, id: i64, kind: Assist) -> AppResult<String> {
+    ai::assist(&state, id, kind).await
+}
+
+#[tauri::command]
+pub async fn ai_suggest_criteria(state: State<'_, AppState>, description: String) -> AppResult<Criteria> {
+    ai::suggest_criteria(&state, &description).await
+}
+
+#[tauri::command]
+pub async fn ai_tidy(state: State<'_, AppState>, text: String) -> AppResult<String> {
+    ai::tidy(&state, &text).await
 }

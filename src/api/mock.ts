@@ -4,6 +4,7 @@
 // `?firstrun` in the address starts without profiles, with "First steps".
 
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
+import type { AiStatus, Criteria, OfferAi } from "./types";
 import { bestResult, isKept } from "../lib/profile";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type Settings, type SourceStatus, type View } from "./types";
@@ -18,9 +19,40 @@ export function createMockApi(): Api {
   const filters = new Map<number, Map<number, DemoFilter>>();
   let profiles: Profile[] = firstRun
     ? []
-    : DEMO_PROFILES.map((p, i) => ({ id: i + 1, position: i, ...structuredClone(p) }));
+    : DEMO_PROFILES.map((p, i) => ({ id: i + 1, position: i, descriptionPrev: null, ...structuredClone(p) }));
   let nextProfileId = profiles.length + 1;
   let experience = firstRun ? "" : "4 lata jako frontend developer (React, TypeScript), angielski B2.";
+  let experiencePrev: string | null = null;
+  let aiCalls = 3;
+
+  /** Made-up AI reading of a demo offer (profile index -> profile id). */
+  function demoAi(ai: (typeof DEMO_OFFERS)[number]["ai"], score: number | null, source: "ai" | "keywords" | null): OfferAi {
+    if (ai) {
+      return {
+        ...ai,
+        scores: ai.scores.map((s) => ({
+          profileId: s.profile + 1,
+          profileName: DEMO_PROFILES[s.profile].name,
+          score: s.score,
+          source: "ai" as const,
+          why: s.why,
+          quote: s.quote,
+        })),
+      };
+    }
+    return {
+      status: source === "ai" ? "done" : null,
+      at: null,
+      summary: null,
+      flags: [],
+      remoteQuote: null,
+      error: null,
+      scores:
+        score === null
+          ? []
+          : [{ profileId: 1, profileName: DEMO_PROFILES[0].name, score, source: source ?? "keywords", why: null, quote: null }],
+    };
+  }
   const settings: Settings = { ...DEFAULT_SETTINGS, onboarding: firstRun ? "pending" : "done", source_remotive: "on" };
   const secrets: SecretHints = {};
   const sourceRuns: Partial<Record<string, Pick<SourceStatus, "lastTry" | "lastOk" | "lastError" | "added" | "merged" | "callsToday">>> = {
@@ -69,6 +101,7 @@ export function createMockApi(): Api {
       })),
       history: stage === "new" ? [{ stage, at: added }] : [{ stage: "new", at: added }, { stage, at: added }],
       filters: [],
+      ai: demoAi(demo.ai, demo.score ?? null, demo.scoreSource ?? null),
     });
     const byProfile = new Map<number, DemoFilter>();
     profiles.forEach((p, i) => byProfile.set(p.id, demo.filters?.[i] ?? { result: "pass" }));
@@ -119,6 +152,7 @@ export function createMockApi(): Api {
         review: rowsOf("review", profile).length,
         rejected: rowsOf("rejected", profile).length,
         trash: rowsOf("trash", profile).length,
+        hidden: 0,
       };
     },
     async getOffer(id) {
@@ -175,6 +209,7 @@ export function createMockApi(): Api {
         links: [{ source: input.source, url: input.url ?? null, firstSeen: at }],
         history: [{ stage: "new", at }],
         filters: [],
+        ai: demoAi(undefined, null, null),
       });
       filters.set(id, new Map());
       return { status: "added", id };
@@ -226,12 +261,19 @@ export function createMockApi(): Api {
       if (input.id !== null) {
         const p = profiles.find((x) => x.id === input.id);
         if (!p) throw { code: "not_found", detail: "not found" };
-        Object.assign(p, structuredClone({ name: input.name.trim(), description: input.description.trim(), criteria: input.criteria }));
+        const description = input.description.trim();
+        Object.assign(p, structuredClone({
+          name: input.name.trim(),
+          descriptionPrev: description !== p.description ? p.description : p.descriptionPrev,
+          description,
+          criteria: input.criteria,
+        }));
         return p.id;
       }
       const id = nextProfileId++;
       profiles.push({
         id,
+        descriptionPrev: null,
         position: profiles.length,
         name: input.name.trim(),
         description: input.description.trim(),
@@ -246,7 +288,11 @@ export function createMockApi(): Api {
     async getExperience() {
       return experience;
     },
+    async getExperiencePrev() {
+      return experiencePrev;
+    },
     async setExperience(text) {
+      if (text.trim() !== experience) experiencePrev = experience;
       experience = text.trim();
     },
     async secretHints() {
@@ -310,6 +356,97 @@ export function createMockApi(): Api {
       return { runs, added, newOnBoard: added };
     },
     async onFetched() {
+      return () => {};
+    },
+    async aiStatus(): Promise<AiStatus> {
+      const provider = settings.ai_provider;
+      const needsKey = provider !== "none" && provider !== "ollama";
+      const defaults: Record<string, string> = {
+        none: "", gemini: "gemini-2.5-flash", groq: "openai/gpt-oss-120b", openrouter: "openai/gpt-oss-20b:free",
+        ollama: "llama3.1:8b", anthropic: "claude-opus-5-5", openai: "gpt-5-mini",
+      };
+      return {
+        provider,
+        model: settings.ai_model || defaults[provider],
+        defaultModel: defaults[provider],
+        ready: provider !== "none" && (!needsKey || Boolean(secrets[`ai-key-${provider}` as keyof typeof secrets])),
+        callsToday: aiCalls,
+        callsMonth: aiCalls + 41,
+        dailyLimit: Number(settings.ai_daily_limit),
+        waiting: [...offers.values()].filter((o) => o.ai.status === null && !o.deletedAt).length,
+        rated: [...offers.values()].filter((o) => o.ai.status === "done").length,
+      };
+    },
+    async aiRateNow() {
+      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      await new Promise((r) => setTimeout(r, 900));
+      let rated = 0;
+      for (const o of offers.values()) {
+        if (o.ai.status === null && !o.deletedAt) {
+          o.ai = { ...o.ai, status: "done", summary: "Przykładowe streszczenie z podglądu - tu pisze AI.", flags: [] };
+          rated++;
+          aiCalls++;
+        }
+      }
+      return { rated, failed: 0, waiting: 0, error: null };
+    },
+    async aiRateOffer(id) {
+      const o = find(id);
+      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      await new Promise((r) => setTimeout(r, 700));
+      o.ai = { ...o.ai, status: "done", summary: o.ai.summary ?? "Przykładowe streszczenie z podglądu - tu pisze AI." };
+      aiCalls++;
+      return { rated: 1, failed: 0, waiting: 0, error: null };
+    },
+    async aiAssist(id, kind) {
+      const o = find(id);
+      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      await new Promise((r) => setTimeout(r, 700));
+      aiCalls++;
+      if (kind === "message") {
+        return `Dzień dobry,\n\nz zainteresowaniem przeczytałem ofertę „${o.title}” w ${o.company}. Od 4 lat pracuję z React i TypeScript, a ostatnio budowałem panel dla małego zespołu produktowego - podobny do Waszego.\n\nChętnie porozmawiam o szczegółach.\n\n(Przykład z podglądu - tu pisze AI.)`;
+      }
+      if (kind === "questions") {
+        return "- Jak wygląda typowy tydzień w zespole?\n- Kto podejmuje decyzje o wyglądzie produktu?\n- Jak często spotykacie się na żywo?\n- Jak wygląda wdrożenie nowej osoby?\n\n(Przykład z podglądu - tu pisze AI.)";
+      }
+      return "- Testy end-to-end: oferta wymienia Playwright - warto zrobić mały projekt próbny.\n\n(Przykład z podglądu - tu pisze AI.)";
+    },
+    async aiSuggestCriteria(description): Promise<Criteria> {
+      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      await new Promise((r) => setTimeout(r, 700));
+      aiCalls++;
+      const base: Criteria = {
+        keywords: [], workModes: [], cities: [], commutePerMonth: null, contracts: [], levels: [], languages: [],
+        salaryUop: { min: null, expected: null, basis: "gross", period: "month" },
+        salaryB2b: { min: null, expected: null, basis: "net", period: "month" },
+        skipCompanies: [], excludeWords: [],
+        hard: { location: true, contract: true, salary: true, level: true, language: true, companies: true, excludeWords: true, keywords: false },
+      };
+      const lower = description.toLowerCase();
+      return {
+        ...base,
+        keywords: ["React", "TypeScript", "Frontend"].filter((k) => lower.includes(k.toLowerCase())),
+        workModes: lower.includes("zdal") ? ["yes"] : [],
+        cities: lower.includes("wrocław") ? [{ name: "Wrocław", radiusKm: 0 }] : [],
+        contracts: lower.includes("umow") ? ["uop"] : [],
+      };
+    },
+    async aiTidy(text) {
+      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      await new Promise((r) => setTimeout(r, 700));
+      aiCalls++;
+      return text
+        .split(/[.,;]\s+/)
+        .map((s) => s.trim().replace(/\.$/, ""))
+        .filter(Boolean)
+        .map((s) => `- ${s[0].toUpperCase()}${s.slice(1)}`)
+        .join("\n");
+    },
+    async checkHardware() {
+      await new Promise((r) => setTimeout(r, 600));
+      return { gpus: [{ name: "Przykładowa karta graficzna", vramMb: 8192 }], ramMb: 32768, verdict: "good", model: "llama3.1:8b" };
+    },
+    async onRated() {
       return () => {};
     },
   };

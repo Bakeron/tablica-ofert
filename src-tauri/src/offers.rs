@@ -286,9 +286,20 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
     })
 }
 
-fn view_condition(view: View, result: &str) -> String {
+/// "Hide offers scored below X" (AI scores only - keyword scores are too rough to hide by).
+fn hide_below(conn: &Connection) -> AppResult<Option<i64>> {
+    Ok(crate::settings::get(conn, "hide_below")?.parse().ok())
+}
+
+fn low(threshold: i64) -> String {
+    // `threshold` comes from the fixed list in settings.rs - safe to put into SQL.
+    format!("(o.score_source = 'ai' AND o.score < {threshold} AND NOT {KEPT})")
+}
+
+fn view_condition(view: View, result: &str, hide: Option<i64>) -> String {
+    let hidden = hide.map(|t| format!(" AND NOT {}", low(t))).unwrap_or_default();
     match view {
-        View::Board => format!("o.deleted_at IS NULL AND ({result} = 'pass' OR {KEPT})"),
+        View::Board => format!("o.deleted_at IS NULL AND ({result} = 'pass' OR {KEPT}){hidden}"),
         View::Review => format!("o.deleted_at IS NULL AND {result} = 'unsure' AND NOT {KEPT}"),
         View::Rejected => format!("o.deleted_at IS NULL AND {result} = 'fail' AND NOT {KEPT}"),
         View::Trash => "o.deleted_at IS NOT NULL".to_string(),
@@ -296,12 +307,14 @@ fn view_condition(view: View, result: &str) -> String {
 }
 
 /// Offers of one tab. `profile = None` - all profiles together (one fitting profile is enough).
-pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Vec<OfferRow>> {
+/// `show_low` - also offers hidden by "hide offers scored below X".
+pub fn list(conn: &Connection, view: View, profile: Option<i64>, show_low: bool) -> AppResult<Vec<OfferRow>> {
     let (result, _) = filter_sql(profile);
+    let hide = if show_low { None } else { hide_below(conn)? };
     let sql = format!(
         "SELECT {} FROM offers o WHERE {} ORDER BY o.added_at DESC, o.id DESC",
         columns(profile),
-        view_condition(view, result)
+        view_condition(view, result, hide)
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = match profile {
@@ -314,15 +327,23 @@ pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Ve
 /// Number of offers in every tab, for the tab labels.
 pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> {
     let (result, _) = filter_sql(profile);
-    let count = |view| format!("COALESCE(SUM(CASE WHEN {} THEN 1 ELSE 0 END), 0)", view_condition(view, result));
+    let hide = hide_below(conn)?;
+    let count = |cond: String| format!("COALESCE(SUM(CASE WHEN {cond} THEN 1 ELSE 0 END), 0)");
+    let hidden = match hide {
+        Some(t) => count(format!("{} AND {}", view_condition(View::Board, result, None), low(t))),
+        None => "0".into(),
+    };
     let sql = format!(
-        "SELECT {}, {}, {}, {} FROM offers o",
-        count(View::Board),
-        count(View::Review),
-        count(View::Rejected),
-        count(View::Trash)
+        "SELECT {}, {}, {}, {}, {} FROM offers o",
+        count(view_condition(View::Board, result, hide)),
+        count(view_condition(View::Review, result, None)),
+        count(view_condition(View::Rejected, result, None)),
+        count(view_condition(View::Trash, result, None)),
+        hidden
     );
-    let read = |r: &Row| Ok(ViewCounts { board: r.get(0)?, review: r.get(1)?, rejected: r.get(2)?, trash: r.get(3)? });
+    let read = |r: &Row| {
+        Ok(ViewCounts { board: r.get(0)?, review: r.get(1)?, rejected: r.get(2)?, trash: r.get(3)?, hidden: r.get(4)? })
+    };
     Ok(match profile {
         Some(p) => conn.query_row(&sql, [p], read)?,
         None => conn.query_row(&sql, [], read)?,
@@ -352,6 +373,7 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),
+                ai: crate::ai::OfferAi::default(),
             })
         })
         .optional()?
@@ -369,6 +391,7 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         .query_map([id], |r| Ok(StageEvent { stage: r.get(0)?, at: r.get(1)? }))?
         .collect::<Result<_, _>>()?;
     detail.filters = profiles::offer_filters(conn, id)?;
+    detail.ai = crate::ai::offer_ai(conn, id)?;
     Ok(detail)
 }
 
@@ -482,7 +505,7 @@ mod tests {
     fn adds_and_lists_an_offer_with_history() {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("Frontend Developer", "Firma Testowa", "manual")).unwrap());
-        let rows = list(&conn, View::Board, None).unwrap();
+        let rows = list(&conn, View::Board, None, false).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].stage, Stage::New);
         assert_eq!(rows[0].sources, vec!["manual"]);
@@ -509,7 +532,7 @@ mod tests {
         assert_eq!(d.row.salary_currency.as_deref(), Some("PLN"));
         assert_eq!(d.row.remote, Remote::Yes);
         assert_eq!(d.description.as_deref(), Some("Longer description of the role"));
-        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 1);
     }
 
     #[test]
@@ -533,12 +556,12 @@ mod tests {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap());
         trash(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 0);
-        assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 0);
+        assert_eq!(list(&conn, View::Trash, None, false).unwrap().len(), 1);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Blocked);
 
         assert_eq!(purge(&mut conn, Some(id)).unwrap(), 1);
-        assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 0);
+        assert_eq!(list(&conn, View::Trash, None, false).unwrap().len(), 0);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap(), AddOutcome::Blocked);
     }
 
@@ -548,7 +571,7 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma C", "manual")).unwrap());
         assert!(matches!(purge(&mut conn, Some(id)), Err(AppError::NotFound)));
         assert_eq!(purge(&mut conn, None).unwrap(), 0);
-        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 1);
     }
 
     #[test]
@@ -557,7 +580,7 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma D", "manual")).unwrap());
         trash(&conn, id).unwrap();
         restore(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 1);
         assert!(matches!(restore(&conn, id), Err(AppError::NotFound)));
     }
 

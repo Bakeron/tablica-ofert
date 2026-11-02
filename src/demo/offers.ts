@@ -1,7 +1,7 @@
 // Made-up sample offers for screenshots and the design preview.
 // Every company, person and number here is invented.
 
-import type { Criteria, FilterResult, Interest, OfferInput, Reason, Stage } from "../api/types";
+import type { Criteria, FilterResult, Interest, OfferAi, OfferInput, Reason, Stage } from "../api/types";
 import { emptyCriteria } from "../lib/profile";
 
 export interface DemoProfile {
@@ -61,6 +61,8 @@ export interface DemoOffer {
   notes?: string;
   /** One entry per DEMO_PROFILES item. */
   filters?: [DemoFilter, DemoFilter];
+  /** What AI "read" (made up); scores use the profile index instead of the id. */
+  ai?: Omit<OfferAi, "scores"> & { scores: { profile: number; score: number; why: string; quote: string | null }[] };
 }
 
 export const DEMO_OFFERS: DemoOffer[] = [
@@ -70,6 +72,18 @@ export const DEMO_OFFERS: DemoOffer[] = [
     scoreSource: "ai",
     extraSources: ["jjit", "nfj"],
     filters: [fit, fit],
+    ai: {
+      status: "done",
+      at: null,
+      summary: "Frontend w małym zespole produktowym: panel do planowania rejsów dla przystani. W pełni zdalnie, spotkanie raz na kwartał.",
+      flags: ["Umowa tylko UoP - przy B2B zapytaj o możliwość zmiany."],
+      remoteQuote: "praca w pełni zdalna, spotkanie zespołu raz na kwartał we Wrocławiu",
+      error: null,
+      scores: [
+        { profile: 0, score: 87, why: "React i TypeScript, mały zespół produktowy, w pełni zdalnie - jak w opisie.", quote: "Zespół 5 osób, praca w pełni zdalna" },
+        { profile: 1, score: 58, why: "Biuro we Wrocławiu, ale praca zdalna - Plan B szuka biura albo hybrydy.", quote: null },
+      ],
+    },
     input: {
       title: "Frontend Developer (React)",
       company: "Latarnia Labs",

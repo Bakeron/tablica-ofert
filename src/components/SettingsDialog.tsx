@@ -4,6 +4,7 @@ import type { Profile, Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconClose } from "./Icons";
 import { Modal } from "./Modal";
+import { AiSettings } from "./AiSettings";
 import { SourcesSettings } from "./SourcesSettings";
 
 const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: string[] }[] = [
@@ -14,8 +15,8 @@ const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: s
 
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
-export type SettingsSection = "look" | "sources";
-const SECTIONS: SettingsSection[] = ["sources", "look"];
+export type SettingsSection = "look" | "sources" | "ai";
+const SECTIONS: SettingsSection[] = ["sources", "ai", "look"];
 
 export function SettingsDialog({
   open,
@@ -126,6 +127,10 @@ function SettingsBody({
 
       {section === "sources" && api && (
         <SourcesSettings api={api} settings={settings} profiles={profiles} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />
+      )}
+
+      {section === "ai" && api && (
+        <AiSettings api={api} settings={settings} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />
       )}
 
       <footer className="sheet-foot">

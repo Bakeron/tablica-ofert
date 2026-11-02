@@ -1,3 +1,4 @@
+mod ai;
 mod cities;
 mod clock;
 mod commands;
@@ -5,10 +6,12 @@ mod db;
 mod dedup;
 mod error;
 mod filter;
+mod hardware;
 mod model;
 mod offers;
 mod profiles;
 mod secrets;
+mod score;
 mod settings;
 mod sources;
 mod text;
@@ -51,7 +54,7 @@ pub fn run() {
                     Err(e.to_string())
                 }
             };
-            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false) });
+            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false) });
             start_auto_fetch(app.handle().clone());
             Ok(())
         })
@@ -75,12 +78,20 @@ pub fn run() {
             commands::delete_profile,
             commands::get_experience,
             commands::set_experience,
+            commands::get_experience_prev,
             commands::secret_hints,
             commands::set_secret,
             commands::delete_secret,
             commands::source_status,
             commands::fetch_offers,
             commands::mail_test,
+            commands::ai_status,
+            commands::ai_rate_now,
+            commands::ai_rate_offer,
+            commands::ai_assist,
+            commands::ai_suggest_criteria,
+            commands::ai_tidy,
+            commands::check_hardware,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -101,6 +112,16 @@ fn start_auto_fetch(handle: tauri::AppHandle) {
                     }
                     Ok(_) => {}
                     Err(e) => eprintln!("automatic fetch failed: {e}"),
+                }
+            }
+            let ai_auto = commands::with_db(&state, |c| settings::is_on(c, "ai_auto")).unwrap_or(false);
+            if ai_auto {
+                match ai::process(&state, None).await {
+                    Ok(report) if report.rated > 0 => {
+                        let _ = handle.emit("offers-rated", &report);
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("automatic AI run failed: {e}"),
                 }
             }
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;

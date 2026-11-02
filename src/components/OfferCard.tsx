@@ -1,10 +1,10 @@
 import { forwardRef, useEffect, useState } from "react";
-import { STAGES, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
+import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { useI18n } from "../i18n";
 import { fullDate, isWebUrl, placeLabel, salaryFull } from "../lib/format";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
-import { IconArrowOut, IconRestore, IconStar, IconTrash } from "./Icons";
+import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
 import { StatusTag } from "./StatusTag";
 
 interface Props {
@@ -17,11 +17,15 @@ interface Props {
   onTrash: () => void;
   onRestore: () => void;
   onPurge: () => void;
+  /** An AI provider is set. */
+  aiOn: boolean;
+  onRateAgain: () => void;
+  onAssist: (kind: AssistKind) => void;
 }
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -151,6 +155,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             </button>
           </div>
         )}
+
+        <AiPart offer={offer} aiOn={aiOn && !inTrash} onRateAgain={onRateAgain} onAssist={onAssist} />
 
         <FilterResults filters={offer.filters} />
 
@@ -293,5 +299,83 @@ function Stamp({ offer }: { offer: OfferDetail }) {
       <span className="stamp-score">{offer.score}</span>
       <span className="stamp-sub">{offer.scoreSource === "ai" ? t("card.matchAi") : t("card.matchKeywords")}</span>
     </div>
+  );
+}
+
+/** What AI read: summary, warnings, score for every profile with a quote, buttons for text on a click. */
+function AiPart({
+  offer,
+  aiOn,
+  onRateAgain,
+  onAssist,
+}: {
+  offer: OfferDetail;
+  aiOn: boolean;
+  onRateAgain: () => void;
+  onAssist: (kind: AssistKind) => void;
+}) {
+  const { t } = useI18n();
+  const ai = offer.ai;
+  const aiScores = ai.scores.filter((s) => s.source === "ai");
+  return (
+    <section className="pass-text ai-part" aria-labelledby="ai-title">
+      <h3 id="ai-title" className="pass-label">
+        {t("ai.cardTitle")}
+      </h3>
+      {ai.status === null && <p className="pass-meta">{aiOn ? t("ai.waiting") : t("ai.off")}</p>}
+      {ai.status === "failed" && (
+        <p className="source-warn">
+          <IconWarning /> {t("ai.failed")}
+        </p>
+      )}
+      {ai.summary && <p>{ai.summary}</p>}
+      {ai.flags.length > 0 && (
+        <div className="flags">
+          <h4 className="flags-title">
+            <IconWarning /> {t("ai.flags")}
+          </h4>
+          <ul>
+            {ai.flags.map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {ai.remoteQuote && (
+        <p className="ai-quote-line">
+          <span className="pass-label">{t("remote.label")}:</span> <q>{ai.remoteQuote}</q>
+        </p>
+      )}
+      {aiScores.length > 0 && (
+        <ul className="ai-scores">
+          {aiScores.map((s) => (
+            <li key={s.profileId}>
+              <span className="verdict-head">
+                <span className="verdict-profile">{s.profileName}</span>
+                <span className="ai-score">{s.score}</span>
+              </span>
+              {s.why && <span className="verdict-why">{s.why}</span>}
+              {s.quote && <q className="ai-quote">{s.quote}</q>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {aiOn && (
+        <div className="ai-row">
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => onAssist("message")}>
+            {t("assist.message")}
+          </button>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => onAssist("questions")}>
+            {t("assist.questions")}
+          </button>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => onAssist("gaps")}>
+            {t("assist.gaps")}
+          </button>
+          <button type="button" className="btn btn-ghost btn-small" onClick={onRateAgain}>
+            {ai.status === null ? t("ai.rateThis") : t("ai.rateAgain")}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

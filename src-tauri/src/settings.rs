@@ -38,7 +38,34 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("mail_host", Rule::Text { max: 253, default: "imap.gmail.com", check: is_host }),
     ("mail_port", Rule::Text { max: 5, default: "993", check: is_port }),
     ("mail_user", Rule::Text { max: 254, default: "", check: is_mail_login }),
+    // AI: provider, model (empty = the provider's default), daily cap of calls.
+    ("ai_provider", Rule::One(&["none", "gemini", "groq", "openrouter", "ollama", "anthropic", "openai"])),
+    ("ai_model", Rule::Text { max: 120, default: "", check: is_model }),
+    ("ai_daily_limit", Rule::Text { max: 5, default: "200", check: is_limit }),
+    ("ai_auto", Rule::One(&["on", "off"])),
+    ("ollama_url", Rule::Text { max: 200, default: "http://localhost:11434", check: is_base_url }),
+    // Board: hide offers scored below this (offers you acted on stay).
+    ("hide_below", Rule::One(&["off", "30", "40", "50", "60", "70"])),
 ];
+
+fn is_model(v: &str) -> bool {
+    v.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:/@".contains(c))
+}
+
+fn is_limit(v: &str) -> bool {
+    v.parse::<u32>().is_ok_and(|n| (1..=10_000).contains(&n))
+}
+
+/// Address of a local AI server: http(s), a host and maybe a port - nothing else.
+fn is_base_url(v: &str) -> bool {
+    let Some(rest) = v.strip_prefix("http://").or_else(|| v.strip_prefix("https://")) else { return false };
+    let rest = rest.trim_end_matches('/');
+    let (host, port) = match rest.rsplit_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (rest, None),
+    };
+    is_host(host) && port.is_none_or(is_port)
+}
 
 fn is_host(v: &str) -> bool {
     !v.is_empty()

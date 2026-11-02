@@ -81,6 +81,8 @@ export interface Profile {
   description: string;
   criteria: Criteria;
   position: number;
+  /** The description before the last change - "Tidy up" can be undone. */
+  descriptionPrev: string | null;
 }
 
 export interface ProfileInput {
@@ -103,6 +105,8 @@ export interface ViewCounts {
   review: number;
   rejected: number;
   trash: number;
+  /** Offers on the board hidden by "hide offers scored below X". */
+  hidden: number;
 }
 
 export interface OfferRow {
@@ -154,6 +158,63 @@ export interface OfferDetail extends OfferRow {
   history: StageEvent[];
   /** Hard filter result for every profile. */
   filters: ProfileFilter[];
+  /** What AI read from the offer and the match score for every profile. */
+  ai: OfferAi;
+}
+
+export interface ScoreView {
+  profileId: number;
+  profileName: string;
+  score: number;
+  source: "ai" | "keywords";
+  why: string | null;
+  /** A sentence copied from the offer (checked: it really is there). */
+  quote: string | null;
+}
+
+export interface OfferAi {
+  /** null = waiting for AI */
+  status: "done" | "failed" | null;
+  at: string | null;
+  summary: string | null;
+  /** Short warnings - "Uwagi". */
+  flags: string[];
+  remoteQuote: string | null;
+  error: string | null;
+  scores: ScoreView[];
+}
+
+export type AiProvider = "none" | "gemini" | "groq" | "openrouter" | "ollama" | "anthropic" | "openai";
+export const AI_PROVIDERS: AiProvider[] = ["none", "gemini", "groq", "openrouter", "ollama", "anthropic", "openai"];
+
+export interface AiStatus {
+  provider: AiProvider;
+  model: string;
+  defaultModel: string;
+  /** Key present (always true for Ollama). */
+  ready: boolean;
+  callsToday: number;
+  callsMonth: number;
+  dailyLimit: number;
+  /** Offers waiting for AI. */
+  waiting: number;
+  rated: number;
+}
+
+export interface RateReport {
+  rated: number;
+  failed: number;
+  waiting: number;
+  error: { code: AppError["code"]; detail: string } | null;
+}
+
+export type AssistKind = "message" | "questions" | "gaps";
+
+export interface Machine {
+  gpus: { name: string; vramMb: number }[];
+  ramMb: number;
+  verdict: "good" | "ok" | "slow" | "no";
+  model: string | null;
 }
 
 export interface OfferInput {
@@ -203,6 +264,14 @@ export interface Settings {
   mail_host: string;
   mail_port: string;
   mail_user: string;
+  ai_provider: AiProvider;
+  /** Empty = the provider's default model. */
+  ai_model: string;
+  ai_daily_limit: string;
+  /** AI reads new offers by itself. */
+  ai_auto: "on" | "off";
+  ollama_url: string;
+  hide_below: "off" | "30" | "40" | "50" | "60" | "70";
 }
 
 /** Defaults - the same as the first value of every rule in settings.rs. */
@@ -221,6 +290,12 @@ export const DEFAULT_SETTINGS: Settings = {
   mail_host: "imap.gmail.com",
   mail_port: "993",
   mail_user: "",
+  ai_provider: "none",
+  ai_model: "",
+  ai_daily_limit: "200",
+  ai_auto: "on",
+  ollama_url: "http://localhost:11434",
+  hide_below: "off",
 };
 
 /** Countries covered by Adzuna (mirrors `ADZUNA_COUNTRIES` in settings.rs). */

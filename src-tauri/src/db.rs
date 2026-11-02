@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/002_profiles.sql"),
     include_str!("migrations/003_sources.sql"),
     include_str!("migrations/004_mail.sql"),
+    include_str!("migrations/005_ai.sql"),
 ];
 
 /// Opens a SQLCipher database with a raw 256-bit key (64 hex chars) and checks that
@@ -123,7 +124,14 @@ pub fn open_app_database(data_dir: &Path) -> AppResult<Connection> {
             eprintln!("backup failed: {e}");
         }
     }
+    let before: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     migrate(&mut conn)?;
+    // Version 5 added scores without AI - count them once for offers saved before.
+    if (1..5).contains(&before) {
+        let tx = conn.transaction()?;
+        crate::profiles::recheck_all(&tx)?;
+        tx.commit()?;
+    }
     Ok(conn)
 }
 

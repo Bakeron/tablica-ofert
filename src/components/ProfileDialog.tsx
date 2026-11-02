@@ -14,6 +14,7 @@ import type {
 } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { emptyCriteria, joinList, splitList, toAmount } from "../lib/profile";
+import { SuggestPanel, TidyDialog, suggestionsFrom, type Suggestion } from "./AiDialogs";
 import { DescriptionField } from "./DescriptionField";
 import { Help } from "./Help";
 import { IconClose, IconPlus, IconTrash } from "./Icons";
@@ -105,6 +106,10 @@ export function ProfileDialog({
   open,
   profile,
   experience,
+  experiencePrev,
+  aiOn,
+  onSuggest,
+  onTidy,
   onClose,
   onSave,
   onDelete,
@@ -113,6 +118,12 @@ export function ProfileDialog({
   /** null = new profile */
   profile: Profile | null;
   experience: string;
+  /** Experience before the last change - can be brought back. */
+  experiencePrev: string | null;
+  /** An AI provider is set - "Tidy up" and "Suggest filters" are offered. */
+  aiOn: boolean;
+  onSuggest: (description: string) => Promise<Criteria | null>;
+  onTidy: (text: string) => Promise<string | null>;
   onClose: () => void;
   onSave: (input: ProfileInput, experience: string) => Promise<boolean>;
   onDelete: (profile: Profile) => void;
@@ -120,10 +131,72 @@ export function ProfileDialog({
   const { t } = useI18n();
   const [form, setForm] = useState<Form>(() => toForm(profile, experience));
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState<"description" | "experience" | "suggest" | null>(null);
+  const [tidy, setTidy] = useState<{ field: "description" | "experience"; before: string; proposal: string } | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
 
   useEffect(() => {
-    if (open) setForm(toForm(profile, experience));
+    if (open) {
+      setForm(toForm(profile, experience));
+      setSuggestions(null);
+      setTidy(null);
+    }
   }, [open, profile, experience]);
+
+  async function askTidy(field: "description" | "experience") {
+    setAiBusy(field);
+    const proposal = await onTidy(form[field]);
+    setAiBusy(null);
+    if (proposal) setTidy({ field, before: form[field], proposal });
+  }
+
+  async function askSuggest() {
+    setAiBusy("suggest");
+    const c = await onSuggest(form.description);
+    setAiBusy(null);
+    if (c) setSuggestions(suggestionsFrom(c, suggestionLabel));
+  }
+
+  function suggestionLabel(group: Suggestion["group"], value: string): string {
+    const what = t(`suggest.g.${group}` as TextKey);
+    const shown =
+      group === "workModes" ? t(`remote.${value}` as TextKey)
+      : group === "contracts" ? t(`contract.${value}` as TextKey)
+      : group === "levels" ? t(`level.${value}` as TextKey)
+      : group === "languages" ? t(`language.${value}` as TextKey)
+      : value;
+    return `${what}: ${shown}`;
+  }
+
+  function isPresent(s: Suggestion): boolean {
+    const has = (list: string[]) => list.some((v) => v.toLowerCase() === s.value.toLowerCase());
+    switch (s.group) {
+      case "keywords":
+        return has(splitList(form.keywords));
+      case "excludeWords":
+        return has(splitList(form.excludeWords));
+      case "cities":
+        return has(form.cities.map((c) => c.name));
+      default:
+        return (form[s.group] as string[]).includes(s.value);
+    }
+  }
+
+  function addSuggestions(chosen: Suggestion[]) {
+    setForm((f) => {
+      const next = { ...f };
+      const pick = (g: Suggestion["group"]) => chosen.filter((s) => s.group === g).map((s) => s.value);
+      next.keywords = joinList([...splitList(f.keywords), ...pick("keywords")]);
+      next.excludeWords = joinList([...splitList(f.excludeWords), ...pick("excludeWords")]);
+      next.cities = [...f.cities, ...pick("cities").map((name) => ({ name, radiusKm: 20 }))];
+      next.workModes = [...new Set([...f.workModes, ...(pick("workModes") as Remote[])])];
+      next.contracts = [...new Set([...f.contracts, ...(pick("contracts") as Contract[])])];
+      next.levels = [...new Set([...f.levels, ...(pick("levels") as Level[])])];
+      next.languages = [...new Set([...f.languages, ...(pick("languages") as OfferLanguage[])])];
+      return next;
+    });
+    setSuggestions(null);
+  }
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
   const setHard = (key: keyof HardFlags, value: boolean) => setForm((f) => ({ ...f, hard: { ...f.hard, [key]: value } }));
@@ -168,6 +241,26 @@ export function ProfileDialog({
         </label>
 
         <DescriptionField value={form.description} onChange={(v) => set("description", v)} />
+        {(aiOn || (profile?.descriptionPrev && profile.descriptionPrev !== form.description)) && (
+          <div className="ai-row">
+            {aiOn && (
+              <>
+                <button type="button" className="btn btn-ghost btn-small" disabled={!form.description.trim() || aiBusy !== null} aria-busy={aiBusy === "description"} onClick={() => askTidy("description")}>
+                  {aiBusy === "description" ? t("ai.working") : t("tidy.button")}
+                </button>
+                <button type="button" className="btn btn-ghost btn-small" disabled={!form.description.trim() || aiBusy !== null} aria-busy={aiBusy === "suggest"} onClick={askSuggest}>
+                  {aiBusy === "suggest" ? t("ai.working") : t("suggest.button")}
+                </button>
+              </>
+            )}
+            {profile?.descriptionPrev && profile.descriptionPrev !== form.description && (
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => set("description", profile.descriptionPrev!)}>
+                {t("tidy.restore")}
+              </button>
+            )}
+          </div>
+        )}
+        {suggestions && <SuggestPanel items={suggestions} present={isPresent} onAdd={addSuggestions} onClose={() => setSuggestions(null)} />}
 
         <label className="field">
           <span>{t("profile.experience")}</span>
@@ -182,6 +275,20 @@ export function ProfileDialog({
             {t("profile.experienceHint")}
           </span>
         </label>
+        {(aiOn || (experiencePrev !== null && experiencePrev !== form.experience)) && (
+          <div className="ai-row">
+            {aiOn && (
+              <button type="button" className="btn btn-ghost btn-small" disabled={!form.experience.trim() || aiBusy !== null} aria-busy={aiBusy === "experience"} onClick={() => askTidy("experience")}>
+                {aiBusy === "experience" ? t("ai.working") : t("tidy.button")}
+              </button>
+            )}
+            {experiencePrev !== null && experiencePrev !== form.experience && (
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => set("experience", experiencePrev)}>
+                {t("tidy.restore")}
+              </button>
+            )}
+          </div>
+        )}
 
         <Section title={t("profile.sectionWhere")} side={hard("location", "profile.sectionWhere")}>
           <Chips
@@ -363,6 +470,18 @@ export function ProfileDialog({
           </button>
         </footer>
       </form>
+      {tidy && (
+        <TidyDialog
+          open
+          before={tidy.before}
+          proposal={tidy.proposal}
+          onClose={() => setTidy(null)}
+          onAccept={(text) => {
+            set(tidy.field, text);
+            setTidy(null);
+          }}
+        />
+      )}
     </Modal>
   );
 }

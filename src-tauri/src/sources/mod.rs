@@ -452,6 +452,7 @@ mod tests {
             name: "Plan".into(),
             description: "x".into(),
             position: 0,
+            description_prev: None,
             criteria: Criteria {
                 keywords: keywords.iter().map(|s| s.to_string()).collect(),
                 work_modes: modes,

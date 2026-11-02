@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Api } from "../api";
 import type { Profile, SecretHints, SecretName, Settings, SourceStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
 import { SecretField } from "./SecretField";
+import { TextSetting } from "./TextSetting";
 import { SourceHead, SourceState } from "./SourcesSettings";
 
 /** Portals that send alerts by e-mail - where to set them up (always by a person, once). */
@@ -155,40 +156,4 @@ export function MailSettings({
       </button>
     );
   }
-}
-
-/** A text setting saved when the field is left (not on every key). */
-function TextSetting({
-  label,
-  hint,
-  value,
-  type = "text",
-  inputMode,
-  onSave,
-}: {
-  label: string;
-  hint?: string;
-  value: string;
-  type?: string;
-  inputMode?: "numeric";
-  onSave: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        type={type}
-        inputMode={inputMode}
-        autoComplete="off"
-        spellCheck={false}
-        maxLength={254}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => draft.trim() !== value && onSave(draft.trim())}
-      />
-      {hint && <span className="hint">{hint}</span>}
-    </label>
-  );
 }

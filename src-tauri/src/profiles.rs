@@ -112,7 +112,7 @@ fn criteria_from(json: &str) -> Criteria {
 
 pub fn list(conn: &Connection) -> AppResult<Vec<Profile>> {
     let mut stmt =
-        conn.prepare("SELECT id, name, description, criteria, position FROM profiles ORDER BY position, id")?;
+        conn.prepare("SELECT id, name, description, criteria, position, description_prev FROM profiles ORDER BY position, id")?;
     let rows = stmt
         .query_map([], |r| {
             Ok(Profile {
@@ -121,6 +121,7 @@ pub fn list(conn: &Connection) -> AppResult<Vec<Profile>> {
                 description: r.get(2)?,
                 criteria: criteria_from(&r.get::<_, String>(3)?),
                 position: r.get(4)?,
+                description_prev: r.get(5)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -138,7 +139,10 @@ pub fn save(conn: &mut Connection, input: ProfileInput) -> AppResult<i64> {
     let id = match input.id {
         Some(id) => {
             let n = tx.execute(
-                "UPDATE profiles SET name = ?2, description = ?3, criteria = ?4, updated_at = ?5 WHERE id = ?1",
+                // The previous description stays one step back ("Tidy up" can be undone).
+                "UPDATE profiles SET name = ?2,
+                    description_prev = CASE WHEN description != ?3 THEN description ELSE description_prev END,
+                    description = ?3, criteria = ?4, updated_at = ?5 WHERE id = ?1",
                 params![id, name, description, json, now],
             )?;
             if n == 0 {
@@ -188,10 +192,20 @@ pub fn set_experience(conn: &Connection, text: &str) -> AppResult<()> {
     let text = clean_text(text, MAX_EXPERIENCE, "experience", false)?;
     conn.execute(
         "INSERT INTO candidate (id, experience, updated_at) VALUES (1, ?1, ?2)
-         ON CONFLICT (id) DO UPDATE SET experience = excluded.experience, updated_at = excluded.updated_at",
+         ON CONFLICT (id) DO UPDATE SET
+            experience_prev = CASE WHEN experience != excluded.experience THEN experience ELSE experience_prev END,
+            experience = excluded.experience, updated_at = excluded.updated_at",
         params![text, clock::now()],
     )?;
     Ok(())
+}
+
+/// The experience before the last change (`None` = never changed).
+pub fn experience_prev(conn: &Connection) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row("SELECT experience_prev FROM candidate WHERE id = 1", [], |r| r.get(0))
+        .optional()?
+        .flatten())
 }
 
 // ---------- filter results ----------
@@ -222,7 +236,7 @@ fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
 
 fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -> AppResult<()> {
     tx.execute("DELETE FROM offer_filters WHERE offer_id = ?1", [offer_id])?;
-    let mut results = Vec::with_capacity(profiles.len());
+    let mut results: Vec<FilterResult> = Vec::with_capacity(profiles.len());
     for p in profiles {
         let e = filter::evaluate(facts, &p.criteria);
         let reasons = serde_json::to_string(&e.reasons).map_err(|e| AppError::Invalid(e.to_string()))?;
@@ -234,9 +248,50 @@ fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -
     }
     tx.execute(
         "UPDATE offers SET filter_result = ?2, filter_reason = NULL WHERE id = ?1",
-        params![offer_id, filter::best(results)],
+        params![offer_id, filter::best(results.iter().copied())],
+    )?;
+    // Score without AI for every profile the offer did not fail; AI scores stay as they are.
+    tx.execute("DELETE FROM offer_scores WHERE offer_id = ?1 AND source = 'keywords'", [offer_id])?;
+    for (p, result) in profiles.iter().zip(&results) {
+        if *result == FilterResult::Fail {
+            continue;
+        }
+        if let Some(score) = crate::score::keyword_score(facts, p) {
+            tx.execute(
+                "INSERT OR IGNORE INTO offer_scores (offer_id, profile_id, score, source) VALUES (?1, ?2, ?3, 'keywords')",
+                params![offer_id, p.id, score],
+            )?;
+        }
+    }
+    update_best_score(tx, offer_id)
+}
+
+/// The board shows the best score over the profiles the offer did not fail - an AI score
+/// when there is one, the keyword score otherwise.
+pub fn update_best_score(tx: &Connection, offer_id: i64) -> AppResult<()> {
+    let best: Option<(i64, String)> = tx
+        .query_row(
+            "SELECT s.score, s.source FROM offer_scores s
+             JOIN offer_filters f ON f.offer_id = s.offer_id AND f.profile_id = s.profile_id
+             WHERE s.offer_id = ?1 AND f.result != 'fail'
+             ORDER BY s.source = 'ai' DESC, s.score DESC LIMIT 1",
+            [offer_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    tx.execute(
+        "UPDATE offers SET score = ?2, score_source = ?3 WHERE id = ?1",
+        params![offer_id, best.as_ref().map(|b| b.0), best.as_ref().map(|b| b.1.clone())],
     )?;
     Ok(())
+}
+
+/// What the filter (and AI) know about one offer.
+pub fn facts_of(conn: &Connection, offer_id: i64) -> AppResult<Option<Facts>> {
+    Ok(conn
+        .query_row(&format!("SELECT {FACT_COLUMNS} FROM offers WHERE id = ?1"), [offer_id], facts_from)
+        .optional()?
+        .map(|(_, f)| f))
 }
 
 /// Checks one offer (just added or merged) against every profile.
@@ -249,8 +304,9 @@ pub fn recheck_offer(tx: &Transaction, offer_id: i64) -> AppResult<()> {
     store(tx, offer_id, &facts.1, &profiles)
 }
 
-/// Checks every offer again - after a profile was created, changed or deleted.
-fn recheck_all(tx: &Transaction) -> AppResult<()> {
+/// Checks every offer again - after a profile was created, changed or deleted
+/// (and once after an update that added new kinds of results).
+pub fn recheck_all(tx: &Transaction) -> AppResult<()> {
     let profiles = list(tx)?;
     let all = {
         let mut stmt = tx.prepare(&format!("SELECT {FACT_COLUMNS} FROM offers"))?;
@@ -397,35 +453,35 @@ mod tests {
         offers::add(&mut conn, offer("Biuro Kraków", "Kraków", Remote::No)).unwrap();
         offers::add(&mut conn, offer("Bez informacji", "Wrocław", Remote::Unknown)).unwrap();
         // No profile yet: nothing is filtered out.
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 4);
+        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 4);
 
         let a = save(&mut conn, plan("Plan A", remote_only())).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Review, None).unwrap()), vec!["Bez informacji"]);
-        assert_eq!(ids(&offers::list(&conn, View::Rejected, None).unwrap()), vec!["Biuro Gdynia", "Biuro Kraków"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Review, None, false).unwrap()), vec!["Bez informacji"]);
+        assert_eq!(ids(&offers::list(&conn, View::Rejected, None, false).unwrap()), vec!["Biuro Gdynia", "Biuro Kraków"]);
 
         // A second profile: one fitting profile is enough for the "all profiles" board.
         let b = save(&mut conn, plan("Plan B", gdansk())).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Biuro Gdynia", "Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Board, Some(a)).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Biuro Gdynia", "Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, Some(a), false).unwrap()), vec!["Zdalna"]);
         // Plan B wants an office near Gdańsk: a remote offer may still allow the office - unsure.
-        assert_eq!(ids(&offers::list(&conn, View::Board, Some(b)).unwrap()), vec!["Biuro Gdynia"]);
-        assert_eq!(ids(&offers::list(&conn, View::Review, Some(b)).unwrap()), vec!["Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Rejected, Some(b)).unwrap()), vec!["Bez informacji", "Biuro Kraków"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, Some(b), false).unwrap()), vec!["Biuro Gdynia"]);
+        assert_eq!(ids(&offers::list(&conn, View::Review, Some(b), false).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Rejected, Some(b), false).unwrap()), vec!["Bez informacji", "Biuro Kraków"]);
         let counts = offers::counts(&conn, None).unwrap();
-        assert_eq!(counts, ViewCounts { board: 2, review: 1, rejected: 1, trash: 0 });
+        assert_eq!(counts, ViewCounts { board: 2, review: 1, rejected: 1, trash: 0, hidden: 0 });
 
         // Reasons travel with the rows and the card.
-        let rejected = offers::list(&conn, View::Rejected, Some(a)).unwrap();
+        let rejected = offers::list(&conn, View::Rejected, Some(a), false).unwrap();
         assert_eq!(rejected[0].filter_reasons[0].code, "office_not_wanted");
         let detail = offers::detail(&conn, rejected[0].id).unwrap();
         assert_eq!(detail.filters.len(), 2);
         assert_eq!(detail.filters[0].profile_name, "Plan A");
 
         delete(&mut conn, b).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Zdalna"]);
         delete(&mut conn, a).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 4);
+        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 4);
     }
 
     #[test]
@@ -433,13 +489,13 @@ mod tests {
         let mut conn = test_db();
         save(&mut conn, plan("Plan A", remote_only())).unwrap();
         offers::add(&mut conn, offer("Biuro", "Kraków", Remote::No)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 1);
         // The same offer from another source says "remote" - merged and checked again.
         let mut again = offer("Biuro", "Kraków", Remote::Yes);
         again.source = "adzuna".into();
         again.description = Some("Możliwa praca w pełni zdalna.".into());
         offers::add(&mut conn, again).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
     }
 
     #[test]
@@ -450,14 +506,14 @@ mod tests {
             AddOutcome::Added { id } => id,
             other => panic!("{other:?}"),
         };
-        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 1);
         offers::set_interest(&conn, id, Some(Interest::High)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 0);
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 0);
+        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
         offers::set_interest(&conn, id, Some(Interest::No)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 1);
         offers::set_stage(&mut conn, id, Stage::Applied).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
     }
 
     #[test]

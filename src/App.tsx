@@ -4,7 +4,10 @@ import {
   DEFAULT_SETTINGS,
   isAppError,
   type AppStatus,
+  type AssistKind,
+  type Criteria,
   type FetchReport,
+  type RateReport,
   type Interest,
   type OfferDetail,
   type OfferInput,
@@ -17,6 +20,7 @@ import {
   type ViewCounts,
 } from "./api/types";
 import { AddOfferDialog } from "./components/AddOfferDialog";
+import { AssistDialog } from "./components/AiDialogs";
 import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
@@ -62,6 +66,10 @@ export default function App() {
   /** Offer to select once the list of a newly opened tab has loaded. */
   const [pendingSelect, setPendingSelect] = useState<number | null>(null);
   const [fetching, setFetching] = useState(false);
+  /** Show offers hidden by "hide offers scored below X" (until the app is closed). */
+  const [showLow, setShowLow] = useState(false);
+  const [experiencePrev, setExperiencePrev] = useState<string | null>(null);
+  const [assist, setAssist] = useState<{ kind: AssistKind; text: string; busy: boolean } | null>(null);
   const cardHeading = useRef<HTMLHeadingElement>(null);
 
   // ----- language, theme, motion -----
@@ -124,7 +132,7 @@ export default function App() {
     async (keepSelection = true) => {
       if (!api || !status?.ok) return;
       try {
-        const [list, numbers] = await Promise.all([api.listOffers(view, profileId), api.countOffers(profileId)]);
+        const [list, numbers] = await Promise.all([api.listOffers(view, profileId, showLow), api.countOffers(profileId)]);
         setRows(list);
         setCounts(numbers);
         setSelectedId((id) => (keepSelection && id !== null && list.some((r) => r.id === id) ? id : (list[0]?.id ?? null)));
@@ -132,7 +140,7 @@ export default function App() {
         fail(e);
       }
     },
-    [api, status, view, profileId, fail],
+    [api, status, view, profileId, showLow, fail],
   );
 
   useEffect(() => {
@@ -179,11 +187,63 @@ export default function App() {
         }
       })
       .then((unlisten) => (alive ? (stop = unlisten) : unlisten()));
+    let stopRated: (() => void) | undefined;
+    api
+      .onRated((report) => {
+        reloadRef.current();
+        if (report.error) setToast({ text: rateSummary(report, t) });
+      })
+      .then((unlisten) => (alive ? (stopRated = unlisten) : unlisten()));
     return () => {
       alive = false;
       stop?.();
+      stopRated?.();
     };
   }, [api, t]);
+
+  async function rateAgain(id: number) {
+    if (!api) return;
+    setToast({ text: t("ai.working") });
+    try {
+      const report = await api.aiRateOffer(id);
+      await reload();
+      setToast({ text: rateSummary(report, t) });
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function runAssist(id: number, kind: AssistKind) {
+    if (!api) return;
+    setAssist({ kind, text: "", busy: true });
+    try {
+      const text = await api.aiAssist(id, kind);
+      setAssist({ kind, text, busy: false });
+    } catch (e) {
+      setAssist(null);
+      fail(e);
+    }
+  }
+
+  async function suggestCriteria(description: string): Promise<Criteria | null> {
+    if (!api) return null;
+    try {
+      return await api.aiSuggestCriteria(description);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  async function tidyText(text: string): Promise<string | null> {
+    if (!api) return null;
+    try {
+      return await api.aiTidy(text);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
 
   async function fetchNow() {
     if (!api || fetching) return;
@@ -322,7 +382,9 @@ export default function App() {
   async function openProfile(profile: Profile | null) {
     if (!api) return;
     try {
-      setExperience(await api.getExperience());
+      const [text, prev] = await Promise.all([api.getExperience(), api.getExperiencePrev()]);
+      setExperience(text);
+      setExperiencePrev(prev);
       setEditing({ profile });
     } catch (e) {
       fail(e);
@@ -454,6 +516,14 @@ export default function App() {
               </h2>
               <p className="keys-hint">{t("board.keys")}</p>
             </div>
+            {view === "board" && counts && (counts.hidden > 0 || showLow) && (
+              <p className="hidden-note">
+                {showLow ? t("board.lowShown") : t(plural(lang, "board.lowHidden", counts.hidden), { count: counts.hidden, value: settings.hide_below })}{" "}
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowLow((v) => !v)}>
+                  {showLow ? t("board.lowHide") : t("board.lowShow")}
+                </button>
+              </p>
+            )}
             <Board
               rows={sorted}
               view={view}
@@ -485,6 +555,9 @@ export default function App() {
                 action: () => run(() => api!.purgeOffers(selectedId), () => setToast({ text: t("trash.purged") })),
               })
             }
+            aiOn={settings.ai_provider !== "none"}
+            onRateAgain={() => selectedId !== null && rateAgain(selectedId)}
+            onAssist={(kind) => selectedId !== null && runAssist(selectedId, kind)}
           />
         </main>
 
@@ -513,6 +586,10 @@ export default function App() {
           open={editing !== null}
           profile={editing?.profile ?? null}
           experience={experience}
+          experiencePrev={experiencePrev}
+          aiOn={settings.ai_provider !== "none"}
+          onSuggest={suggestCriteria}
+          onTidy={tidyText}
           onClose={() => setEditing(null)}
           onSave={saveProfile}
           onDelete={deleteProfile}
@@ -528,6 +605,14 @@ export default function App() {
           onOpenLink={openLink}
           onError={fail}
           onToast={(text) => setToast({ text })}
+        />
+        <AssistDialog
+          open={assist !== null}
+          title={assist ? t(`assist.${assist.kind}`) : ""}
+          text={assist?.text ?? ""}
+          busy={assist?.busy ?? false}
+          onClose={() => setAssist(null)}
+          onCopied={(ok) => setToast({ text: ok ? t("mail.copied") : t("mail.copyFailed") })}
         />
         <ConfirmDialog
           message={confirm?.message ?? null}
@@ -558,6 +643,16 @@ export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Rec
   const skipped = report.runs.find((r) => r.skipped);
   if (!ran && skipped?.skipped) return t(`fetch.skip.${skipped.skipped}` as TextKey);
   return t("fetch.none");
+}
+
+/** One sentence about an AI run. */
+export function rateSummary(report: RateReport, t: (key: TextKey, params?: Record<string, string | number>) => string): string {
+  if (report.error) {
+    const known = ["net", "auth", "limit", "missing", "busy"];
+    const why = known.includes(report.error.code) ? t(`error.${report.error.code}` as TextKey) : report.error.detail;
+    return `${t("ai.stopped")} ${why}`;
+  }
+  return t("ai.rated", { count: report.rated, waiting: report.waiting });
 }
 
 /** Station clock in the top bar - updates every 15 s. */

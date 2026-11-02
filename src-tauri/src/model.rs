@@ -168,6 +168,8 @@ pub struct Profile {
     pub description: String,
     pub criteria: Criteria,
     pub position: i64,
+    /// The description before the last change - "Tidy up" can be undone.
+    pub description_prev: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -199,6 +201,8 @@ pub struct ViewCounts {
     pub review: i64,
     pub rejected: i64,
     pub trash: i64,
+    /// Offers on the board hidden by "hide offers scored below X".
+    pub hidden: i64,
 }
 
 /// One line on the board.
@@ -262,6 +266,8 @@ pub struct OfferDetail {
     pub history: Vec<StageEvent>,
     /// Hard filter result for every profile.
     pub filters: Vec<ProfileFilter>,
+    /// What AI read from the offer and the match score for every profile.
+    pub ai: crate::ai::OfferAi,
 }
 
 /// A new offer - typed in by hand now, later also from e-mail alerts and aggregators.
