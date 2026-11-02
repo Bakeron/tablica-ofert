@@ -166,7 +166,19 @@ pub async fn delete_secret(name: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn source_status(state: State<'_, AppState>) -> AppResult<Vec<SourceStatus>> {
     let adzuna_ready = sources::adzuna::keys()?.is_some();
-    with_db(&state, |c| sources::status(c, adzuna_ready))
+    let settings = with_db(&state, |c| settings::all(c))?;
+    let mail_ready = sources::mail::config(&settings)?.is_some();
+    with_db(&state, |c| sources::status(c, adzuna_ready, mail_ready))
+}
+
+/// "Check connection" for the alert mailbox: number of messages in the inbox.
+#[tauri::command]
+pub async fn mail_test(state: State<'_, AppState>) -> AppResult<u32> {
+    let settings = with_db(&state, |c| settings::all(c))?;
+    let config = sources::mail::config(&settings)?.ok_or_else(|| AppError::Missing("mailbox".into()))?;
+    tauri::async_runtime::spawn_blocking(move || sources::mail::test(&config))
+        .await
+        .map_err(|e| AppError::Net(e.to_string()))?
 }
 
 /// "Fetch now": every enabled source that may run (daily limits still apply).

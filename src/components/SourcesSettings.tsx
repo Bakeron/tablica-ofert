@@ -1,31 +1,31 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Api } from "../api";
-import { ADZUNA_COUNTRIES, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
+import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate } from "../lib/format";
 import { IconArrowOut, IconWarning } from "./Icons";
+import { MailSettings } from "./MailSettings";
 import { SecretField } from "./SecretField";
 
 const ADZUNA_SIGNUP = "https://developer.adzuna.com/signup";
 
-/** Settings → "Offer sources": automatic fetching, Adzuna (with its key), Remotive. */
+/** Settings → "Offer sources": automatic fetching, Adzuna (with its key), Remotive, e-mail alerts. */
 export function SourcesSettings({
   api,
   settings,
+  profiles,
   onChange,
   onOpenLink,
   onError,
   onToast,
-  children,
 }: {
   api: Api;
   settings: Settings;
+  profiles: Profile[];
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
-  /** More sources below (e-mail alerts). */
-  children?: ReactNode;
 }) {
   const { t, lang } = useI18n();
   const [status, setStatus] = useState<SourceStatus[]>([]);
@@ -43,7 +43,7 @@ export function SourcesSettings({
 
   useEffect(() => {
     load();
-  }, [load, settings.source_adzuna, settings.source_remotive]);
+  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_mail, settings.mail_user, settings.mail_host]);
 
   async function saveSecret(name: SecretName, value: string) {
     try {
@@ -131,7 +131,19 @@ export function SourcesSettings({
         {remotive && <SourceState s={remotive} lang={lang} />}
       </section>
 
-      {children}
+      <MailSettings
+        api={api}
+        settings={settings}
+        status={of("mail")}
+        hints={hints}
+        profiles={profiles}
+        onChange={onChange}
+        onSaveSecret={saveSecret}
+        onDeleteSecret={deleteSecret}
+        onOpenLink={onOpenLink}
+        onError={onError}
+        onToast={onToast}
+      />
     </div>
   );
 }
@@ -157,14 +169,14 @@ export function SourceState({ s, lang }: { s: SourceStatus; lang: "pl" | "en" })
     <div className="source-state">
       {!s.ready && (
         <p className="source-warn">
-          <IconWarning /> {t("src.status.noKey")}
+          <IconWarning /> {t(s.source === "mail" ? "src.status.noMail" : "src.status.noKey")}
         </p>
       )}
       <p>
         {s.lastOk
           ? t("src.status.last", { when: fullDate(s.lastOk, lang), added: s.added, merged: s.merged })
           : t("src.status.never")}{" "}
-        {t("src.status.calls", { count: s.callsToday, max: s.callsADay })}
+        {s.callsADay > 0 && t("src.status.calls", { count: s.callsToday, max: s.callsADay })}
       </p>
       {failed && (
         <p className="source-warn">

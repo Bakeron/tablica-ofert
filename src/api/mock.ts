@@ -277,7 +277,13 @@ export function createMockApi(): Api {
       return [
         one("adzuna", Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]), 25),
         one("remotive", true, 4),
+        one("mail", Boolean(settings.mail_user && secrets["mail-password"]), 0),
       ];
+    },
+    async mailTest() {
+      await new Promise((r) => setTimeout(r, 600));
+      if (!settings.mail_user || !secrets["mail-password"]) throw { code: "missing", detail: "mailbox" };
+      return 42;
     },
     async fetchOffers() {
       await new Promise((r) => setTimeout(r, 1200));

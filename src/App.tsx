@@ -336,7 +336,11 @@ export default function App() {
 
   function changeSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
     setSettings((s) => ({ ...s, [key]: value }));
-    api?.setSetting(key, value).catch(fail);
+    api?.setSetting(key, value).catch((e) => {
+      fail(e);
+      // Refused by Rust (wrong value) - show what is really saved.
+      api.getSettings().then(setSettings, fail);
+    });
   }
 
   function openLink(url: string) {
@@ -518,6 +522,7 @@ export default function App() {
           open={settingsOpen}
           api={api}
           settings={settings}
+          profiles={profiles}
           onClose={() => setSettingsOpen(false)}
           onChange={changeSetting}
           onOpenLink={openLink}

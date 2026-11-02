@@ -1843,3 +1843,99 @@ fieldset.plain {
 [data-motion="reduced"] .topbar .btn-fetch[aria-busy="true"] svg {
   animation: none;
 }
+
+/* "Uwaga" box: red edge, icon and the word - never colour alone. */
+.warn-box {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border: 2px solid var(--danger);
+  border-radius: 4px;
+  background: var(--danger-bg);
+  color: var(--paper-ink);
+}
+
+.warn-box > svg {
+  flex: none;
+  color: var(--danger);
+}
+
+.warn-box strong {
+  color: var(--danger);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.6rem 1rem;
+  align-items: start;
+}
+
+.mail-grid .field > span:first-child,
+.secret .field > span {
+  font-weight: 700;
+}
+
+.howto {
+  border-top: 2px dashed var(--perf);
+  padding-top: 0.6rem;
+}
+
+.howto summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.howto[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.portal-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--perf);
+}
+
+.copy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.copy-list > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) 1fr;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.copy-list dt {
+  font-size: 0.9rem;
+  color: var(--paper-dim);
+}
+
+.copy-list dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}

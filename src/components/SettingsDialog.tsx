@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Api } from "../api";
-import type { Settings } from "../api/types";
+import type { Profile, Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconClose } from "./Icons";
 import { Modal } from "./Modal";
@@ -21,6 +21,7 @@ export function SettingsDialog({
   open,
   api,
   settings,
+  profiles,
   initialSection = "sources",
   onClose,
   onChange,
@@ -31,6 +32,7 @@ export function SettingsDialog({
   open: boolean;
   api: Api | null;
   settings: Settings;
+  profiles: Profile[];
   initialSection?: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -44,6 +46,7 @@ export function SettingsDialog({
       <SettingsBody
         api={api}
         settings={settings}
+        profiles={profiles}
         initialSection={initialSection}
         onClose={onClose}
         onChange={onChange}
@@ -60,6 +63,7 @@ export function SettingsDialog({
 function SettingsBody({
   api,
   settings,
+  profiles,
   initialSection,
   onClose,
   onChange,
@@ -70,6 +74,7 @@ function SettingsBody({
 }: {
   api: Api | null;
   settings: Settings;
+  profiles: Profile[];
   initialSection: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -120,7 +125,7 @@ function SettingsBody({
         ))}
 
       {section === "sources" && api && (
-        <SourcesSettings api={api} settings={settings} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />
+        <SourcesSettings api={api} settings={settings} profiles={profiles} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />
       )}
 
       <footer className="sheet-foot">

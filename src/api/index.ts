@@ -45,6 +45,8 @@ export interface Api {
   setSecret(name: SecretName, value: string): Promise<void>;
   deleteSecret(name: SecretName): Promise<void>;
   sourceStatus(): Promise<SourceStatus[]>;
+  /** Logs in to the alert mailbox (read-only) and returns the number of messages. */
+  mailTest(): Promise<number>;
   /** "Fetch now" - every enabled source that may run. */
   fetchOffers(): Promise<FetchReport>;
   /** Background fetch finished (the app collects at start and every few hours). Returns "stop listening". */
@@ -81,6 +83,7 @@ async function tauriApi(): Promise<Api> {
     setSecret: (name, value) => invoke("set_secret", { name, value }),
     deleteSecret: (name) => invoke("delete_secret", { name }),
     sourceStatus: () => invoke("source_status"),
+    mailTest: () => invoke("mail_test"),
     fetchOffers: () => invoke("fetch_offers"),
     onFetched: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");

@@ -6,6 +6,8 @@
 //! each one checked by `offers::add` like any other outside data.
 
 pub mod adzuna;
+pub mod alerts;
+pub mod mail;
 pub mod remotive;
 
 use std::collections::BTreeMap;
@@ -363,12 +365,52 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         report.runs.push(run);
     }
 
+    // E-mail alerts
+    if on("source_mail") {
+        let every: i64 = snap.settings.get("fetch_every").and_then(|v| v.parse().ok()).unwrap_or(6);
+        let limits = Limits { every_hours: every, forced_hours: 0, calls_a_day: i64::MAX, calls_a_run: 1 };
+        let last = snap.runs.get(mail::SOURCE).cloned().unwrap_or_default();
+        let mut run = SourceRun { source: mail::SOURCE.into(), ..Default::default() };
+        let config = mail::config(&snap.settings)?;
+        if snap.profiles.is_empty() {
+            run.skipped = Some("no_profiles");
+        } else if config.is_none() {
+            run.skipped = Some("missing_key");
+        } else if !due(&last, &limits, force, now) {
+            run.skipped = Some("not_due");
+        } else {
+            let config = config.expect("checked above");
+            let position = with_db(state, |c| mail::position(c))?;
+            // IMAP is blocking - it runs on a worker thread, not on the async runtime.
+            let result = tauri::async_runtime::spawn_blocking(move || mail::fetch(&config, &position))
+                .await
+                .map_err(|e| AppError::Net(e.to_string()))
+                .and_then(|r| r);
+            let stamp = clock::now();
+            match result {
+                Ok(fetched) => with_db(state, |c| {
+                    save(c, fetched.offers, &mut run, &mut report)?;
+                    // Only after the offers are saved - a crash in between reads the mails again.
+                    mail::save_position(c, &fetched.position)?;
+                    record(c, &run, &stamp)
+                })?,
+                Err(e) => {
+                    run.error = Some((&e).into());
+                    with_db(state, |c| record(c, &run, &stamp))?;
+                }
+            }
+        }
+        report.added += run.added;
+        report.runs.push(run);
+    }
+
     Ok(report)
 }
 
 /// State of every source for the settings window.
-/// `adzuna_ready` = both Adzuna keys are in the credential store.
-pub fn status(conn: &Connection, adzuna_ready: bool) -> AppResult<Vec<SourceStatus>> {
+/// `adzuna_ready` = both Adzuna keys are in the credential store,
+/// `mail_ready` = mailbox address, server and password are set.
+pub fn status(conn: &Connection, adzuna_ready: bool, mail_ready: bool) -> AppResult<Vec<SourceStatus>> {
     let s = settings::all(conn)?;
     let mut stmt = conn.prepare("SELECT last_try, last_ok, last_error, added, merged FROM source_runs WHERE source = ?1")?;
     let mut one = |source: &str, ready: bool, calls_a_day: i64| -> AppResult<SourceStatus> {
@@ -394,6 +436,7 @@ pub fn status(conn: &Connection, adzuna_ready: bool) -> AppResult<Vec<SourceStat
     Ok(vec![
         one(adzuna::SOURCE, adzuna_ready, adzuna_limits(6).calls_a_day)?,
         one(remotive::SOURCE, true, REMOTIVE_LIMITS.calls_a_day)?,
+        one(mail::SOURCE, mail_ready, 0)?,
     ])
 }
 
@@ -470,7 +513,7 @@ mod tests {
             ..Default::default()
         };
         record(&conn, &bad, "2026-11-02T16:00:00Z").unwrap();
-        let s = status(&conn, false).unwrap().into_iter().find(|s| s.source == "adzuna").unwrap();
+        let s = status(&conn, false, false).unwrap().into_iter().find(|s| s.source == "adzuna").unwrap();
         assert_eq!(s.last_try.as_deref(), Some("2026-11-02T16:00:00Z"));
         assert_eq!(s.last_ok.as_deref(), Some("2026-11-02T10:00:00Z"));
         assert_eq!(s.last_error.as_deref(), Some("timeout"));
