@@ -307,6 +307,10 @@ export interface Settings {
   feature_dates: "on" | "off";
   feature_contacts: "on" | "off";
   feature_keys: "on" | "off";
+  /** Sync with Google Drive (off by default). */
+  sync_drive: "off" | "on";
+  /** Own Google project (empty = the one built into the app). */
+  google_client_id: string;
   source_adzuna: "off" | "on";
   source_remotive: "off" | "on";
   adzuna_country: AdzunaCountry;
@@ -339,6 +343,8 @@ export const DEFAULT_SETTINGS: Settings = {
   feature_dates: "on",
   feature_contacts: "off",
   feature_keys: "on",
+  sync_drive: "off",
+  google_client_id: "",
   source_adzuna: "off",
   source_remotive: "off",
   adzuna_country: "pl",
@@ -369,7 +375,8 @@ export type SecretName =
   | "ai-key-groq"
   | "ai-key-openrouter"
   | "ai-key-anthropic"
-  | "ai-key-openai";
+  | "ai-key-openai"
+  | "google-client-secret";
 
 /** Set secrets: name -> last 4 characters ("••••1234"). */
 export type SecretHints = Partial<Record<SecretName, string>>;
@@ -453,3 +460,26 @@ export interface Captured {
 export interface TaskStatus {
   exists: boolean;
 }
+
+export interface SyncStatus {
+  /** A Google project is available (built in or typed in). */
+  client: boolean;
+  connected: boolean;
+  hasKey: boolean;
+  lastSync: string | null;
+  lastError: string | null;
+}
+
+/** Login with a code at google.com/device. */
+export interface DeviceCode {
+  deviceCode: string;
+  userCode: string;
+  verificationUrl: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export type SyncOutcome =
+  | { status: "done"; changed: number; removed: number }
+  /** Several offers would be deleted - ask first. */
+  | { status: "confirm"; removed: number };

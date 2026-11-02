@@ -480,8 +480,62 @@ pub async fn wipe_all(state: State<'_, AppState>, app: tauri::AppHandle) -> AppR
     for name in secrets::USER_SECRETS {
         secrets::delete(name)?;
     }
+    secrets::delete(crate::sync::KEY_SECRET)?;
+    secrets::delete(crate::sync::drive::REFRESH_SECRET)?;
     secrets::delete(secrets::DB_KEY)?;
     let _ = tauri::async_runtime::spawn_blocking(crate::scheduler::remove).await;
     app.exit(0);
     Ok(())
+}
+
+// ---------- Google Drive sync ----------
+
+#[tauri::command]
+pub async fn sync_status(state: State<'_, AppState>) -> AppResult<crate::sync::SyncStatus> {
+    with_db(&state, |c| crate::sync::status(c))
+}
+
+#[tauri::command]
+pub async fn sync_login_start(state: State<'_, AppState>) -> AppResult<crate::sync::drive::DeviceCode> {
+    let client = with_db(&state, |c| crate::sync::client(c))?.ok_or_else(|| AppError::Missing("google project".into()))?;
+    crate::sync::drive::start_login(&crate::net::client()?, &client).await
+}
+
+/// `true` = logged in (the refresh token is now in the credential store).
+#[tauri::command]
+pub async fn sync_login_poll(state: State<'_, AppState>, device_code: String) -> AppResult<bool> {
+    let client = with_db(&state, |c| crate::sync::client(c))?.ok_or_else(|| AppError::Missing("google project".into()))?;
+    match crate::sync::drive::poll_login(&crate::net::client()?, &client, &device_code).await? {
+        Some(refresh) => {
+            secrets::set(crate::sync::drive::REFRESH_SECRET, &refresh)?;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
+#[tauri::command]
+pub async fn sync_now(state: State<'_, AppState>, confirm: bool) -> AppResult<crate::sync::SyncOutcome> {
+    crate::sync::run(&state, confirm).await
+}
+
+#[tauri::command]
+pub async fn sync_qr() -> AppResult<String> {
+    crate::sync::qr_svg()
+}
+
+#[tauri::command]
+pub async fn sync_new_key(state: State<'_, AppState>) -> AppResult<()> {
+    crate::sync::new_key(&state).await
+}
+
+#[tauri::command]
+pub async fn sync_delete_remote(state: State<'_, AppState>) -> AppResult<()> {
+    crate::sync::delete_remote(&state).await
+}
+
+/// Forgets the Google login on this computer (the file on Drive stays).
+#[tauri::command]
+pub async fn sync_disconnect() -> AppResult<()> {
+    secrets::delete(crate::sync::drive::REFRESH_SECRET)
 }

@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::dedup::normalize;
-use crate::model::{OfferInput, SalaryPeriod};
+use crate::model::SalaryPeriod;
 use crate::sources::alerts::{parse_place, parse_salary};
 use crate::text::{cut, one_line, squeeze};
 
@@ -25,26 +25,6 @@ pub struct Draft {
     pub requirements: Option<String>,
     pub description: Option<String>,
     pub by_ai: bool,
-}
-
-impl Draft {
-    pub fn from_input(o: OfferInput, by_ai: bool) -> Self {
-        Draft {
-            title: Some(o.title).filter(|t| !t.is_empty()),
-            company: Some(o.company).filter(|c| !c.is_empty()),
-            city: o.city,
-            remote: o.remote,
-            salary_min: o.salary_min,
-            salary_max: o.salary_max,
-            salary_currency: o.salary_currency,
-            salary_period: o.salary_period,
-            contract: o.contract,
-            level: o.level,
-            requirements: o.requirements,
-            description: o.description,
-            by_ai,
-        }
-    }
 }
 
 fn contract_of(text: &str) -> Option<String> {

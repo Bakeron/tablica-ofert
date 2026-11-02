@@ -12,6 +12,9 @@ import type {
   Machine,
   RateReport,
   TaskStatus,
+  DeviceCode,
+  SyncOutcome,
+  SyncStatus,
   FetchReport,
   SecretHints,
   SecretName,
@@ -109,6 +112,21 @@ export interface Api {
   wipeAll(): Promise<void>;
   /** An interview starts in an hour (for the optional gong). */
   onReminder(listener: () => void): Promise<() => void>;
+  syncStatus(): Promise<SyncStatus>;
+  /** Step 1 of the Google login: a code to type at google.com/device. */
+  syncLoginStart(): Promise<DeviceCode>;
+  /** Step 2: true = logged in, false = not yet. */
+  syncLoginPoll(deviceCode: string): Promise<boolean>;
+  /** Download, merge, upload. `confirm` = several offers may be deleted. */
+  syncNow(confirm: boolean): Promise<SyncOutcome>;
+  /** QR code (SVG) with the sync key for the phone. */
+  syncQr(): Promise<string>;
+  /** New key - the old phone can no longer read the file. */
+  syncNewKey(): Promise<void>;
+  /** Deletes the sync file from Google Drive. */
+  syncDeleteRemote(): Promise<void>;
+  /** Forgets the Google login on this computer. */
+  syncDisconnect(): Promise<void>;
   /** Saves a longer description from the offer page; returns whether it changed. */
   updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
@@ -177,6 +195,14 @@ async function tauriApi(): Promise<Api> {
     loadCopy: (password) => invoke("load_copy", { password }),
     exportCsv: () => invoke("export_csv"),
     wipeAll: () => invoke("wipe_all"),
+    syncStatus: () => invoke("sync_status"),
+    syncLoginStart: () => invoke("sync_login_start"),
+    syncLoginPoll: (deviceCode) => invoke("sync_login_poll", { deviceCode }),
+    syncNow: (confirm) => invoke("sync_now", { confirm }),
+    syncQr: () => invoke("sync_qr"),
+    syncNewKey: () => invoke("sync_new_key"),
+    syncDeleteRemote: () => invoke("sync_delete_remote"),
+    syncDisconnect: () => invoke("sync_disconnect"),
     onReminder: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");
       return listen("reminder", () => listener());

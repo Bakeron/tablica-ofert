@@ -28,14 +28,17 @@ time = { version = "0.3.55", features = ["formatting", "parsing", "macros", "ser
 # Secrets live in the OS credential store (Windows Credential Manager), never in files
 keyring-core = "1.0.1"
 getrandom = "0.4.3"
-reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "json", "gzip", "charset", "http2", "query"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "json", "gzip", "charset", "http2", "query", "form"] }
 tokio = { version = "1.54.1", features = ["time", "macros"] }
-imap = "2.4"
+imap = { version = "3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
 native-tls = "0.2.18"
 mail-parser = "1.0.1"
 tauri-plugin-notification = "2"
 sys-locale = "0.3.2"
 tauri-plugin-dialog = "2"
+aes-gcm = "0.11.1"
+flate2 = "1.1.10"
+qrcode = "0.14.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = "1.1.0"

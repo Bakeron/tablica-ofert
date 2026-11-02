@@ -41,6 +41,9 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("feature_dates", Rule::One(&["on", "off"])),
     ("feature_contacts", Rule::One(&["off", "on"])),
     ("feature_keys", Rule::One(&["on", "off"])),
+    // Google Drive sync and, optionally, an own Google project (empty = built in).
+    ("sync_drive", Rule::One(&["off", "on"])),
+    ("google_client_id", Rule::Text { max: 200, default: "", check: is_client_id }),
     ("source_adzuna", Rule::One(&["off", "on"])),
     ("source_remotive", Rule::One(&["off", "on"])),
     ("adzuna_country", Rule::One(ADZUNA_COUNTRIES)),
@@ -57,6 +60,10 @@ const ALLOWED: &[(&str, Rule)] = &[
     // Board: hide offers scored below this (offers you acted on stay).
     ("hide_below", Rule::One(&["off", "30", "40", "50", "60", "70"])),
 ];
+
+fn is_client_id(v: &str) -> bool {
+    v.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+}
 
 fn is_model(v: &str) -> bool {
     v.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:/@".contains(c))

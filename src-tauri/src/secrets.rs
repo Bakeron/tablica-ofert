@@ -18,6 +18,7 @@ pub const USER_SECRETS: &[&str] = &[
     "ai-key-openrouter",
     "ai-key-anthropic",
     "ai-key-openai",
+    "google-client-secret",
 ];
 
 const MAX_SECRET: usize = 512;

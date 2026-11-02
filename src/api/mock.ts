@@ -24,6 +24,7 @@ export function createMockApi(): Api {
   let experience = firstRun ? "" : "4 lata jako frontend developer (React, TypeScript), angielski B2.";
   let experiencePrev: string | null = null;
   let nextEventId = 1;
+  let syncConnected = false;
   let aiCalls = 3;
 
   /** Made-up AI reading of a demo offer (profile index -> profile id). */
@@ -555,6 +556,31 @@ export function createMockApi(): Api {
     },
     async onReminder() {
       return () => {};
+    },
+    async syncStatus() {
+      return { client: true, connected: syncConnected, hasKey: true, lastSync: syncConnected ? now() : null, lastError: null };
+    },
+    async syncLoginStart() {
+      return { deviceCode: "demo", userCode: "ABCD-EFGH", verificationUrl: "https://www.google.com/device", expiresIn: 600, interval: 5 };
+    },
+    async syncLoginPoll() {
+      syncConnected = true;
+      return true;
+    },
+    async syncNow() {
+      await new Promise((r) => setTimeout(r, 800));
+      return { status: "done" as const, changed: 2, removed: 0 };
+    },
+    async syncQr() {
+      // A made-up pattern - the preview has no real key.
+      const cells = Array.from({ length: 21 * 21 }, (_, i) => ((i * 7919) % 11 < 5 ? 1 : 0));
+      const rects = cells.map((c, i) => (c ? `<rect x="${(i % 21) * 12 + 4}" y="${Math.floor(i / 21) * 12 + 4}" width="12" height="12"/>` : "")).join("");
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260"><rect width="260" height="260" fill="#fff"/><g fill="#111">${rects}</g></svg>`;
+    },
+    async syncNewKey() {},
+    async syncDeleteRemote() {},
+    async syncDisconnect() {
+      syncConnected = false;
     },
     async calendarIcs() {
       return "C:\\Users\\Przyklad\\Downloads\\tablica-ofert-rozmowa.ics";

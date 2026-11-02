@@ -498,6 +498,13 @@ pub fn purge(conn: &mut Connection, id: Option<i64>) -> AppResult<usize> {
          SELECT fingerprint, ?2 FROM offers WHERE deleted_at IS NOT NULL AND (?1 IS NULL OR id = ?1)",
         params![id, now],
     )?;
+    // Tombstones first: sync deletes these offers on the other device too.
+    tx.execute(
+        "INSERT INTO sync_deleted (kind, uid, at) SELECT 'offers', uid, ?2 FROM offers
+         WHERE deleted_at IS NOT NULL AND (?1 IS NULL OR id = ?1)
+         ON CONFLICT (kind, uid) DO UPDATE SET at = excluded.at",
+        params![id, now],
+    )?;
     let count = tx.execute(
         "DELETE FROM offers WHERE deleted_at IS NOT NULL AND (?1 IS NULL OR id = ?1)",
         params![id],

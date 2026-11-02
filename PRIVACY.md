@@ -12,13 +12,13 @@ Stan na 2.11.2026. Tablica Ofert to aplikacja na komputer, bez kont i bez własn
 
 ## Z czym aplikacja się łączy
 
-Tylko z tym, co sam włączysz w ustawieniach:
+Tylko z tym, co włączysz w ustawieniach:
 
 - **Adzuna** (agregator ofert) - wysyłane są słowa kluczowe i miasto z profilu oraz Twój klucz Adzuna.
 - **Remotive** (praca zdalna) - wysyłane są słowa kluczowe z profilu.
 - **Twoja skrzynka z alertami** (IMAP) - aplikacja tylko czyta maile; niczego nie usuwa, nie oznacza jako przeczytane i nie wysyła.
 - **Wybrany dostawca AI** (Gemini, Groq, OpenRouter, Claude, OpenAI) - wysyłana jest treść oferty, opisy profili, oczekiwania finansowe i doświadczenie. Nigdy klucze, hasła ani notatki. Przy Ollamie AI działa na Twoim komputerze i nic nie wychodzi na zewnątrz. Dane w usłudze AI podlegają polityce prywatności tej usługi.
-- **Strony ofert, które sam otworzysz** w oknie podglądu.
+- **Strony ofert otwarte przez Ciebie** w oknie podglądu.
 
 Aplikacja nie ma analityki, reklam ani żadnych „telemetrycznych” połączeń.
 

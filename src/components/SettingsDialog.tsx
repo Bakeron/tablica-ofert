@@ -8,6 +8,7 @@ import { AboutPart } from "./AboutPart";
 import { AiSettings } from "./AiSettings";
 import { DataSettings } from "./DataSettings";
 import { SourcesSettings } from "./SourcesSettings";
+import { SyncSettings } from "./SyncSettings";
 
 const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: string[] }[] = [
   { key: "language", label: "settings.language", values: ["system", "pl", "en"] },
@@ -17,8 +18,8 @@ const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: s
 
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
-export type SettingsSection = "look" | "sources" | "ai" | "data" | "about";
-const SECTIONS: SettingsSection[] = ["sources", "ai", "look", "data", "about"];
+export type SettingsSection = "look" | "sources" | "ai" | "sync" | "data" | "about";
+const SECTIONS: SettingsSection[] = ["sources", "ai", "look", "sync", "data", "about"];
 
 const FEATURES = ["feature_dates", "feature_contacts", "feature_keys"] as const;
 
@@ -166,6 +167,19 @@ function SettingsBody({
       )}
 
       {section === "about" && <AboutPart version={version} onOpenLink={onOpenLink} />}
+
+      {section === "sync" && api && (
+        <SyncSettings
+          api={api}
+          settings={settings}
+          onChange={onChange}
+          onOpenLink={onOpenLink}
+          onError={onError}
+          onToast={onToast}
+          onConfirm={onConfirm}
+          onSynced={onLoaded}
+        />
+      )}
 
       {section === "sources" && api && (
         <SourcesSettings api={api} settings={settings} profiles={profiles} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />

@@ -2308,3 +2308,33 @@ fieldset.plain {
   margin: 0;
   padding-left: 1.1rem;
 }
+
+/* ---------- sync ---------- */
+
+.device-code {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.device-code-value {
+  padding: 0.3rem 0.8rem;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+.qr {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.qr img {
+  border: 8px solid #ffffff;
+  border-radius: 4px;
+}

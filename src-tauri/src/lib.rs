@@ -20,6 +20,7 @@ mod scheduler;
 mod score;
 mod settings;
 mod sources;
+mod sync;
 mod text;
 mod usage;
 mod net;
@@ -151,6 +152,14 @@ pub fn run() {
             commands::load_copy,
             commands::export_csv,
             commands::wipe_all,
+            commands::sync_status,
+            commands::sync_login_start,
+            commands::sync_login_poll,
+            commands::sync_now,
+            commands::sync_qr,
+            commands::sync_new_key,
+            commands::sync_delete_remote,
+            commands::sync_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -226,6 +235,16 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
             }
             Ok(_) | Err(error::AppError::Busy) => {}
             Err(e) => eprintln!("automatic AI run failed: {e}"),
+        }
+    }
+    // Sync with Google Drive (only when turned on and connected); a big deletion waits for the person.
+    if on("sync_drive") && secrets::get(sync::drive::REFRESH_SECRET).ok().flatten().is_some() {
+        match sync::run(&state, false).await {
+            Ok(sync::SyncOutcome::Done { changed, .. }) if changed > 0 => {
+                let _ = handle.emit("offers-rated", &ai::RateReport::default());
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("sync failed: {e}"),
         }
     }
     remind(handle);

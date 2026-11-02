@@ -79,7 +79,8 @@ type Session = imap::Session<native_tls::TlsStream<TcpStream>>;
 
 fn mail_error(e: imap::error::Error) -> AppError {
     match e {
-        imap::error::Error::No(msg) | imap::error::Error::Bad(msg) => AppError::Auth(msg),
+        imap::error::Error::No(no) => AppError::Auth(no.information),
+        imap::error::Error::Bad(bad) => AppError::Auth(bad.information),
         other => AppError::Net(other.to_string()),
     }
 }
@@ -98,10 +99,7 @@ fn connect(c: &Config) -> AppResult<Session> {
     let stream = tls.connect(&c.host, tcp).map_err(|e| AppError::Net(e.to_string()))?;
     let mut client = imap::Client::new(stream);
     client.read_greeting().map_err(mail_error)?;
-    client.login(&c.user, &c.password).map_err(|(e, _)| match e {
-        imap::error::Error::No(msg) | imap::error::Error::Bad(msg) => AppError::Auth(msg),
-        other => AppError::Net(other.to_string()),
-    })
+    client.login(&c.user, &c.password).map_err(|(e, _)| mail_error(e))
 }
 
 /// "Check connection" in the settings: logs in, opens the inbox read-only, counts messages.

@@ -171,9 +171,10 @@ pub fn save(conn: &mut Connection, input: ProfileInput) -> AppResult<i64> {
 
 pub fn delete(conn: &mut Connection, id: i64) -> AppResult<()> {
     let tx = conn.transaction()?;
-    if tx.execute("DELETE FROM profiles WHERE id = ?1", [id])? == 0 {
-        return Err(AppError::NotFound);
-    }
+    let uid: Option<String> = tx.query_row("SELECT uid FROM profiles WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+    let uid = uid.ok_or(AppError::NotFound)?;
+    tx.execute("DELETE FROM profiles WHERE id = ?1", [id])?;
+    crate::sync::data::tombstone(&tx, "profiles", &uid, &clock::now())?;
     recheck_all(&tx)?;
     tx.commit()?;
     Ok(())

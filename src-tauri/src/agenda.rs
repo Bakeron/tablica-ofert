@@ -124,8 +124,16 @@ pub fn add_event(conn: &Connection, offer_id: i64, input: EventInput) -> AppResu
     Ok(conn.last_insert_rowid())
 }
 
+/// Deletes a row and leaves a tombstone, so sync removes it on the other device too.
+fn delete_synced(conn: &Connection, table: &str, kind: &str, id: i64) -> AppResult<()> {
+    let uid: Option<String> = conn.query_row(&format!("SELECT uid FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).optional()?;
+    let uid = uid.ok_or(AppError::NotFound)?;
+    conn.execute(&format!("DELETE FROM {table} WHERE id = ?1"), [id])?;
+    crate::sync::data::tombstone(conn, kind, &uid, &clock::now())
+}
+
 pub fn delete_event(conn: &Connection, id: i64) -> AppResult<()> {
-    if conn.execute("DELETE FROM events WHERE id = ?1", [id])? == 0 { Err(AppError::NotFound) } else { Ok(()) }
+    delete_synced(conn, "events", "events", id)
 }
 
 fn event(conn: &Connection, id: i64) -> AppResult<Event> {
@@ -153,20 +161,22 @@ pub fn save_contact(conn: &Connection, offer_id: i64, c: Contact) -> AppResult<i
     let values = (name, field(&c.role), field(&c.email), field(&c.phone), linkedin);
     if c.id > 0 {
         let n = conn.execute(
-            "UPDATE contacts SET name = ?3, role = ?4, email = ?5, phone = ?6, linkedin = ?7 WHERE id = ?1 AND offer_id = ?2",
-            params![c.id, offer_id, values.0, values.1, values.2, values.3, values.4],
+            "UPDATE contacts SET name = ?3, role = ?4, email = ?5, phone = ?6, linkedin = ?7, updated_at = ?8
+             WHERE id = ?1 AND offer_id = ?2",
+            params![c.id, offer_id, values.0, values.1, values.2, values.3, values.4, clock::now()],
         )?;
         return if n == 0 { Err(AppError::NotFound) } else { Ok(c.id) };
     }
     conn.execute(
-        "INSERT INTO contacts (offer_id, name, role, email, phone, linkedin, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![offer_id, values.0, values.1, values.2, values.3, values.4, clock::now()],
+        "INSERT INTO contacts (uid, offer_id, name, role, email, phone, linkedin, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        params![crate::secrets::random_hex(16)?, offer_id, values.0, values.1, values.2, values.3, values.4, clock::now()],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
 pub fn delete_contact(conn: &Connection, id: i64) -> AppResult<()> {
-    if conn.execute("DELETE FROM contacts WHERE id = ?1", [id])? == 0 { Err(AppError::NotFound) } else { Ok(()) }
+    delete_synced(conn, "contacts", "contacts", id)
 }
 
 pub fn add_log(conn: &Connection, offer_id: i64, input: LogInput) -> AppResult<i64> {
@@ -176,14 +186,14 @@ pub fn add_log(conn: &Connection, offer_id: i64, input: LogInput) -> AppResult<i
     }
     let at = utc(parse_time(&input.at)?);
     conn.execute(
-        "INSERT INTO contact_log (offer_id, at, kind, note) VALUES (?1, ?2, ?3, ?4)",
-        params![offer_id, at, input.kind, note(&input.note)?],
+        "INSERT INTO contact_log (uid, offer_id, at, kind, note) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![crate::secrets::random_hex(16)?, offer_id, at, input.kind, note(&input.note)?],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
 pub fn delete_log(conn: &Connection, id: i64) -> AppResult<()> {
-    if conn.execute("DELETE FROM contact_log WHERE id = ?1", [id])? == 0 { Err(AppError::NotFound) } else { Ok(()) }
+    delete_synced(conn, "contact_log", "log", id)
 }
 
 pub fn agenda(conn: &Connection, offer_id: i64) -> AppResult<Agenda> {
