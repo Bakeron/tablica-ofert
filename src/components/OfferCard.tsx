@@ -21,11 +21,13 @@ interface Props {
   aiOn: boolean;
   onRateAgain: () => void;
   onAssist: (kind: AssistKind) => void;
+  /** Opens the offer page in the preview window to take its full text. */
+  onFullText: () => void;
 }
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onFullText },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -141,6 +143,11 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               <button type="button" className="btn btn-ghost" onClick={onTrash}>
                 <IconTrash /> {t("card.trash")}
               </button>
+              {isWebUrl(offer.url) && (
+                <button type="button" className="btn btn-ghost" onClick={onFullText} title={t("full.hint")}>
+                  {t("full.button")}
+                </button>
+              )}
             </div>
           </>
         )}

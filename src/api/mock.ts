@@ -449,5 +449,46 @@ export function createMockApi(): Api {
     async onRated() {
       return () => {};
     },
+    async fillOffer(text, title) {
+      await new Promise((r) => setTimeout(r, 500));
+      const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+      const money = lines.find((l) => /\d/.test(l) && /(zł|pln|eur)/i.test(l));
+      const nums = money?.replace(/(\d)\s(\d{3})/g, "$1$2").match(/\d+/g)?.map(Number) ?? [];
+      const ai = settings.ai_provider !== "none";
+      return {
+        title: title || lines[0] || null,
+        company: ai ? (lines[1] ?? null) : null,
+        city: lines.find((l) => /wrocław|warszawa|kraków|gdańsk|poznań/i.test(l)) ?? null,
+        remote: /zdaln|remote/i.test(text) ? "yes" : null,
+        salaryMin: nums[0] ?? null,
+        salaryMax: nums[1] ?? null,
+        salaryCurrency: money ? "PLN" : null,
+        salaryPeriod: money ? "month" : null,
+        contract: /b2b/i.test(text) ? "B2B" : null,
+        level: null,
+        requirements: null,
+        description: text.trim() || null,
+        byAi: ai,
+      };
+    },
+    async openPreview(url) {
+      if (!/^https?:\/\//i.test(url)) throw { code: "invalid", detail: "the link must start with http:// or https://" };
+    },
+    async capturePreview() {
+      await new Promise((r) => setTimeout(r, 500));
+      return {
+        url: "https://example.com/oferty/przyklad-tester",
+        title: "Tester manualny (k/m)",
+        text: "Tester manualny (k/m)\nZmyślona Firma Testowa\nWrocław · praca zdalna\n9 000 - 11 000 zł brutto\n\nTestujemy aplikację do rezerwacji. Umowa o pracę.\n\n(Przykład z podglądu - w aplikacji tu jest tekst otwartej strony.)",
+      };
+    },
+    async closePreview() {},
+    async updateDescription(id, text) {
+      const o = find(id);
+      if (text.trim().length <= (o.description ?? "").length) return false;
+      o.description = text.trim();
+      o.ai = { ...o.ai, status: null };
+      return true;
+    },
   };
 }

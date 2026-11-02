@@ -5,6 +5,8 @@ import {
   isAppError,
   type AppStatus,
   type AssistKind,
+  type Captured,
+  type Draft,
   type Criteria,
   type FetchReport,
   type RateReport,
@@ -70,6 +72,9 @@ export default function App() {
   const [showLow, setShowLow] = useState(false);
   const [experiencePrev, setExperiencePrev] = useState<string | null>(null);
   const [assist, setAssist] = useState<{ kind: AssistKind; text: string; busy: boolean } | null>(null);
+  /** The preview window shows the page of this offer ("Fill in the full description"). */
+  const [fullFor, setFullFor] = useState<{ id: number; title: string } | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const cardHeading = useRef<HTMLHeadingElement>(null);
 
   // ----- language, theme, motion -----
@@ -221,6 +226,58 @@ export default function App() {
       setAssist({ kind, text, busy: false });
     } catch (e) {
       setAssist(null);
+      fail(e);
+    }
+  }
+
+  async function openPreview(url: string): Promise<boolean> {
+    if (!api) return false;
+    try {
+      await api.openPreview(url);
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  }
+
+  async function capturePage(): Promise<Captured | null> {
+    if (!api) return null;
+    try {
+      return await api.capturePreview();
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  async function fillOffer(text: string, title: string | null): Promise<Draft | null> {
+    if (!api) return null;
+    try {
+      return await api.fillOffer(text, title);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  async function startFullText(offer: OfferDetail) {
+    if (offer.url && (await openPreview(offer.url))) setFullFor({ id: offer.id, title: offer.title });
+  }
+
+  async function takeFullText() {
+    if (!api || !fullFor) return;
+    setCapturing(true);
+    const page = await capturePage();
+    setCapturing(false);
+    if (!page) return;
+    try {
+      const changed = await api.updateDescription(fullFor.id, page.text);
+      await reload();
+      setToast({ text: changed ? t("full.saved") : t("full.notLonger") });
+      setFullFor(null);
+      api.closePreview().catch(() => {});
+    } catch (e) {
       fail(e);
     }
   }
@@ -494,6 +551,27 @@ export default function App() {
           </div>
         )}
 
+        {fullFor && (
+          <div className="preview-bar" role="region" aria-label={t("full.title")}>
+            <p>
+              <strong>{t("full.title")}:</strong> {fullFor.title}. {t("full.barHint")}
+            </p>
+            <button type="button" className="btn btn-sign btn-small" onClick={takeFullText} disabled={capturing} aria-busy={capturing}>
+              {capturing ? t("quick.capturing") : t("quick.capture")}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-small"
+              onClick={() => {
+                setFullFor(null);
+                api?.closePreview().catch(() => {});
+              }}
+            >
+              {t("full.cancel")}
+            </button>
+          </div>
+        )}
+
         <main className="split">
           <section className="board-panel" aria-labelledby="board-heading">
             {view !== "trash" && (
@@ -556,6 +634,7 @@ export default function App() {
               })
             }
             aiOn={settings.ai_provider !== "none"}
+            onFullText={() => detail && startFullText(detail)}
             onRateAgain={() => selectedId !== null && rateAgain(selectedId)}
             onAssist={(kind) => selectedId !== null && runAssist(selectedId, kind)}
           />
@@ -581,7 +660,18 @@ export default function App() {
           )}
         </div>
 
-        <AddOfferDialog open={adding} onClose={() => setAdding(false)} onSave={addOffer} />
+        <AddOfferDialog
+          open={adding}
+          aiOn={settings.ai_provider !== "none"}
+          onClose={() => {
+            setAdding(false);
+            api?.closePreview().catch(() => {});
+          }}
+          onSave={addOffer}
+          onOpenPreview={openPreview}
+          onCapture={capturePage}
+          onFill={fillOffer}
+        />
         <ProfileDialog
           open={editing !== null}
           profile={editing?.profile ?? null}

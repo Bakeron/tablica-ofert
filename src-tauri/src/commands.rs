@@ -272,3 +272,46 @@ pub async fn ai_suggest_criteria(state: State<'_, AppState>, description: String
 pub async fn ai_tidy(state: State<'_, AppState>, text: String) -> AppResult<String> {
     ai::tidy(&state, &text).await
 }
+
+// ---------- offer from a link or a pasted text ----------
+
+/// Fields from a pasted text or a preview page: AI when it is set up, plain code otherwise
+/// (also when AI fails - the person fills in the rest).
+#[tauri::command]
+pub async fn fill_offer(state: State<'_, AppState>, text: String, title: Option<String>) -> AppResult<crate::extract::Draft> {
+    let text = crate::text::cut(&text, 100_000);
+    let ai_set = with_db(&state, |c| Ok(settings::get(c, "ai_provider")? != "none"))?;
+    if ai_set {
+        if let Ok(draft) = ai::extract(&state, &text, title.as_deref()).await {
+            return Ok(draft);
+        }
+    }
+    Ok(crate::extract::from_text(&text, title.as_deref()))
+}
+
+#[tauri::command]
+pub async fn open_preview(app: tauri::AppHandle, url: String) -> AppResult<()> {
+    crate::preview::open(&app, &url)
+}
+
+/// "Take the text from the page" in the preview window.
+#[tauri::command]
+pub async fn capture_preview(app: tauri::AppHandle) -> AppResult<crate::preview::Captured> {
+    crate::preview::capture(&app).await
+}
+
+#[tauri::command]
+pub async fn close_preview(app: tauri::AppHandle) -> AppResult<()> {
+    crate::preview::close(&app);
+    Ok(())
+}
+
+/// Returns whether the description got longer (and was saved).
+#[tauri::command]
+pub async fn update_description(state: State<'_, AppState>, app: tauri::AppHandle, id: i64, text: String) -> AppResult<bool> {
+    let changed = with_db(&state, |c| offers::update_description(c, id, text))?;
+    if changed {
+        spawn_ai(app);
+    }
+    Ok(changed)
+}

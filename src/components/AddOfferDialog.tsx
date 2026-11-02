@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import type { OfferInput, Remote, SalaryPeriod } from "../api/types";
+import type { Captured, Draft, OfferInput, Remote, SalaryPeriod } from "../api/types";
 import { useI18n } from "../i18n";
 import { IconClose } from "./Icons";
 import { Modal } from "./Modal";
@@ -30,16 +30,71 @@ const orNull = (value: string) => (value.trim() === "" ? null : value.trim());
 
 export function AddOfferDialog({
   open,
+  aiOn,
   onClose,
   onSave,
+  onOpenPreview,
+  onCapture,
+  onFill,
 }: {
   open: boolean;
+  /** An AI provider is set - "Fill in the fields" uses AI. */
+  aiOn: boolean;
   onClose: () => void;
   onSave: (offer: OfferInput) => Promise<boolean>;
+  onOpenPreview: (url: string) => Promise<boolean>;
+  onCapture: () => Promise<Captured | null>;
+  onFill: (text: string, title: string | null) => Promise<Draft | null>;
 }) {
   const { t } = useI18n();
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState("");
+  const [pasted, setPasted] = useState("");
+  const [pageTitle, setPageTitle] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [working, setWorking] = useState<"capture" | "fill" | null>(null);
+  const [filledBy, setFilledBy] = useState<"ai" | "code" | null>(null);
+
+  async function openPreview() {
+    if (await onOpenPreview(link.trim())) setPreviewOpen(true);
+  }
+
+  async function capture() {
+    setWorking("capture");
+    const page = await onCapture();
+    setWorking(null);
+    if (!page) return;
+    setPasted(page.text);
+    setPageTitle(page.title);
+    setLink(page.url);
+    await fill(page.text, page.title, page.url);
+  }
+
+  async function fill(text = pasted, title = pageTitle, url = link) {
+    if (!text.trim()) return;
+    setWorking("fill");
+    const draft = await onFill(text, title);
+    setWorking(null);
+    if (!draft) return;
+    const v = (x: string | number | null | undefined) => (x === null || x === undefined ? "" : String(x));
+    setForm((f) => ({
+      ...f,
+      title: draft.title ?? f.title,
+      company: draft.company ?? f.company,
+      url: url.trim() || f.url,
+      city: draft.city ?? f.city,
+      remote: draft.remote ?? f.remote,
+      salaryMin: draft.salaryMin !== null ? v(draft.salaryMin) : f.salaryMin,
+      salaryMax: draft.salaryMax !== null ? v(draft.salaryMax) : f.salaryMax,
+      salaryCurrency: draft.salaryCurrency ?? f.salaryCurrency,
+      salaryPeriod: draft.salaryPeriod ?? f.salaryPeriod,
+      contract: draft.contract ?? f.contract,
+      level: draft.level ?? f.level,
+      description: draft.description ?? f.description,
+    }));
+    setFilledBy(draft.byAi ? "ai" : "code");
+  }
 
   const set = <K extends keyof typeof EMPTY>(key: K, value: (typeof EMPTY)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -65,6 +120,10 @@ export function AddOfferDialog({
     setBusy(false);
     if (ok) {
       setForm(EMPTY);
+      setLink("");
+      setPasted("");
+      setPageTitle(null);
+      setFilledBy(null);
       onClose();
     }
   }
@@ -79,6 +138,39 @@ export function AddOfferDialog({
           </button>
         </header>
         <p className="hint">{t("add.intro")}</p>
+
+        <fieldset className="quick">
+          <legend>{t("quick.title")}</legend>
+          <div className="quick-row">
+            <label className="field">
+              <span>{t("quick.link")}</span>
+              <input type="url" maxLength={2000} placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} />
+            </label>
+            <button type="button" className="btn btn-ghost btn-small" disabled={!/^https?:\/\/.+/i.test(link.trim())} onClick={openPreview}>
+              {t("quick.open")}
+            </button>
+          </div>
+          {previewOpen && (
+            <div className="quick-row quick-capture">
+              <p className="hint">{t("quick.captureHint")}</p>
+              <button type="button" className="btn btn-sign btn-small" disabled={working !== null} aria-busy={working === "capture"} onClick={capture}>
+                {working === "capture" ? t("quick.capturing") : t("quick.capture")}
+              </button>
+            </div>
+          )}
+          <label className="field">
+            <span>{t("quick.paste")}</span>
+            <textarea rows={3} maxLength={100000} value={pasted} onChange={(e) => setPasted(e.target.value)} />
+          </label>
+          <div className="quick-row">
+            <span className="hint" role="status">
+              {filledBy === "ai" ? t("quick.byAi") : filledBy === "code" ? t("quick.byCode") : ""}
+            </span>
+            <button type="button" className="btn btn-ghost btn-small" disabled={!pasted.trim() || working !== null} aria-busy={working === "fill"} onClick={() => fill()}>
+              {working === "fill" ? t("ai.working") : aiOn ? t("quick.fillAi") : t("quick.fill")}
+            </button>
+          </div>
+        </fieldset>
 
         <div className="form-grid">
           <label className="field span-2">

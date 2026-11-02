@@ -367,3 +367,28 @@ export function isAppError(value: unknown): value is AppError {
     typeof (value as AppError).detail === "string"
   );
 }
+
+/** Fields read from a pasted text or a preview page (mirrors `extract::Draft`). */
+export interface Draft {
+  title: string | null;
+  company: string | null;
+  city: string | null;
+  remote: Remote | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  salaryPeriod: SalaryPeriod | null;
+  contract: string | null;
+  level: string | null;
+  requirements: string | null;
+  description: string | null;
+  /** AI filled the fields - the person should check them. */
+  byAi: boolean;
+}
+
+/** Text taken from the page in the preview window. */
+export interface Captured {
+  url: string;
+  title: string;
+  text: string;
+}

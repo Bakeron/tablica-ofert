@@ -3,6 +3,8 @@ import type {
   AiStatus,
   AppStatus,
   AssistKind,
+  Captured,
+  Draft,
   Criteria,
   Machine,
   RateReport,
@@ -71,6 +73,15 @@ export interface Api {
   /** A clearer version of the user's own text. */
   aiTidy(text: string): Promise<string>;
   checkHardware(): Promise<Machine>;
+  /** Fields from a pasted text or a page: AI when set up, plain code otherwise. */
+  fillOffer(text: string, title: string | null): Promise<Draft>;
+  /** Opens the offer page in the preview window. */
+  openPreview(url: string): Promise<void>;
+  /** "Take the text from the page" in the preview window. */
+  capturePreview(): Promise<Captured>;
+  closePreview(): Promise<void>;
+  /** Saves a longer description from the offer page; returns whether it changed. */
+  updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
   onRated(listener: (report: RateReport) => void): Promise<() => void>;
 }
@@ -119,6 +130,11 @@ async function tauriApi(): Promise<Api> {
     aiSuggestCriteria: (description) => invoke("ai_suggest_criteria", { description }),
     aiTidy: (text) => invoke("ai_tidy", { text }),
     checkHardware: () => invoke("check_hardware"),
+    fillOffer: (text, title) => invoke("fill_offer", { text, title }),
+    openPreview: (url) => invoke("open_preview", { url }),
+    capturePreview: () => invoke("capture_preview"),
+    closePreview: () => invoke("close_preview"),
+    updateDescription: (id, text) => invoke("update_description", { id, text }),
     onRated: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");
       return listen<RateReport>("offers-rated", (e) => listener(e.payload));

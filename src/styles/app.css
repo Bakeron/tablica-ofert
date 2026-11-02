@@ -2137,3 +2137,62 @@ fieldset.plain {
   background: color-mix(in srgb, var(--signal) 35%, transparent);
   text-decoration-thickness: 2px;
 }
+
+/* ---------- offer from a link or a text ---------- */
+
+.quick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.6rem 0.8rem 0.8rem;
+  border: 2px dashed var(--signal);
+  border-radius: 4px;
+}
+
+.quick legend {
+  padding: 0 0.3rem;
+  font-weight: 700;
+}
+
+.quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 0.8rem;
+}
+
+.quick-row > .field {
+  flex: 1 1 18rem;
+}
+
+.quick-capture {
+  align-items: center;
+}
+
+.quick-capture .hint {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+/* Bar under the top bar while the preview window shows an offer page. */
+.preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  padding: 0.5rem 1rem;
+  background: var(--board-head);
+  border-bottom: 3px solid var(--signal);
+  color: var(--ink);
+}
+
+.preview-bar p {
+  flex: 1 1 20rem;
+  margin: 0;
+}
+
+.preview-bar .btn-ghost {
+  color: var(--ink);
+}

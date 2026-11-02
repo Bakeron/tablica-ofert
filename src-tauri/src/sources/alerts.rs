@@ -388,7 +388,7 @@ pub fn parse_salary(line: &str) -> Option<(i64, Option<i64>, String, SalaryPerio
 }
 
 /// City and form of work from a line like "Wrocław, Kraków + 2", "Zdalnie", "Warszawa (hybrydowo)".
-fn parse_place(line: &str) -> Option<(Option<String>, Option<Remote>)> {
+pub fn parse_place(line: &str) -> Option<(Option<String>, Option<Remote>)> {
     let n = normalize(line);
     let remote = if REMOTE_WORDS.iter().any(|w| n.contains(w)) {
         Some(Remote::Yes)

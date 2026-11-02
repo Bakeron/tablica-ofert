@@ -5,10 +5,12 @@ mod commands;
 mod db;
 mod dedup;
 mod error;
+mod extract;
 mod filter;
 mod hardware;
 mod model;
 mod offers;
+mod preview;
 mod profiles;
 mod secrets;
 mod score;
@@ -55,6 +57,7 @@ pub fn run() {
                 }
             };
             app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false) });
+            app.manage(preview::Pending::default());
             start_auto_fetch(app.handle().clone());
             Ok(())
         })
@@ -92,6 +95,11 @@ pub fn run() {
             commands::ai_suggest_criteria,
             commands::ai_tidy,
             commands::check_hardware,
+            commands::fill_offer,
+            commands::open_preview,
+            commands::capture_preview,
+            commands::close_preview,
+            commands::update_description,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

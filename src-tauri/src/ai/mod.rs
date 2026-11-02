@@ -664,6 +664,49 @@ Write in {language}. Answer with the rewritten text only.",
     Ok(cut(&crate::text::squeeze(&answer?), 20_000))
 }
 
+/// Fields of an offer from a pasted text or a preview page.
+pub async fn extract(state: &AppState, text: &str, title_hint: Option<&str>) -> AppResult<crate::extract::Draft> {
+    let (ai, key) = ai_from_settings(state).await?;
+    let offer_text = cut(&text.replace(['<', '>'], " "), MAX_OFFER_CHARS);
+    let prompt = format!(
+        "<offer>
+Page title: {}
+{}
+</offer>
+
+Read this job offer and answer with one JSON object:
+{{ \"title\": job title or null, \"company\": company name or null, \"city\": one city or null,
+  \"remote\": \"yes\" | \"hybrid\" | \"no\" | \"unknown\",
+  \"salary_min\": number or null, \"salary_max\": number or null, \"salary_currency\": 3-letter code or null,
+  \"salary_period\": \"month\" | \"hour\" | null,
+  \"contract\": e.g. \"UoP\", \"B2B\" or null, \"level\": \"junior\" | \"mid\" | \"senior\" | null,
+  \"requirements\": short comma-separated list of required skills or null }}
+The text may contain menus and other parts of the page - ignore them.",
+        title_hint.map(|t| one_line(t, 300)).unwrap_or_default(),
+        offer_text
+    );
+    let answer = ai.ask(RATE_SYSTEM, &prompt, true).await;
+    with_db(state, |c| usage::add_calls(c, &key, 1))?;
+    let value = client::json_object(&answer?)?;
+    let r = read_answer(&value, &offer_text, &[]);
+    let fallback = crate::extract::from_text(text, title_hint);
+    Ok(crate::extract::Draft {
+        title: r.title.or(fallback.title),
+        company: r.company,
+        city: r.city.or(fallback.city),
+        remote: r.remote.or(fallback.remote),
+        salary_min: r.salary_min.or(fallback.salary_min),
+        salary_max: if r.salary_min.is_some() { r.salary_max } else { fallback.salary_max },
+        salary_currency: r.salary_currency.or(fallback.salary_currency),
+        salary_period: r.salary_period.or(fallback.salary_period),
+        contract: r.contract.or(fallback.contract),
+        level: r.level.or(fallback.level),
+        requirements: r.requirements,
+        description: fallback.description,
+        by_ai: true,
+    })
+}
+
 // ---------- usage for the settings ----------
 
 #[derive(Debug, Clone, Serialize)]

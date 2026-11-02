@@ -444,6 +444,24 @@ pub fn set_notes(conn: &Connection, id: i64, notes: String) -> AppResult<()> {
     )?)
 }
 
+/// "Fill in the full description" from the offer page: kept when longer than what is stored;
+/// AI reads the offer again.
+pub fn update_description(conn: &mut Connection, id: i64, text: String) -> AppResult<bool> {
+    let text = crate::text::cut(&crate::text::squeeze(&text), MAX_LONG);
+    let text = self::text(Some(text), MAX_LONG, "description")?.unwrap_or_default();
+    let tx = conn.transaction()?;
+    let n = tx.execute(
+        "UPDATE offers SET description = ?2, ai_status = NULL, updated_at = ?3
+         WHERE id = ?1 AND length(?2) > length(COALESCE(description, ''))",
+        params![id, text, clock::now()],
+    )?;
+    if n > 0 {
+        profiles::recheck_offer(&tx, id)?;
+    }
+    tx.commit()?;
+    Ok(n > 0)
+}
+
 pub fn trash(conn: &Connection, id: i64) -> AppResult<()> {
     let now = clock::now();
     changed(conn.execute(
