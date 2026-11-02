@@ -37,6 +37,10 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("notify_new", Rule::One(&["on", "off"])),
     // Reminders: interviews and deadlines (a day and an hour before), follow-up, high scores.
     ("notify_reminders", Rule::One(&["on", "off"])),
+    // Extra parts of the screen - a turned-off part disappears, its data stays.
+    ("feature_dates", Rule::One(&["on", "off"])),
+    ("feature_contacts", Rule::One(&["off", "on"])),
+    ("feature_keys", Rule::One(&["on", "off"])),
     ("source_adzuna", Rule::One(&["off", "on"])),
     ("source_remotive", Rule::One(&["off", "on"])),
     ("adzuna_country", Rule::One(ADZUNA_COUNTRIES)),

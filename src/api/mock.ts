@@ -540,6 +540,22 @@ export function createMockApi(): Api {
       for (const o of offers.values()) o.agenda.log = o.agenda.log.filter((l) => l.id !== id);
     },
     async calendarGoogle() {},
+    async saveCopy(password) {
+      if (password.length < 8) throw { code: "invalid", detail: "the password must have at least 8 characters" };
+      return "C:\\Users\\Przyklad\\Documents\\tablica-ofert.tablica";
+    },
+    async loadCopy() {
+      throw { code: "invalid", detail: "not available in the browser preview" };
+    },
+    async exportCsv() {
+      return "C:\\Users\\Przyklad\\Documents\\tablica-ofert.csv";
+    },
+    async wipeAll() {
+      throw { code: "invalid", detail: "not available in the browser preview" };
+    },
+    async onReminder() {
+      return () => {};
+    },
     async calendarIcs() {
       return "C:\\Users\\Przyklad\\Downloads\\tablica-ofert-rozmowa.ics";
     },

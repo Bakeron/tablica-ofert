@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Tablica Ofert app icon: a yellow wayfinding sign with the briefcase pictogram,
+       cut by the split line of a flap tile. Source for `npx tauri icon`. -->
+  <rect x="48" y="48" width="928" height="928" rx="120" fill="#ffc61a"/>
+  <rect x="48" y="48" width="928" height="928" rx="120" fill="none" stroke="#111111" stroke-width="36"/>
+  <g fill="none" stroke="#111111" stroke-width="64" stroke-linecap="square" stroke-linejoin="miter">
+    <rect x="232" y="352" width="560" height="400"/>
+    <path d="M412 352V264h200v88"/>
+    <path d="M232 540h560"/>
+  </g>
+  <rect x="472" y="508" width="80" height="64" fill="#111111"/>
+</svg>

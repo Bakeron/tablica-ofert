@@ -303,6 +303,10 @@ export interface Settings {
   notify_new: "on" | "off";
   /** Reminders: interviews and deadlines, follow-up, high scores. */
   notify_reminders: "on" | "off";
+  /** Extra parts of the screen - a turned-off part disappears, its data stays. */
+  feature_dates: "on" | "off";
+  feature_contacts: "on" | "off";
+  feature_keys: "on" | "off";
   source_adzuna: "off" | "on";
   source_remotive: "off" | "on";
   adzuna_country: AdzunaCountry;
@@ -332,6 +336,9 @@ export const DEFAULT_SETTINGS: Settings = {
   background_task: "on",
   notify_new: "on",
   notify_reminders: "on",
+  feature_dates: "on",
+  feature_contacts: "off",
+  feature_keys: "on",
   source_adzuna: "off",
   source_remotive: "off",
   adzuna_country: "pl",

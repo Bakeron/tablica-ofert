@@ -22,6 +22,11 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/006_agenda.sql"),
 ];
 
+/// Schema version this app writes (copies from newer versions are refused).
+pub fn latest_version() -> i64 {
+    MIGRATIONS.len() as i64
+}
+
 /// Opens a SQLCipher database with a raw 256-bit key (64 hex chars) and checks that
 /// the key actually decrypts it.
 pub fn open(path: &Path, key_hex: &str) -> AppResult<Connection> {

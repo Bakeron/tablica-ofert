@@ -25,11 +25,13 @@ interface Props {
   /** Opens the offer page in the preview window to take its full text. */
   onFullText: () => void;
   agenda: AgendaActions;
+  showDates: boolean;
+  showContacts: boolean;
 }
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onFullText, agenda },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onFullText, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -165,7 +167,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </div>
         )}
 
-        {!inTrash && <AgendaPart agenda={offer.agenda} actions={agenda} />}
+        {!inTrash && <AgendaPart agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />}
 
         <AiPart offer={offer} aiOn={aiOn && !inTrash} onRateAgain={onRateAgain} onAssist={onAssist} />
 

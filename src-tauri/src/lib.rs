@@ -1,5 +1,6 @@
 mod agenda;
 mod ai;
+mod backup;
 mod cities;
 mod clock;
 mod commands;
@@ -59,6 +60,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let state = match open_database(app, !background) {
                 Ok(conn) => Ok(conn),
@@ -145,6 +147,10 @@ pub fn run() {
             commands::delete_log,
             commands::calendar_google,
             commands::calendar_ics,
+            commands::save_copy,
+            commands::load_copy,
+            commands::export_csv,
+            commands::wipe_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -185,9 +191,13 @@ fn remind(handle: &tauri::AppHandle) {
         }
     };
     let pl = notify::polish(&state);
-    for r in due {
-        let (title, body) = agenda::reminder_text(&r, pl, agenda::local_label);
+    for r in &due {
+        let (title, body) = agenda::reminder_text(r, pl, agenda::local_label);
         notify::show(handle, &title, &body);
+    }
+    // The open window may play a short gong (sounds are off by default).
+    if due.iter().any(|r| r.kind == "hour_before") {
+        let _ = handle.emit("reminder", ());
     }
 }
 
@@ -227,8 +237,8 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
     }
 }
 
-fn open_database(app: &tauri::App, backup: bool) -> error::AppResult<rusqlite::Connection> {
-    secrets::init()?;
+/// `%APPDATA%\pl.prywatne.tablicaofert` (development builds: its `dev` subfolder).
+pub(crate) fn data_dir(app: &tauri::AppHandle) -> error::AppResult<std::path::PathBuf> {
     let mut dir = app
         .path()
         .app_data_dir()
@@ -237,5 +247,10 @@ fn open_database(app: &tauri::App, backup: bool) -> error::AppResult<rusqlite::C
     if cfg!(debug_assertions) {
         dir.push("dev");
     }
-    db::open_app_database(&dir, backup)
+    Ok(dir)
+}
+
+fn open_database(app: &tauri::App, backup: bool) -> error::AppResult<rusqlite::Connection> {
+    secrets::init()?;
+    db::open_app_database(&data_dir(app.handle())?, backup)
 }

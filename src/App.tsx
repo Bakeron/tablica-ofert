@@ -32,6 +32,7 @@ import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
+import { playClack, playGong } from "./lib/sound";
 import { isWebUrl } from "./lib/format";
 import { viewFor } from "./lib/profile";
 
@@ -56,7 +57,7 @@ export default function App() {
   const [error, setError] = useState<{ text: string; detail?: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [confirm, setConfirm] = useState<{ message: string; action: () => void } | null>(null);
+  const [confirm, setConfirm] = useState<{ message: string; action: () => void; label?: string } | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   /** null = all profiles together */
   const [profileId, setProfileId] = useState<number | null>(null);
@@ -180,6 +181,8 @@ export default function App() {
   // Offers collected in the background (at start and every few hours) - refresh the board.
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
+  const soundRef = useRef(false);
+  soundRef.current = settings.sound === "on";
   useEffect(() => {
     if (!api) return;
     let stop: (() => void) | undefined;
@@ -189,9 +192,16 @@ export default function App() {
         if (report.added > 0) {
           reloadRef.current();
           setToast({ text: fetchSummary(report, t) });
+          if (soundRef.current) playClack();
         }
       })
       .then((unlisten) => (alive ? (stop = unlisten) : unlisten()));
+    let stopReminder: (() => void) | undefined;
+    api
+      .onReminder(() => {
+        if (soundRef.current) playGong();
+      })
+      .then((unlisten) => (alive ? (stopReminder = unlisten) : unlisten()));
     let stopRated: (() => void) | undefined;
     api
       .onRated((report) => {
@@ -203,6 +213,7 @@ export default function App() {
       alive = false;
       stop?.();
       stopRated?.();
+      stopReminder?.();
     };
   }, [api, t]);
 
@@ -309,6 +320,7 @@ export default function App() {
       const report = await api.fetchOffers();
       await reload();
       setToast({ text: fetchSummary(report, t) });
+      if (report.added > 0 && settings.sound === "on") playClack();
     } catch (e) {
       fail(e);
     } finally {
@@ -605,7 +617,7 @@ export default function App() {
                 )}{" "}
                 <span className="count">· {t(plural(lang, "board.count", rows.length), { count: rows.length })}</span>
               </h2>
-              <p className="keys-hint">{t("board.keys")}</p>
+              {settings.feature_keys === "on" && <p className="keys-hint">{t("board.keys")}</p>}
             </div>
             {view === "board" && counts && (counts.hidden > 0 || showLow) && (
               <p className="hidden-note">
@@ -659,6 +671,8 @@ export default function App() {
               deleteLog: (id) => run(() => api!.deleteLog(id)),
               openLink,
             }}
+            showDates={settings.feature_dates === "on"}
+            showContacts={settings.feature_contacts === "on"}
             onRateAgain={() => selectedId !== null && rateAgain(selectedId)}
             onAssist={(kind) => selectedId !== null && runAssist(selectedId, kind)}
           />
@@ -719,6 +733,14 @@ export default function App() {
           onOpenLink={openLink}
           onError={fail}
           onToast={(text) => setToast({ text })}
+          version={status?.version ?? ""}
+          onConfirm={(message, action, label) => setConfirm({ message, action, label })}
+          onLoaded={async () => {
+            if (!api) return;
+            setSettings(await api.getSettings());
+            setProfiles(await api.listProfiles());
+            await reload(false);
+          }}
         />
         <AssistDialog
           open={assist !== null}
@@ -730,7 +752,7 @@ export default function App() {
         />
         <ConfirmDialog
           message={confirm?.message ?? null}
-          confirmLabel={t("trash.confirm")}
+          confirmLabel={confirm?.label ?? t("trash.confirm")}
           onConfirm={() => confirm?.action()}
           onClose={() => setConfirm(null)}
         />

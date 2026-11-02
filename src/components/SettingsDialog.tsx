@@ -4,7 +4,9 @@ import type { Profile, Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconClose } from "./Icons";
 import { Modal } from "./Modal";
+import { AboutPart } from "./AboutPart";
 import { AiSettings } from "./AiSettings";
+import { DataSettings } from "./DataSettings";
 import { SourcesSettings } from "./SourcesSettings";
 
 const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: string[] }[] = [
@@ -15,8 +17,10 @@ const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: s
 
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
-export type SettingsSection = "look" | "sources" | "ai";
-const SECTIONS: SettingsSection[] = ["sources", "ai", "look"];
+export type SettingsSection = "look" | "sources" | "ai" | "data" | "about";
+const SECTIONS: SettingsSection[] = ["sources", "ai", "look", "data", "about"];
+
+const FEATURES = ["feature_dates", "feature_contacts", "feature_keys"] as const;
 
 export function SettingsDialog({
   open,
@@ -29,6 +33,9 @@ export function SettingsDialog({
   onOpenLink,
   onError,
   onToast,
+  version,
+  onConfirm,
+  onLoaded,
 }: {
   open: boolean;
   api: Api | null;
@@ -40,6 +47,9 @@ export function SettingsDialog({
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
+  version: string;
+  onConfirm: (message: string, action: () => void, label?: string) => void;
+  onLoaded: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -54,6 +64,9 @@ export function SettingsDialog({
         onOpenLink={onOpenLink}
         onError={onError}
         onToast={onToast}
+        version={version}
+        onConfirm={onConfirm}
+        onLoaded={onLoaded}
         closeLabel={t("settings.close")}
       />
     </Modal>
@@ -71,6 +84,9 @@ function SettingsBody({
   onOpenLink,
   onError,
   onToast,
+  version,
+  onConfirm,
+  onLoaded,
   closeLabel,
 }: {
   api: Api | null;
@@ -82,6 +98,9 @@ function SettingsBody({
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
+  version: string;
+  onConfirm: (message: string, action: () => void, label?: string) => void;
+  onLoaded: () => void;
   closeLabel: string;
 }) {
   const { t } = useI18n();
@@ -124,6 +143,29 @@ function SettingsBody({
             ))}
           </fieldset>
         ))}
+
+      {section === "look" && (
+        <fieldset className="choice choice-column">
+          <legend>{t("features.title")}</legend>
+          {FEATURES.map((key) => (
+            <label key={key} className="choice-item">
+              <input type="checkbox" checked={settings[key] === "on"} onChange={(e) => onChange(key, e.target.checked ? "on" : "off")} />
+              <span>{t(`features.${key}` as TextKey)}</span>
+            </label>
+          ))}
+          <label className="choice-item">
+            <input type="checkbox" checked={settings.sound === "on"} onChange={(e) => onChange("sound", e.target.checked ? "on" : "off")} />
+            <span>{t("features.sound")}</span>
+          </label>
+          <p className="hint">{t("features.hint")}</p>
+        </fieldset>
+      )}
+
+      {section === "data" && api && (
+        <DataSettings api={api} onError={onError} onToast={onToast} onConfirm={onConfirm} onLoaded={onLoaded} />
+      )}
+
+      {section === "about" && <AboutPart version={version} onOpenLink={onOpenLink} />}
 
       {section === "sources" && api && (
         <SourcesSettings api={api} settings={settings} profiles={profiles} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />

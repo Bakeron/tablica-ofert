@@ -99,6 +99,16 @@ export interface Api {
   calendarGoogle(eventId: number): Promise<void>;
   /** Saves an .ics file to Downloads and opens it; returns the path. */
   calendarIcs(eventId: number): Promise<string>;
+  /** "Save a copy as…" with a password; returns the path, null = cancelled. */
+  saveCopy(password: string): Promise<string | null>;
+  /** "Load a copy…" - replaces all data; returns the number of offers, null = cancelled. */
+  loadCopy(password: string): Promise<number | null>;
+  /** "Export to Excel (CSV)"; returns the path, null = cancelled. */
+  exportCsv(): Promise<string | null>;
+  /** Deletes all data, keys and the scheduled task from this computer, then closes the app. */
+  wipeAll(): Promise<void>;
+  /** An interview starts in an hour (for the optional gong). */
+  onReminder(listener: () => void): Promise<() => void>;
   /** Saves a longer description from the offer page; returns whether it changed. */
   updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
@@ -163,6 +173,14 @@ async function tauriApi(): Promise<Api> {
     deleteLog: (id) => invoke("delete_log", { id }),
     calendarGoogle: (id) => invoke("calendar_google", { id }),
     calendarIcs: (id) => invoke("calendar_ics", { id }),
+    saveCopy: (password) => invoke("save_copy", { password }),
+    loadCopy: (password) => invoke("load_copy", { password }),
+    exportCsv: () => invoke("export_csv"),
+    wipeAll: () => invoke("wipe_all"),
+    onReminder: async (listener) => {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen("reminder", () => listener());
+    },
     updateDescription: (id, text) => invoke("update_description", { id, text }),
     onRated: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");

@@ -392,3 +392,96 @@ pub async fn calendar_ics(state: State<'_, AppState>, app: tauri::AppHandle, id:
     let _ = app.opener().open_path(shown.clone(), None::<&str>);
     Ok(shown)
 }
+
+// ---------- copies and CSV ----------
+
+use std::path::PathBuf;
+
+/// The "Save as" window of Windows; `None` = cancelled.
+async fn pick_save(app: &tauri::AppHandle, name: String, filter: (&'static str, &'static [&'static str])) -> AppResult<Option<PathBuf>> {
+    use tauri_plugin_dialog::DialogExt;
+    let dialog = app.dialog().file().set_file_name(name).add_filter(filter.0, filter.1);
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    picked.map(|p| p.into_path().map_err(|e| AppError::Invalid(e.to_string()))).transpose()
+}
+
+/// "Save a copy as…" - returns where it was saved (`None` = cancelled).
+#[tauri::command]
+pub async fn save_copy(state: State<'_, AppState>, app: tauri::AppHandle, password: String) -> AppResult<Option<String>> {
+    crate::backup::save_copy_check(&password)?;
+    let name = format!("tablica-ofert-{}.tablica", crate::clock::file_stamp());
+    let Some(path) = pick_save(&app, name, ("Tablica Ofert", &["tablica"])).await? else { return Ok(None) };
+    with_db(&state, |c| crate::backup::save_copy(c, &path, &password))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// "Load a copy…": replaces all data with the copy (the current data stays in `kopie/`).
+/// Returns the number of offers loaded (`None` = cancelled).
+#[tauri::command]
+pub async fn load_copy(state: State<'_, AppState>, app: tauri::AppHandle, password: String) -> AppResult<Option<i64>> {
+    use tauri_plugin_dialog::DialogExt;
+    let dialog = app.dialog().file().add_filter("Tablica Ofert", &["tablica"]);
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    let Some(source) = picked else { return Ok(None) };
+    let source = source.into_path().map_err(|e| AppError::Invalid(e.to_string()))?;
+    let count = crate::backup::check_copy(&source, &password)?;
+    let dir = crate::data_dir(&app)?;
+    let db_path = dir.join(crate::db::DB_FILE);
+    let key = secrets::get(secrets::DB_KEY)?.ok_or_else(|| AppError::Locked("database key is missing".into()))?;
+    let mut guard = state.db.lock().map_err(|_| AppError::Locked("internal state is broken".into()))?;
+    // The open connection is closed before its file is replaced.
+    let old = std::mem::replace(&mut *guard, Err("loading a copy".into()));
+    drop(old);
+    let result = crate::backup::load_copy(&db_path, &key, &source, &password);
+    *guard = crate::db::open_app_database(&dir, false).map_err(|e| e.to_string());
+    result?;
+    if let Err(problem) = guard.as_ref() {
+        return Err(AppError::Locked(problem.clone()));
+    }
+    Ok(Some(count))
+}
+
+/// "Export to Excel (CSV)" - returns where it was saved (`None` = cancelled).
+#[tauri::command]
+pub async fn export_csv(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<Option<String>> {
+    let pl = crate::notify::polish(&state);
+    let text = with_db(&state, |c| crate::backup::csv(c, pl))?;
+    let name = format!("tablica-ofert-{}.csv", crate::clock::file_stamp());
+    let Some(path) = pick_save(&app, name, ("CSV", &["csv"])).await? else { return Ok(None) };
+    std::fs::write(&path, text)?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// "Delete from this computer": the database, its copies, every key and password in the
+/// credential store and the Task Scheduler task. Then the app closes.
+#[tauri::command]
+pub async fn wipe_all(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<()> {
+    let dir = crate::data_dir(&app)?;
+    {
+        let mut guard = state.db.lock().map_err(|_| AppError::Locked("internal state is broken".into()))?;
+        // Closed before its file is removed; nothing can be written any more.
+        let old = std::mem::replace(&mut *guard, Err("all data was deleted".into()));
+        drop(old);
+    }
+    let db_file = dir.join(crate::db::DB_FILE);
+    for path in [db_file.clone(), db_file.with_extension("db-wal"), db_file.with_extension("db-shm")] {
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+    }
+    let copies = dir.join("kopie");
+    if copies.exists() {
+        std::fs::remove_dir_all(&copies)?;
+    }
+    for name in secrets::USER_SECRETS {
+        secrets::delete(name)?;
+    }
+    secrets::delete(secrets::DB_KEY)?;
+    let _ = tauri::async_runtime::spawn_blocking(crate::scheduler::remove).await;
+    app.exit(0);
+    Ok(())
+}

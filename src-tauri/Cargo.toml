@@ -35,6 +35,7 @@ native-tls = "0.2.18"
 mail-parser = "1.0.1"
 tauri-plugin-notification = "2"
 sys-locale = "0.3.2"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = "1.1.0"

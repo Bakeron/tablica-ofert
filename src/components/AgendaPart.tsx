@@ -21,7 +21,17 @@ export interface AgendaActions {
 }
 
 /** Dates (with "Add to calendar"), contacts and contact history of one offer. */
-export function AgendaPart({ agenda, actions }: { agenda: Agenda; actions: AgendaActions }) {
+export function AgendaPart({
+  agenda,
+  actions,
+  showDates,
+  showContacts,
+}: {
+  agenda: Agenda;
+  actions: AgendaActions;
+  showDates: boolean;
+  showContacts: boolean;
+}) {
   const { t, lang } = useI18n();
   const [eventForm, setEventForm] = useState<{ kind: EventKind; at: string; minutes: number; note: string } | null>(null);
   const [contactForm, setContactForm] = useState<Contact | null>(null);
@@ -49,6 +59,7 @@ export function AgendaPart({ agenda, actions }: { agenda: Agenda; actions: Agend
 
   return (
     <>
+      {showDates && (
       <section className="pass-text agenda" aria-labelledby="dates-title">
         <h3 id="dates-title" className="pass-label">
           {t("agenda.dates")}
@@ -116,7 +127,9 @@ export function AgendaPart({ agenda, actions }: { agenda: Agenda; actions: Agend
           </button>
         )}
       </section>
+      )}
 
+      {showContacts && (
       <section className="pass-text agenda" aria-labelledby="contacts-title">
         <h3 id="contacts-title" className="pass-label">
           {t("agenda.contacts")}
@@ -237,6 +250,7 @@ export function AgendaPart({ agenda, actions }: { agenda: Agenda; actions: Agend
           </button>
         )}
       </section>
+      )}
     </>
   );
 }
