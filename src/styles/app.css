@@ -303,6 +303,91 @@ textarea {
   line-height: 1;
 }
 
+/* ---------- hover: every clickable thing reacts, quickly but not instantly ---------- */
+
+.btn,
+.icon-btn,
+.tab,
+.sign,
+.seg,
+.help-btn,
+.chip span,
+.choice-item,
+.board th .sort,
+.board tbody tr,
+.howto summary,
+a,
+input,
+select,
+textarea {
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    border-color 150ms ease-out,
+    filter 150ms ease-out,
+    box-shadow 150ms ease-out,
+    transform 120ms ease-out;
+}
+
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.sign:active:not(:disabled),
+.seg:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Mouse only - on a phone a tap would leave the hover "stuck". */
+@media (hover: hover) {
+  .btn-ghost:hover:not(:disabled),
+  .icon-btn:hover:not(:disabled),
+  .help-btn:hover:not([aria-expanded="true"]),
+  .seg:hover:not([aria-pressed="true"]),
+  .chip:hover input:not(:checked) + span {
+    background-color: color-mix(in srgb, currentColor 14%, transparent);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--danger) 16%, transparent);
+  }
+
+  .topbar .btn-sign:hover:not(:disabled),
+  .topbar .btn-danger:hover:not(:disabled) {
+    filter: none;
+    background-color: color-mix(in srgb, var(--signal-ink) 78%, var(--signal));
+  }
+
+  .tab:hover:not([aria-current="page"]) {
+    background-color: rgb(0 0 0 / 0.08);
+  }
+
+  /* A halo instead of padding, so the layout does not move. */
+  .choice-item:hover {
+    border-radius: 2px;
+    background-color: color-mix(in srgb, currentColor 10%, transparent);
+    box-shadow: 0 0 0 0.25rem color-mix(in srgb, currentColor 10%, transparent);
+  }
+
+  .board th .sort:hover {
+    background-color: color-mix(in srgb, currentColor 10%, transparent);
+  }
+
+  .howto summary:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  a:hover {
+    text-decoration-thickness: 2px;
+    background-color: color-mix(in srgb, currentColor 10%, transparent);
+  }
+
+  input:hover:not(:disabled):not(:focus),
+  select:hover:not(:disabled):not(:focus),
+  textarea:hover:not(:disabled):not(:focus) {
+    border-color: color-mix(in srgb, var(--field-line) 45%, var(--paper-ink));
+  }
+}
+
 /* ---------- alert ---------- */
 
 .alert {

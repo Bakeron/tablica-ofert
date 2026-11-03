@@ -50,6 +50,9 @@
           "Polish",
           "English"
         ],
+        "customLanguageFiles": {
+          "Polish": "windows/Polish.nsh"
+        },
         "displayLanguageSelector": false,
         "installerHooks": "windows/hooks.nsh"
       }

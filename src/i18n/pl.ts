@@ -280,9 +280,9 @@ export const pl = {
   "first.s1Intro":
     "Opisz, jakiej pracy szukasz. Na tej podstawie aplikacja sortuje oferty, a później oceni je AI. Opis piszesz Ty - AI go nie wymyśla.",
   "first.s2Text":
-    "Ocena dopasowania przez AI dojdzie w kolejnej wersji. Do tego czasu aplikacja działa bez AI: twarde filtry sortują oferty, a o reszcie decydujesz Ty.",
+    "AI streszcza oferty i ocenia, jak pasują do profilu. Wystarczy darmowy klucz (np. Gemini albo Groq) - wpiszesz go w Ustawieniach (zębatka w prawym górnym rogu), część „AI”. Bez AI aplikacja też działa: twarde filtry sortują oferty, a o reszcie decydujesz Ty.",
   "first.s3Text":
-    "Zbieranie ofert z alertów e-mail i agregatorów (Adzuna, Remotive) też dojdzie wkrótce. Na razie dodajesz oferty przyciskiem „Dodaj ofertę”.",
+    "Oferty zbieram z alertów e-mail i agregatorów (Adzuna, Remotive) - włączysz je w Ustawieniach, część „Źródła ofert”. Agregatory przeszukuję słowami kluczowymi z profilu, więc dopisz je w profilu. Pojedynczą ofertę dodasz zawsze przyciskiem „Dodaj ofertę”.",
   "first.criteriaTip": "Miasta, umowę i widełki ustawisz w profilu - przycisk z ołówkiem obok jego nazwy nad tablicą.",
   "first.next": "Dalej",
   "first.back": "Wstecz",

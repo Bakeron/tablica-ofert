@@ -280,9 +280,9 @@ export const en: Record<keyof typeof pl, string> = {
   "first.s1Intro":
     "Describe the job you are looking for. The app sorts offers by it, and later AI will score them. You write it - AI does not make it up.",
   "first.s2Text":
-    "AI match scores come in the next version. Until then the app works without AI: hard filters sort the offers and you decide the rest.",
+    "AI summarises offers and scores how well they fit the profile. A free key is enough (e.g. Gemini or Groq) - enter it in Settings (the gear in the top right corner), part “AI”. The app also works without AI: hard filters sort the offers and you decide the rest.",
   "first.s3Text":
-    "Collecting offers from e-mail alerts and aggregators (Adzuna, Remotive) is coming soon too. For now, add offers with “Add offer”.",
+    "Offers come from e-mail alerts and aggregators (Adzuna, Remotive) - turn them on in Settings, part “Offer sources”. Aggregators are searched with the profile's keywords, so add them in the profile. A single offer can always be added with “Add offer”.",
   "first.criteriaTip": "Set cities, contract and salary in the profile - the pencil button next to its name above the board.",
   "first.next": "Next",
   "first.back": "Back",
