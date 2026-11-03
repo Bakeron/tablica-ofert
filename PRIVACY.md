@@ -6,7 +6,7 @@ Stan na 2.11.2026. Tablica Ofert to aplikacja na komputer, bez kont i bez własn
 
 ## Jakie dane i gdzie
 
-- **Oferty, profile „czego szukam”, doświadczenie, notatki, terminy, kontakty** - tylko na Twoim komputerze, w zaszyfrowanej bazie (SQLCipher) w folderze `%APPDATA%\pl.prywatne.tablicaofert\`. Klucz bazy leży w Menedżerze poświadczeń Windows, nie w pliku.
+- **Oferty, profile „czego szukam”, doświadczenie, notatki, terminy, kontakty** - tylko na Twoim komputerze, w zaszyfrowanej bazie (SQLCipher) w folderze `%APPDATA%\pl.prywatne.tablicaofert\`. Klucz bazy leży w Menedżerze poświadczeń Windows; druga kopia klucza (plik `tablica.key` obok bazy) jest zaszyfrowana przez Windows (DPAPI) i da się ją odczytać tylko na Twoim koncie Windows - na wypadek, gdyby klucz zniknął z Menedżera.
 - **Klucze API, hasło do skrzynki z alertami** - tylko w Menedżerze poświadczeń Windows. Nie trafiają do bazy, kopii, eksportu CSV, logów ani do AI. Na ekranie widać tylko 4 ostatnie znaki.
 - **Kopie zapasowe** - 5 ostatnich kopii bazy w podfolderze `kopie` (zaszyfrowane tym samym kluczem). „Zapisz kopię jako…” tworzy plik zabezpieczony hasłem, które wybierasz.
 
@@ -24,7 +24,7 @@ Aplikacja nie ma analityki, reklam ani żadnych „telemetrycznych” połącze�
 
 ## Twoje prawa i usuwanie danych
 
-Wszystkie dane są u Ciebie. Ustawienia → Dane → „Usuń wszystkie dane” kasuje bazę, kopie, klucze z Menedżera poświadczeń i zadanie w Harmonogramie zadań. Odinstalowanie usuwa zadanie w Harmonogramie zadań.
+Wszystkie dane są u Ciebie. Ustawienia → Dane → „Usuń wszystkie dane” kasuje bazę, kopie, kopię klucza bazy, klucze z Menedżera poświadczeń i zadanie w Harmonogramie zadań. Odinstalowanie usuwa zadanie w Harmonogramie zadań.
 
 ---
 
@@ -34,7 +34,7 @@ As of 2 November 2026. Tablica Ofert is a desktop app with no accounts and no se
 
 ## What data and where
 
-- **Offers, "what I'm looking for" profiles, experience, notes, dates, contacts** - only on your computer, in an encrypted database (SQLCipher) in `%APPDATA%\pl.prywatne.tablicaofert\`. The database key is kept in Windows Credential Manager, not in a file.
+- **Offers, "what I'm looking for" profiles, experience, notes, dates, contacts** - only on your computer, in an encrypted database (SQLCipher) in `%APPDATA%\pl.prywatne.tablicaofert\`. The database key is kept in Windows Credential Manager; a second copy of the key (the `tablica.key` file next to the database) is encrypted by Windows (DPAPI) and can only be read under your Windows account - in case the key ever disappears from Credential Manager.
 - **API keys, the alert mailbox password** - only in Windows Credential Manager. They never go to the database, copies, CSV export, logs or AI. Only the last 4 characters are shown.
 - **Backups** - the 5 newest copies of the database in the `kopie` subfolder (encrypted with the same key). "Save a copy as…" creates a file protected with a password you choose.
 
@@ -52,4 +52,4 @@ The app has no analytics, no ads and no telemetry.
 
 ## Your rights and deleting data
 
-All data is with you. Settings → Data → "Delete all data" removes the database, the backups, the keys in Credential Manager and the Task Scheduler task. Uninstalling removes the Task Scheduler task.
+All data is with you. Settings → Data → "Delete all data" removes the database, the backups, the database key copy, the keys in Credential Manager and the Task Scheduler task. Uninstalling removes the Task Scheduler task.

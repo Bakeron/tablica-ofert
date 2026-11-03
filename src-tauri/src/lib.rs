@@ -10,6 +10,7 @@ mod error;
 mod extract;
 mod filter;
 mod hardware;
+mod keycopy;
 mod model;
 mod notify;
 mod offers;

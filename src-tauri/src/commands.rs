@@ -477,6 +477,10 @@ pub async fn wipe_all(state: State<'_, AppState>, app: tauri::AppHandle) -> AppR
     if copies.exists() {
         std::fs::remove_dir_all(&copies)?;
     }
+    let key_copy = crate::keycopy::path(&dir);
+    if key_copy.exists() {
+        std::fs::remove_file(&key_copy)?;
+    }
     for name in secrets::USER_SECRETS {
         secrets::delete(name)?;
     }
