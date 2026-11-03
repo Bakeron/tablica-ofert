@@ -441,6 +441,10 @@ export const pl = {
   "ai.hideValue": "{value}",
   "ai.hideHint": "Oferta, przy której coś już zmieniono (etap, gwiazdka, zainteresowanie), zostaje zawsze. Ukryte można pokazać nad tablicą.",
   "ai.privacy": "Do AI trafia treść oferty, opisy profili, oczekiwania finansowe i doświadczenie. Klucze, hasła i Twoje notatki - nigdy.",
+  "ai.noPersonal":
+    "Nie wpisuj danych osobowych (imienia i nazwiska, telefonu, adresu, e-maila, nazw obecnych pracodawców) w opisy profili ani w doświadczenie. Te teksty trafiają do dostawcy AI, a darmowe plany części dostawców (np. Gemini) mogą używać przesłanych treści do ulepszania swoich modeli. Ollama działa na Twoim komputerze i niczego nie wysyła.",
+  "profile.noPersonal":
+    "Bez danych osobowych (imię i nazwisko, telefon, adres, e-mail) - ten opis i doświadczenie trafiają do dostawcy AI, który w darmowym planie może ich używać do ulepszania modeli. Więcej: Ustawienia → AI.",
   "ai.cardTitle": "Ocena AI",
   "ai.waiting": "Czeka na ocenę AI.",
   "ai.off": "AI wyłączone - dopasowanie liczone ze słów (ustawienia → AI).",

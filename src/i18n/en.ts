@@ -441,6 +441,10 @@ export const en: Record<keyof typeof pl, string> = {
   "ai.hideValue": "{value}",
   "ai.hideHint": "An offer you acted on (stage, star, interest) always stays. Hidden offers can be shown above the board.",
   "ai.privacy": "AI receives the offer text, profile descriptions, salary expectations and experience. Keys, passwords and your notes - never.",
+  "ai.noPersonal":
+    "Do not put personal data (full name, phone, address, e-mail, names of current employers) in profile descriptions or experience. These texts go to the AI provider, and the free plans of some providers (e.g. Gemini) may use what you send to improve their models. Ollama runs on your computer and sends nothing.",
+  "profile.noPersonal":
+    "No personal data (full name, phone, address, e-mail) - this description and your experience go to the AI provider, which on a free plan may use them to improve its models. More: Settings → AI.",
   "ai.cardTitle": "AI score",
   "ai.waiting": "Waiting for the AI score.",
   "ai.off": "AI is off - the match is counted from words (settings → AI).",

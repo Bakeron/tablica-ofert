@@ -1,4 +1,5 @@
 import { useI18n, type TextKey } from "../i18n";
+import { IconWarning } from "./Icons";
 
 const QUESTIONS: TextKey[] = ["profile.q1", "profile.q2", "profile.q3", "profile.q4", "profile.q5"];
 
@@ -36,6 +37,13 @@ export function DescriptionField({
             <li key={q}>{t(q)}</li>
           ))}
         </ul>
+      </div>
+      <div className="warn-box describe-warn" role="note">
+        <IconWarning />
+        <p>
+          <strong>{t("mail.warnTitle")}: </strong>
+          {t("profile.noPersonal")}
+        </p>
       </div>
     </div>
   );

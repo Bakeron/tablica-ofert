@@ -199,6 +199,13 @@ export function AiSettings({
       </label>
 
       <p className="hint">{t("ai.privacy")}</p>
+      <div className="warn-box" role="note">
+        <IconWarning />
+        <p>
+          <strong>{t("mail.warnTitle")}: </strong>
+          {t("ai.noPersonal")}
+        </p>
+      </div>
     </div>
   );
 }
