@@ -2,7 +2,6 @@ import type { pl } from "./pl";
 
 export const en: Record<keyof typeof pl, string> = {
   "app.name": "Tablica Ofert",
-  "app.clock": "Time",
 
   "tabs.board": "Offers",
   "tabs.rejected": "Rejected by filter",

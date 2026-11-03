@@ -1,7 +1,6 @@
 // Polish - the main language. Every key must also exist in en.ts (checked by TypeScript and tests).
 export const pl = {
   "app.name": "Tablica Ofert",
-  "app.clock": "Godzina",
 
   "tabs.board": "Oferty",
   "tabs.rejected": "Odrzucone przez filtr",

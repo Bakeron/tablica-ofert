@@ -598,7 +598,6 @@ export default function App() {
             </span>
             <h1>{t("app.name")}</h1>
           </div>
-          <Clock label={t("app.clock")} lang={lang} />
           <nav className="tabs" aria-label={t("tabs.label")} data-own-row>
             {VIEWS.map((v) => (
               <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
@@ -871,16 +870,3 @@ export function rateSummary(report: RateReport, t: (key: TextKey, params?: Recor
   return t("ai.rated", { count: report.rated, waiting: report.waiting });
 }
 
-/** Station clock in the top bar - updates every 15 s. */
-function Clock({ label, lang }: { label: string; lang: string }) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 15_000);
-    return () => clearInterval(timer);
-  }, []);
-  return (
-    <time className="clock" dateTime={now.toISOString()} aria-label={label}>
-      {now.toLocaleTimeString(lang === "pl" ? "pl-PL" : "en-GB", { hour: "2-digit", minute: "2-digit" })}
-    </time>
-  );
-}
