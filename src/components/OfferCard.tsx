@@ -1,7 +1,8 @@
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { useI18n } from "../i18n";
 import { fullDate, isWebUrl, placeLabel, salaryFull } from "../lib/format";
+import { useAppearOn } from "../lib/presence";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
 import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
@@ -42,6 +43,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   const [notes, setNotes] = useState(offer?.notes ?? "");
 
   useEffect(() => setNotes(offer?.notes ?? ""), [offer?.id, offer?.notes]);
+  // Another offer chosen - the card changes with a short fade, not a jump.
+  const passRef = useRef<HTMLElement>(null);
+  useAppearOn(passRef, offer?.id ?? null);
 
   if (!offer) {
     return (
@@ -56,7 +60,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   const remoteText = t(`remote.${offer.remote}`);
 
   return (
-    <aside className="pass" aria-labelledby="pass-title">
+    <aside className="pass" aria-labelledby="pass-title" ref={passRef}>
       {/* Stub - the part you would tear off */}
       <section className="pass-stub">
         <div className="pass-field pass-field-wide">

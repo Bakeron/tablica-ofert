@@ -1,5 +1,6 @@
-//! Daily counter of calls to services with limits (Adzuna, Remotive, AI providers).
-//! Shown in the settings and used to stop before a free limit is used up.
+//! Daily counter of calls to services with limits (Adzuna, Remotive, Jooble, AI providers)
+//! and a counter for the whole life of a key (Jooble). Shown in the settings and used to stop
+//! before a free limit is used up.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -25,6 +26,11 @@ pub fn add_calls(conn: &Connection, key: &str, calls: i64) -> AppResult<()> {
          ON CONFLICT (key, day) DO UPDATE SET calls = calls + excluded.calls",
         params![key, today(), calls],
     )?;
+    conn.execute(
+        "INSERT INTO api_totals (key, calls) VALUES (?1, ?2)
+         ON CONFLICT (key) DO UPDATE SET calls = calls + excluded.calls",
+        params![key, calls],
+    )?;
     // Old days are not needed - keep about a month.
     conn.execute("DELETE FROM api_usage WHERE day < date('now', '-35 days')", [])?;
     Ok(())
@@ -37,6 +43,20 @@ pub fn calls_month(conn: &Connection, key: &str) -> AppResult<i64> {
         [key],
         |r| r.get(0),
     )?)
+}
+
+/// Calls since the key was saved (all calls, when it was never changed in this app).
+pub fn calls_total(conn: &Connection, key: &str) -> AppResult<i64> {
+    Ok(conn
+        .query_row("SELECT calls FROM api_totals WHERE key = ?1", [key], |r| r.get(0))
+        .optional()?
+        .unwrap_or(0))
+}
+
+/// A new key starts its life from zero.
+pub fn reset_total(conn: &Connection, key: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM api_totals WHERE key = ?1", [key])?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -54,5 +74,19 @@ mod tests {
         assert_eq!(calls_today(&conn, "adzuna").unwrap(), 5);
         assert_eq!(calls_month(&conn, "adzuna").unwrap(), 5);
         assert_eq!(calls_today(&conn, "remotive").unwrap(), 1);
+        assert_eq!(calls_total(&conn, "adzuna").unwrap(), 5);
+    }
+
+    #[test]
+    fn total_survives_old_days_and_resets_for_a_new_key() {
+        let conn = test_db();
+        conn.execute("INSERT INTO api_usage (key, day, calls) VALUES ('jooble', '2020-01-01', 7)", []).unwrap();
+        add_calls(&conn, "jooble", 1).unwrap();
+        // The old day is gone from the daily counter, the total keeps counting.
+        assert_eq!(calls_month(&conn, "jooble").unwrap(), 1);
+        add_calls(&conn, "jooble", 1).unwrap();
+        assert_eq!(calls_total(&conn, "jooble").unwrap(), 2);
+        reset_total(&conn, "jooble").unwrap();
+        assert_eq!(calls_total(&conn, "jooble").unwrap(), 0);
     }
 }

@@ -3,6 +3,7 @@ import type { Agenda, Contact, EventKind, LogKind } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate, isWebUrl, localInputToUtc, nowLocalInput } from "../lib/format";
 import { IconPlus, IconTrash } from "./Icons";
+import { Reveal } from "./Reveal";
 
 const EVENT_KINDS: EventKind[] = ["interview", "deadline", "other"];
 const LOG_KINDS: LogKind[] = ["call", "mail", "meeting", "message"];
@@ -87,7 +88,8 @@ export function AgendaPart({
             </li>
           ))}
         </ul>
-        {eventForm ? (
+        <Reveal show={eventForm !== null}>
+          {eventForm && (
           <form className="agenda-form" onSubmit={submitEvent}>
             <label className="field">
               <span>{t("agenda.kind")}</span>
@@ -121,7 +123,9 @@ export function AgendaPart({
             </div>
             <p className="hint">{t("agenda.remindHint")}</p>
           </form>
-        ) : (
+          )}
+        </Reveal>
+        {!eventForm && (
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setEventForm({ kind: "interview", at: nowLocalInput(), minutes: 60, note: "" })}>
             <IconPlus /> {t("agenda.addDate")}
           </button>
@@ -166,7 +170,8 @@ export function AgendaPart({
             </li>
           ))}
         </ul>
-        {contactForm ? (
+        <Reveal show={contactForm !== null}>
+          {contactForm && (
           <form className="agenda-form" onSubmit={submitContact}>
             {(["name", "role", "email", "phone", "linkedin"] as const).map((key) => (
               <label key={key} className="field">
@@ -192,7 +197,9 @@ export function AgendaPart({
               </button>
             </div>
           </form>
-        ) : (
+          )}
+        </Reveal>
+        {!contactForm && (
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setContactForm({ ...EMPTY_CONTACT })}>
             <IconPlus /> {t("agenda.addContact")}
           </button>
@@ -215,7 +222,8 @@ export function AgendaPart({
             </li>
           ))}
         </ul>
-        {logForm ? (
+        <Reveal show={logForm !== null}>
+          {logForm && (
           <form className="agenda-form" onSubmit={submitLog}>
             <label className="field">
               <span>{t("agenda.kind")}</span>
@@ -244,7 +252,9 @@ export function AgendaPart({
               </button>
             </div>
           </form>
-        ) : (
+          )}
+        </Reveal>
+        {!logForm && (
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setLogForm({ at: nowLocalInput(), kind: "call", note: "" })}>
             <IconPlus /> {t("agenda.addLog")}
           </button>

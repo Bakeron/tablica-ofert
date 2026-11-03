@@ -12,6 +12,7 @@ pub const DB_KEY: &str = if cfg!(debug_assertions) { "database-key-dev" } else {
 pub const USER_SECRETS: &[&str] = &[
     "adzuna-app-id",
     "adzuna-app-key",
+    "jooble-key",
     "mail-password",
     "ai-key-gemini",
     "ai-key-groq",

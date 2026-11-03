@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import { useI18n } from "../i18n";
+import { useLastShown, usePresence } from "../lib/presence";
 import { CloseButton } from "./Modal";
 
 export interface Toast {
@@ -16,12 +17,18 @@ export const ToastContext = createContext<{ toast: Toast | null; close: () => vo
  */
 export function ToastView() {
   const { t } = useI18n();
-  const { toast, close } = useContext(ToastContext);
+  const { toast: live, close } = useContext(ToastContext);
+  const { mounted, leaving } = usePresence(live !== null);
+  const toast = useLastShown(live !== null, live);
   return (
     <div className="toast-zone" aria-live="polite">
-      {toast && (
+      {mounted && toast && (
         <div
-          className="toast"
+          // A new message replaces the old one with its own short entrance.
+          key={toast.text}
+          className="toast fade"
+          data-leaving={leaving || undefined}
+          inert={leaving || undefined}
           onKeyDown={(e) => {
             if (e.key !== "Escape") return;
             // Only the message closes, not the window around it.

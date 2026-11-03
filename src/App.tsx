@@ -31,6 +31,7 @@ import { IconBriefcase, IconDownload, IconGear, IconPlus, IconWarning } from "./
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
+import { Reveal } from "./components/Reveal";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
 import { playClack, playGong } from "./lib/sound";
@@ -599,7 +600,8 @@ export default function App() {
 
         {status?.version.endsWith("preview") && <p className="preview-badge">{t("preview.badge")}</p>}
 
-        {(locked || error) && (
+        <Reveal show={locked || error !== null}>
+          {(locked || error) && (
           <div className="alert" role="alert">
             <IconWarning />
             <div>
@@ -618,9 +620,11 @@ export default function App() {
               </button>
             )}
           </div>
-        )}
+          )}
+        </Reveal>
 
-        {fullFor && (
+        <Reveal show={fullFor !== null}>
+          {fullFor && (
           <div className="preview-bar" role="region" aria-label={t("full.title")}>
             <p>
               <strong>{t("full.title")}:</strong> {fullFor.title}. {t("full.barHint")}
@@ -639,7 +643,8 @@ export default function App() {
               {t("full.cancel")}
             </button>
           </div>
-        )}
+          )}
+        </Reveal>
 
         <main className="split">
           <section className="board-panel" aria-labelledby="board-heading">

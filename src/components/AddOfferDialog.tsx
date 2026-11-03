@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { Captured, Draft, OfferInput, Remote, SalaryPeriod } from "../api/types";
 import { useI18n } from "../i18n";
 import { CloseButton, Modal } from "./Modal";
+import { Reveal } from "./Reveal";
 
 const EMPTY = {
   title: "",
@@ -164,14 +165,14 @@ export function AddOfferDialog({
               {t("quick.open")}
             </button>
           </div>
-          {previewOpen && (
+          <Reveal show={previewOpen}>
             <div className="quick-row quick-capture">
               <p className="hint">{t("quick.captureHint")}</p>
               <button type="button" className="btn btn-sign btn-small" disabled={working !== null} aria-busy={working === "capture"} onClick={capture}>
                 {working === "capture" ? t("quick.capturing") : t("quick.capture")}
               </button>
             </div>
-          )}
+          </Reveal>
           <label className="field">
             <span>{t("quick.paste")}</span>
             <textarea rows={3} maxLength={100000} value={pasted} onChange={(e) => setPasted(e.target.value)} />

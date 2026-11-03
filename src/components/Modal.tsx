@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useI18n } from "../i18n";
+import { useLastShown, usePresence } from "../lib/presence";
 import { IconClose } from "./Icons";
 import { ToastView } from "./Toast";
 
@@ -16,7 +17,8 @@ export function CloseButton({ onClick, label, small = false }: { onClick: () => 
 /**
  * Native modal <dialog>: focus stays inside, the page behind is inert. Esc and a click
  * outside the window close it - but with unsaved changes (`dirty`) they ask first, so a
- * stray click never throws away typed text.
+ * stray click never throws away typed text. Opening and closing take a short slide and fade
+ * (the window stays a moment after `open` turns false).
  */
 export function Modal({
   open,
@@ -37,6 +39,9 @@ export function Modal({
   const ref = useRef<HTMLDialogElement>(null);
   const pressedOutside = useRef(false);
   const [asking, setAsking] = useState(false);
+  const { mounted, leaving } = usePresence(open);
+  const ask = usePresence(open && asking);
+  const content = useLastShown(open, children);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -46,9 +51,9 @@ export function Modal({
       // showModal() focuses the first button; start where typing begins instead.
       dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     }
-    if (!open && dialog.open) dialog.close();
+    if (!mounted && dialog.open) dialog.close();
     if (!open) setAsking(false);
-  }, [open]);
+  }, [open, mounted]);
 
   function softClose() {
     if (dirty) setAsking(true);
@@ -68,6 +73,7 @@ export function Modal({
       ref={ref}
       className={`modal ${className}`}
       aria-labelledby={labelledBy}
+      data-leaving={leaving || undefined}
       onMouseDown={(e) => (pressedOutside.current = outside(e))}
       onClick={(e) => {
         if (pressedOutside.current && outside(e)) softClose();
@@ -75,18 +81,17 @@ export function Modal({
       }}
       onCancel={(e) => {
         if (e.target !== e.currentTarget) return;
-        if (dirty) {
-          e.preventDefault();
-          setAsking(true);
-        }
+        // Esc closes through the same path as "X", so the window slides away too.
+        e.preventDefault();
+        softClose();
       }}
       onClose={(e) => {
         // A window opened inside this one (e.g. "Tidy up") closing is not this one closing.
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {open && asking && (
-        <div className="leave-ask" role="alert">
+      {ask.mounted && (
+        <div className="leave-ask fade" role="alert" data-leaving={ask.leaving || undefined} inert={ask.leaving || undefined}>
           <p>{t("modal.leaveAsk")}</p>
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setAsking(false)} autoFocus>
             {t("modal.stay")}
@@ -96,8 +101,8 @@ export function Modal({
           </button>
         </div>
       )}
-      {open && children}
-      {open && <ToastView />}
+      {mounted && content}
+      {mounted && <ToastView />}
     </dialog>
   );
 }

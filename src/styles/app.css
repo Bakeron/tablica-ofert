@@ -30,7 +30,6 @@
   --hue-progress: #3cc2b0;
   --hue-offer: #59c46e;
   --hue-closed: #7d7a74;
-  --sign-line: #ffc61a;
   color-scheme: dark;
 }
 
@@ -61,7 +60,6 @@
   --hue-progress: #0f7d70;
   --hue-offer: #22803a;
   --hue-closed: #8a867e;
-  --sign-line: #b07d00;
   color-scheme: light;
 }
 
@@ -227,17 +225,16 @@ textarea {
 }
 
 .topbar .btn-sign {
+  --btn-bg: var(--signal-ink);
+  --btn-ink: var(--signal);
   background: var(--signal-ink);
   color: var(--signal);
   border-color: var(--signal-ink);
 }
 
-/* Black sign on the yellow bar: the glow is yellow light. */
-.topbar .btn-sign::after {
-  background: radial-gradient(ellipse at 50% 50%, rgb(255 198 26 / 0.34), rgb(255 198 26 / 0) 75%);
-}
-
 .topbar .btn-danger {
+  --btn-bg: var(--signal-ink);
+  --btn-ink: #ff9a8f;
   background: var(--signal-ink);
   color: #ff9a8f;
   border-color: var(--signal-ink);
@@ -277,28 +274,11 @@ textarea {
 }
 
 .btn-sign {
+  --btn-bg: var(--signal);
+  --btn-ink: var(--signal-ink);
   background: var(--signal);
   color: var(--signal-ink);
   border-color: var(--signal);
-}
-
-/* Hover: the sign lights up from inside, like a backlit airport sign (a glow layer that
-   fades in; with reduced motion it simply appears). */
-.btn-sign {
-  position: relative;
-  isolation: isolate;
-}
-
-.btn-sign::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: radial-gradient(ellipse at 50% 50%, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 72%);
-  opacity: 0;
-  transition: opacity 180ms ease-out;
-  pointer-events: none;
 }
 
 .btn-ghost {
@@ -325,7 +305,24 @@ textarea {
   line-height: 1;
 }
 
-/* ---------- hover: every clickable thing reacts, quickly but not instantly ---------- */
+/* ---------- hover: every clickable thing reacts, quickly but not instantly ----------
+   Buttons of every kind (yellow, outlined, black on the yellow bar, "X", tabs, switches,
+   chips): the background moves --hover-mix towards the colour of the text - the colours
+   "turn over" a little, as on web pages. Icons are drawn in the text colour, so they follow.
+   A kind with its own fill sets --btn-bg and --btn-ink; outlined ones are transparent with
+   the text colour. One number to change: --hover-mix (moving the text colour too would
+   lower the contrast - yellow button about 8:1 now, about 5:1 then). */
+
+:root {
+  --hover-mix: 20%;
+}
+
+/* Not inherited - a fill of one button never leaks into a button inside another element. */
+@property --btn-bg {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
 
 .btn,
 .icon-btn,
@@ -360,44 +357,10 @@ textarea {
 
 /* Mouse only - on a phone a tap would leave the hover "stuck". */
 @media (hover: hover) {
-  .btn-sign:hover:not(:disabled)::after {
-    opacity: 1;
-  }
-
-  /* Outlined buttons: the frame lights up in sign yellow. */
-  .btn-ghost:hover:not(:disabled),
-  .icon-btn:hover:not(:disabled) {
-    border-color: var(--sign-line);
-  }
-
-  .topbar .btn-ghost:hover:not(:disabled),
-  .topbar .icon-btn:hover:not(:disabled) {
-    border-color: currentColor;
-  }
-
-  .toast .btn-ghost:hover:not(:disabled),
-  .toast .icon-btn:hover:not(:disabled) {
-    border-color: var(--signal);
-  }
-
-  .btn-ghost:hover:not(:disabled),
-  .icon-btn:hover:not(:disabled),
-  .help-btn:hover,
-  .seg:hover:not([aria-pressed="true"]),
-  .chip:hover input:not(:checked) + span {
-    background-color: color-mix(in srgb, currentColor 14%, transparent);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--danger) 16%, transparent);
-  }
-
-  .topbar .btn-danger:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--signal-ink) 78%, var(--signal));
-  }
-
-  .tab:hover:not([aria-current="page"]) {
-    background-color: rgb(0 0 0 / 0.08);
+  /* The chosen tab, switch or sign stays as it is. */
+  :is(.btn, .icon-btn, .tab, .seg, .sign, .help-btn):hover:not(:disabled, [aria-pressed="true"], [aria-current="page"], [aria-current="true"]),
+  .chip:hover input:not(:checked, :disabled) + span {
+    background-color: color-mix(in srgb, var(--btn-bg) calc(100% - var(--hover-mix)), var(--btn-ink, currentColor));
   }
 
   /* A halo instead of padding, so the layout does not move. */
@@ -426,6 +389,134 @@ textarea {
   textarea:hover:not(:disabled):not(:focus) {
     border-color: color-mix(in srgb, var(--field-line) 45%, var(--paper-ink));
   }
+}
+
+/* ---------- show / hide: everything appears and goes with a short transition ----------
+   One shared way for the whole app (lib/presence.ts): a part shown on a click unfolds
+   (`Reveal` - height and fade), windows and messages slide in and out, a new element
+   inside a window, the card or a settings part fades in. `[data-leaving]` = on its way
+   out (React keeps it for --t-reveal). With reduced motion all of it happens at once. */
+
+:root {
+  --t-reveal: 180ms;
+  /* Lets `height: auto` take part in transitions (folding <details>). */
+  interpolate-size: allow-keywords;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+.reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows var(--t-reveal) ease-out,
+    opacity var(--t-reveal) ease-out;
+}
+
+/* Clip while folded, but leave room for focus rings and halos. */
+.reveal-inner {
+  min-height: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+
+@starting-style {
+  .reveal {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+.reveal[data-leaving] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+/* New things inside windows, the card and settings: a new step or part of the settings,
+   a new city row, a new date or contact on the list, a message, a warning. */
+.sheet > *,
+.settings-part > *,
+.crit-group > *,
+.agenda-list > li,
+.source-state > *,
+.fade {
+  animation: appear var(--t-reveal) ease-out;
+}
+
+@keyframes vanish {
+  to {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+.fade[data-leaving] {
+  animation: vanish var(--t-reveal) ease-in forwards;
+}
+
+/* Windows: a short slide up with the room behind dimming; back down when closed. */
+@keyframes window-in {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+  }
+}
+
+@keyframes dim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes window-out {
+  to {
+    opacity: 0;
+    translate: 0 14px;
+  }
+}
+
+@keyframes dim-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.modal[open] {
+  animation: window-in var(--t-reveal) ease-out;
+}
+
+.modal[open]::backdrop {
+  animation: dim-in var(--t-reveal) ease-out;
+}
+
+.modal[open][data-leaving] {
+  animation: window-out var(--t-reveal) ease-in forwards;
+}
+
+.modal[open][data-leaving]::backdrop {
+  animation: dim-out var(--t-reveal) ease-in forwards;
+}
+
+/* <details> ("Details", "How to set up alerts") unfold instead of jumping open. */
+details::details-content {
+  height: 0;
+  opacity: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  transition:
+    height var(--t-reveal) ease-out,
+    opacity var(--t-reveal) ease-out,
+    content-visibility var(--t-reveal) allow-discrete;
+}
+
+details[open]::details-content {
+  height: auto;
+  opacity: 1;
 }
 
 /* ---------- alert ---------- */
@@ -1338,10 +1429,6 @@ textarea {
   color: var(--signal-ink);
 }
 
-.sign:hover:not(:disabled):not([aria-current="true"]) {
-  background: rgb(255 198 26 / 0.14);
-}
-
 .sign-pair .sign:first-child {
   border-right-width: 1px;
 }
@@ -1909,6 +1996,17 @@ fieldset.plain {
   scroll-behavior: auto !important;
 }
 
+/* Separate rules: a browser that does not know one of these pseudo-elements would drop
+   the whole rule above. */
+:root[data-motion="reduced"] *::backdrop {
+  animation: none !important;
+  transition: none !important;
+}
+
+:root[data-motion="reduced"] *::details-content {
+  transition: none !important;
+}
+
 /* ---------- settings: sections and offer sources ---------- */
 
 .settings-nav {
@@ -2131,10 +2229,16 @@ fieldset.plain {
   font-weight: 700;
 }
 
-.howto[open] {
+/* The layout lives in the content part: changing `display` of <details> itself on opening
+   would stop the unfolding transition. */
+.howto::details-content {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+.howto[open] > summary {
+  margin-bottom: 0.6rem;
 }
 
 .portal-list {

@@ -83,9 +83,22 @@ fn currency(country: &str) -> &'static str {
     }
 }
 
-/// One search (one API call). `country` is checked by the settings (`ADZUNA_COUNTRIES`).
-pub async fn search(client: &Client, keys: &Keys, country: &str, q: &Query, max_days_old: u32) -> AppResult<Vec<OfferInput>> {
-    let url = format!("https://api.adzuna.com/v1/api/jobs/{country}/search/1");
+/// One page of results.
+pub struct Page {
+    pub offers: Vec<OfferInput>,
+    /// The page had the most results Adzuna gives - the next page may have more.
+    pub full: bool,
+}
+
+fn to_page(answer: Answer, country: &str) -> Page {
+    let full = answer.results.len() >= PER_PAGE as usize;
+    Page { offers: answer.results.into_iter().filter_map(|job| to_offer(job, country)).collect(), full }
+}
+
+/// One search (one API call) for one page, counted from 1. `country` is checked by the
+/// settings (`ADZUNA_COUNTRIES`).
+pub async fn search(client: &Client, keys: &Keys, country: &str, q: &Query, max_days_old: u32, page: u32) -> AppResult<Page> {
+    let url = format!("https://api.adzuna.com/v1/api/jobs/{country}/search/{}", page.max(1));
     let mut params: Vec<(&str, String)> = vec![
         ("app_id", keys.app_id.clone()),
         ("app_key", keys.app_key.clone()),
@@ -103,7 +116,7 @@ pub async fn search(client: &Client, keys: &Keys, country: &str, q: &Query, max_
     }
     let resp = client.get(url).query(&params).send().await.map_err(net::net_error)?;
     let answer: Answer = net::json(resp).await?;
-    Ok(answer.results.into_iter().filter_map(|job| to_offer(job, country)).collect())
+    Ok(to_page(answer, country))
 }
 
 fn predicted(v: &serde_json::Value) -> bool {
@@ -219,6 +232,17 @@ mod tests {
         let b = &offers[1];
         assert_eq!((b.salary_min, b.salary_max), (Some(7500), Some(10000)));
         assert_eq!(b.city.as_deref(), Some("Polska"));
+    }
+
+    #[test]
+    fn full_page_means_more_may_follow() {
+        let answer: Answer = serde_json::from_str(SAMPLE).unwrap();
+        assert!(!to_page(answer, "pl").full);
+        let job = r#"{ "title": "Dev", "company": { "display_name": "Firma Zmyślona" } }"#;
+        let many = format!(r#"{{ "results": [{}] }}"#, vec![job; PER_PAGE as usize].join(","));
+        let page = to_page(serde_json::from_str(&many).unwrap(), "pl");
+        assert!(page.full);
+        assert_eq!(page.offers.len(), PER_PAGE as usize);
     }
 
     #[test]

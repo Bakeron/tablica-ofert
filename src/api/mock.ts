@@ -321,7 +321,7 @@ export function createMockApi(): Api {
       delete secrets[name];
     },
     async sourceStatus() {
-      const one = (source: SourceStatus["source"], ready: boolean, callsADay: number): SourceStatus => ({
+      const one = (source: SourceStatus["source"], ready: boolean, callsADay: number, callsLeft: number | null = null): SourceStatus => ({
         source,
         enabled: settings[`source_${source}` as "source_adzuna"] === "on",
         ready,
@@ -333,10 +333,12 @@ export function createMockApi(): Api {
         callsToday: 0,
         ...sourceRuns[source],
         callsADay,
+        callsLeft,
       });
       return [
         one("adzuna", Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]), 25),
         one("remotive", true, 4),
+        one("jooble", Boolean(secrets["jooble-key"]), 1, 500),
         one("mail", Boolean(settings.mail_user && secrets["mail-password"]), 0),
       ];
     },

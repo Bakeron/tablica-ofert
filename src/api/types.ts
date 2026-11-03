@@ -313,6 +313,7 @@ export interface Settings {
   google_client_id: string;
   source_adzuna: "off" | "on";
   source_remotive: "off" | "on";
+  source_jooble: "off" | "on";
   adzuna_country: AdzunaCountry;
   source_mail: "off" | "on";
   mail_host: string;
@@ -347,6 +348,7 @@ export const DEFAULT_SETTINGS: Settings = {
   google_client_id: "",
   source_adzuna: "off",
   source_remotive: "off",
+  source_jooble: "off",
   adzuna_country: "pl",
   source_mail: "off",
   mail_host: "imap.gmail.com",
@@ -370,6 +372,7 @@ export type AdzunaCountry = (typeof ADZUNA_COUNTRIES)[number];
 export type SecretName =
   | "adzuna-app-id"
   | "adzuna-app-key"
+  | "jooble-key"
   | "mail-password"
   | "ai-key-gemini"
   | "ai-key-groq"
@@ -381,7 +384,7 @@ export type SecretName =
 /** Set secrets: name -> last 4 characters ("••••1234"). */
 export type SecretHints = Partial<Record<SecretName, string>>;
 
-export type SourceName = "adzuna" | "remotive" | "mail";
+export type SourceName = "adzuna" | "remotive" | "jooble" | "mail";
 
 export interface SourceStatus {
   source: SourceName;
@@ -395,9 +398,11 @@ export interface SourceStatus {
   merged: number;
   callsToday: number;
   callsADay: number;
+  /** Calls left on the key for its whole life (Jooble), null = no such limit. */
+  callsLeft: number | null;
 }
 
-export type SkipReason = "off" | "missing_key" | "no_profiles" | "no_keywords" | "not_due" | "limit";
+export type SkipReason = "off" | "missing_key" | "no_profiles" | "no_keywords" | "not_due" | "limit" | "used_up";
 
 export interface SourceRun {
   source: SourceName;

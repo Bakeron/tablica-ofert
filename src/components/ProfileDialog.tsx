@@ -19,6 +19,7 @@ import { DescriptionField } from "./DescriptionField";
 import { Help } from "./Help";
 import { IconPlus, IconTrash } from "./Icons";
 import { CloseButton, Modal } from "./Modal";
+import { Reveal } from "./Reveal";
 
 const RADII = [0, 10, 20, 30, 50, 100];
 const MODES: Remote[] = ["yes", "hybrid", "no"];
@@ -317,7 +318,9 @@ export function ProfileFields({
           )}
         </div>
       )}
-      {suggestions && <SuggestPanel items={suggestions} present={isPresent} onAdd={addSuggestions} onClose={() => setSuggestions(null)} />}
+      <Reveal show={suggestions !== null}>
+        {suggestions && <SuggestPanel items={suggestions} present={isPresent} onAdd={addSuggestions} onClose={() => setSuggestions(null)} />}
+      </Reveal>
 
       <label className="field">
         <span>{t("profile.experience")}</span>

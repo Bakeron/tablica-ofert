@@ -8,8 +8,10 @@ import { MailSettings } from "./MailSettings";
 import { SecretField } from "./SecretField";
 
 const ADZUNA_SIGNUP = "https://developer.adzuna.com/signup";
+/** Key form on the Polish Jooble site - the key decides the country of the offers. */
+const JOOBLE_SIGNUP = "https://pl.jooble.org/api/about";
 
-/** Settings → "Offer sources": automatic fetching, Adzuna (with its key), Remotive, e-mail alerts. */
+/** Settings → "Offer sources": automatic fetching, Adzuna and Jooble (with their keys), Remotive, e-mail alerts. */
 export function SourcesSettings({
   api,
   settings,
@@ -61,7 +63,7 @@ export function SourcesSettings({
 
   useEffect(() => {
     load();
-  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_mail, settings.mail_user, settings.mail_host]);
+  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_jooble, settings.source_mail, settings.mail_user, settings.mail_host]);
 
   async function saveSecret(name: SecretName, value: string) {
     try {
@@ -90,6 +92,7 @@ export function SourcesSettings({
   const of = (source: SourceStatus["source"]) => status.find((s) => s.source === source);
   const adzuna = of("adzuna");
   const remotive = of("remotive");
+  const jooble = of("jooble");
 
   return (
     <div className="settings-part">
@@ -165,6 +168,19 @@ export function SourcesSettings({
         {remotive && <SourceState s={remotive} lang={lang} />}
       </section>
 
+      <section className="source" aria-labelledby="src-jooble">
+        <SourceHead id="src-jooble" name="Jooble" on={settings.source_jooble === "on"} onToggle={(on) => onChange("source_jooble", on ? "on" : "off")} />
+        <p>{t("src.jooble.text")}</p>
+        <div className="source-row">
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(JOOBLE_SIGNUP)}>
+            {t("src.jooble.signup")} <IconArrowOut />
+          </button>
+        </div>
+        <SecretField name="jooble-key" label={t("src.jooble.key")} hint={hints["jooble-key"]} onSave={saveSecret} onDelete={deleteSecret} />
+        <p className="hint">{t("secret.hint")}</p>
+        {jooble && <SourceState s={jooble} lang={lang} />}
+      </section>
+
       <MailSettings
         api={api}
         settings={settings}
@@ -210,7 +226,8 @@ export function SourceState({ s, lang }: { s: SourceStatus; lang: "pl" | "en" })
         {s.lastOk
           ? t("src.status.last", { when: fullDate(s.lastOk, lang), added: s.added, merged: s.merged })
           : t("src.status.never")}{" "}
-        {s.callsADay > 0 && t("src.status.calls", { count: s.callsToday, max: s.callsADay })}
+        {s.callsADay > 0 && t("src.status.calls", { count: s.callsToday, max: s.callsADay })}{" "}
+        {s.callsLeft !== null && t("src.status.callsLeft", { count: s.callsLeft })}
       </p>
       {failed && (
         <p className="source-warn">

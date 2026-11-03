@@ -1,5 +1,5 @@
 //! Collecting offers from the legal sources (zalozenia.md §3): aggregators with an official
-//! API (Adzuna, Remotive) and, later, e-mail alerts. Plain code, no AI and no tokens.
+//! API (Adzuna, Remotive, Jooble) and e-mail alerts. Plain code, no AI and no tokens.
 //!
 //! Every source has its own limits: how often it may run and how many calls a day it may
 //! make. The network part runs without holding the database; offers are saved afterwards,
@@ -7,6 +7,7 @@
 
 pub mod adzuna;
 pub mod alerts;
+pub mod jooble;
 pub mod mail;
 pub mod remotive;
 
@@ -58,6 +59,9 @@ fn adzuna_limits(every_hours: i64) -> Limits {
     Limits { every_hours, forced_hours: 0, calls_a_day: 25, calls_a_run: 6 }
 }
 
+/// Jooble: 500 calls for the whole life of a key - one a day lasts about a year and a half.
+const JOOBLE_LIMITS: Limits = Limits { every_hours: 20, forced_hours: 0, calls_a_day: 1, calls_a_run: 1 };
+
 /// Remotive asks for at most 2 calls a minute.
 const REMOTIVE_PAUSE_SECS: u64 = 31;
 
@@ -79,7 +83,8 @@ impl From<&AppError> for ErrorInfo {
 #[serde(rename_all = "camelCase")]
 pub struct SourceRun {
     pub source: String,
-    /// Why it did not run: `off`, `missing_key`, `no_profiles`, `no_keywords`, `not_due`, `limit`.
+    /// Why it did not run: `off`, `missing_key`, `no_profiles`, `no_keywords`, `not_due`, `limit`,
+    /// `used_up` (no calls left on the key).
     pub skipped: Option<&'static str>,
     pub added: i64,
     pub merged: i64,
@@ -118,6 +123,8 @@ pub struct SourceStatus {
     pub merged: i64,
     pub calls_today: i64,
     pub calls_a_day: i64,
+    /// Calls left on the key for its whole life (only sources with such a limit).
+    pub calls_left: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -296,6 +303,8 @@ struct Snapshot {
     has_offers: bool,
     adzuna_calls: i64,
     remotive_calls: i64,
+    jooble_calls: i64,
+    jooble_total: i64,
 }
 
 fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
@@ -307,6 +316,8 @@ fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
         has_offers: conn.query_row("SELECT EXISTS (SELECT 1 FROM offers WHERE deleted_at IS NULL)", [], |r| r.get(0))?,
         adzuna_calls: usage::calls_today(conn, adzuna::SOURCE)?,
         remotive_calls: usage::calls_today(conn, remotive::SOURCE)?,
+        jooble_calls: usage::calls_today(conn, jooble::SOURCE)?,
+        jooble_total: usage::calls_total(conn, jooble::SOURCE)?,
     })
 }
 
@@ -356,17 +367,23 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         } else {
             let keys = keys.expect("checked above");
             let country = snap.settings.get("adzuna_country").cloned().unwrap_or_else(|| "pl".into());
+            let budget = limits.calls_a_run.min(left);
             let mut found = Vec::new();
             let mut searched = Vec::new();
-            let mut calls = 0;
-            for q in for_this_run(&queries, limits.calls_a_run.min(left), snap.adzuna_calls) {
+            // Searches whose first page was full - their second page goes after every first page.
+            let mut more = Vec::new();
+            let mut calls: usize = 0;
+            for q in for_this_run(&queries, budget, snap.adzuna_calls) {
                 calls += 1;
                 let key = q.key();
                 let days = days_back(snap.adzuna_queries.get(&key).map(String::as_str), snap.has_offers, now);
-                match adzuna::search(&client, &keys, &country, q, days).await {
-                    Ok(mut list) => {
-                        found.append(&mut list);
+                match adzuna::search(&client, &keys, &country, q, days, 1).await {
+                    Ok(mut page) => {
+                        found.append(&mut page.offers);
                         searched.push(key);
+                        if page.full {
+                            more.push((q, days));
+                        }
                     }
                     Err(e) => {
                         run.error = Some((&e).into());
@@ -374,6 +391,19 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
                     }
                 }
             }
+            if run.error.is_none() {
+                for (q, days) in more.into_iter().take(budget.saturating_sub(calls)) {
+                    calls += 1;
+                    match adzuna::search(&client, &keys, &country, q, days, 2).await {
+                        Ok(mut page) => found.append(&mut page.offers),
+                        Err(e) => {
+                            run.error = Some((&e).into());
+                            break;
+                        }
+                    }
+                }
+            }
+            let calls = calls as i64;
             let stamp = clock::now();
             with_db(state, |c| {
                 usage::add_calls(c, adzuna::SOURCE, calls)?;
@@ -428,6 +458,45 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         report.runs.push(run);
     }
 
+    // Jooble - one search a day; the keywords take turns day after day.
+    if on("source_jooble") {
+        let limits = JOOBLE_LIMITS;
+        let last = snap.runs.get(jooble::SOURCE).cloned().unwrap_or_default();
+        let mut run = SourceRun { source: jooble::SOURCE.into(), ..Default::default() };
+        let queries = plan(&snap.profiles);
+        let key = jooble::key()?;
+        if snap.profiles.is_empty() {
+            run.skipped = Some("no_profiles");
+        } else if key.is_none() {
+            run.skipped = Some("missing_key");
+        } else if queries.is_empty() {
+            run.skipped = Some("no_keywords");
+        } else if snap.jooble_total >= jooble::KEY_CALLS {
+            run.skipped = Some("used_up");
+        } else if !due(&last, &limits, force, now) {
+            run.skipped = Some("not_due");
+        } else if snap.jooble_calls >= limits.calls_a_day {
+            run.skipped = Some("limit");
+        } else {
+            let key = key.expect("checked above");
+            let mut found = Vec::new();
+            if let Some(q) = for_this_run(&queries, limits.calls_a_run, snap.jooble_total).first() {
+                match jooble::search(&client, &key, q).await {
+                    Ok(mut list) => found.append(&mut list),
+                    Err(e) => run.error = Some((&e).into()),
+                }
+            }
+            let stamp = clock::now();
+            with_db(state, |c| {
+                usage::add_calls(c, jooble::SOURCE, 1)?;
+                save(c, found, &mut run, &mut report)?;
+                record(c, &run, &stamp)
+            })?;
+        }
+        report.added += run.added;
+        report.runs.push(run);
+    }
+
     // E-mail alerts
     if on("source_mail") {
         let every: i64 = snap.settings.get("fetch_every").and_then(|v| v.parse().ok()).unwrap_or(6);
@@ -471,9 +540,9 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
 }
 
 /// State of every source for the settings window.
-/// `adzuna_ready` = both Adzuna keys are in the credential store,
-/// `mail_ready` = mailbox address, server and password are set.
-pub fn status(conn: &Connection, adzuna_ready: bool, mail_ready: bool) -> AppResult<Vec<SourceStatus>> {
+/// `adzuna_ready` = both Adzuna keys are in the credential store, `jooble_ready` = the
+/// Jooble key is, `mail_ready` = mailbox address, server and password are set.
+pub fn status(conn: &Connection, adzuna_ready: bool, jooble_ready: bool, mail_ready: bool) -> AppResult<Vec<SourceStatus>> {
     let s = settings::all(conn)?;
     let mut stmt = conn.prepare("SELECT last_try, last_ok, last_error, added, merged FROM source_runs WHERE source = ?1")?;
     let mut one = |source: &str, ready: bool, calls_a_day: i64| -> AppResult<SourceStatus> {
@@ -494,11 +563,16 @@ pub fn status(conn: &Connection, adzuna_ready: bool, mail_ready: bool) -> AppRes
             merged,
             calls_today: usage::calls_today(conn, source)?,
             calls_a_day,
+            calls_left: None,
         })
     };
     Ok(vec![
         one(adzuna::SOURCE, adzuna_ready, adzuna_limits(6).calls_a_day)?,
         one(remotive::SOURCE, true, REMOTIVE_LIMITS.calls_a_day)?,
+        SourceStatus {
+            calls_left: Some((jooble::KEY_CALLS - usage::calls_total(conn, jooble::SOURCE)?).max(0)),
+            ..one(jooble::SOURCE, jooble_ready, JOOBLE_LIMITS.calls_a_day)?
+        },
         one(mail::SOURCE, mail_ready, 0)?,
     ])
 }
@@ -592,7 +666,7 @@ mod tests {
             ..Default::default()
         };
         record(&conn, &bad, "2026-11-02T16:00:00Z").unwrap();
-        let s = status(&conn, false, false).unwrap().into_iter().find(|s| s.source == "adzuna").unwrap();
+        let s = status(&conn, false, false, false).unwrap().into_iter().find(|s| s.source == "adzuna").unwrap();
         assert_eq!(s.last_try.as_deref(), Some("2026-11-02T16:00:00Z"));
         assert_eq!(s.last_ok.as_deref(), Some("2026-11-02T10:00:00Z"));
         assert_eq!(s.last_error.as_deref(), Some("timeout"));

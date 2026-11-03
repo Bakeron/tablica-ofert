@@ -188,8 +188,15 @@ pub async fn secret_hints() -> AppResult<BTreeMap<String, String>> {
 }
 
 #[tauri::command]
-pub async fn set_secret(name: String, value: String) -> AppResult<()> {
-    secrets::set_user(&name, &value)
+pub async fn set_secret(state: State<'_, AppState>, name: String, value: String) -> AppResult<()> {
+    // A different Jooble key has its own 500 calls - its counter starts from zero.
+    let new_jooble_key = name == sources::jooble::KEY_SECRET
+        && secrets::get(sources::jooble::KEY_SECRET)?.as_deref() != Some(secrets::clean_value(&value)?.as_str());
+    secrets::set_user(&name, &value)?;
+    if new_jooble_key {
+        with_db(&state, |c| crate::usage::reset_total(c, sources::jooble::SOURCE))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -202,9 +209,10 @@ pub async fn delete_secret(name: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn source_status(state: State<'_, AppState>) -> AppResult<Vec<SourceStatus>> {
     let adzuna_ready = sources::adzuna::keys()?.is_some();
+    let jooble_ready = sources::jooble::key()?.is_some();
     let settings = with_db(&state, |c| settings::all(c))?;
     let mail_ready = sources::mail::config(&settings)?.is_some();
-    with_db(&state, |c| sources::status(c, adzuna_ready, mail_ready))
+    with_db(&state, |c| sources::status(c, adzuna_ready, jooble_ready, mail_ready))
 }
 
 /// "Check connection" for the alert mailbox: number of messages in the inbox.

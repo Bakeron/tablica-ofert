@@ -46,6 +46,7 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("google_client_id", Rule::Text { max: 200, default: "", check: is_client_id }),
     ("source_adzuna", Rule::One(&["off", "on"])),
     ("source_remotive", Rule::One(&["off", "on"])),
+    ("source_jooble", Rule::One(&["off", "on"])),
     ("adzuna_country", Rule::One(ADZUNA_COUNTRIES)),
     ("source_mail", Rule::One(&["off", "on"])),
     ("mail_host", Rule::Text { max: 253, default: "imap.gmail.com", check: is_host }),

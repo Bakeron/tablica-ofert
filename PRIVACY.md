@@ -17,6 +17,7 @@ Tylko z tym, co włączysz w ustawieniach:
 
 - **Adzuna** (agregator ofert) - wysyłane są słowa kluczowe i miasto z profilu oraz Twój klucz Adzuna.
 - **Remotive** (praca zdalna) - wysyłane są słowa kluczowe z profilu.
+- **Jooble** (agregator ofert) - wysyłane są słowo kluczowe i miasto z profilu oraz Twój klucz Jooble.
 - **Twoja skrzynka z alertami** (IMAP) - aplikacja tylko czyta maile; niczego nie usuwa, nie oznacza jako przeczytane i nie wysyła.
 - **Wybrany dostawca AI** (Gemini, Groq, OpenRouter, Claude, OpenAI) - wysyłana jest treść oferty, opisy profili, oczekiwania finansowe i doświadczenie. Nigdy klucze, hasła ani notatki. Przy Ollamie AI działa na Twoim komputerze i nic nie wychodzi na zewnątrz. Dane w usłudze AI podlegają polityce prywatności tej usługi.
 - **Strony ofert otwarte przez Ciebie** w oknie podglądu.
@@ -46,6 +47,7 @@ Only what you turn on in the settings:
 
 - **Adzuna** (job aggregator) - profile keywords and city, and your Adzuna key.
 - **Remotive** (remote jobs) - profile keywords.
+- **Jooble** (job aggregator) - a profile keyword and city, and your Jooble key.
 - **Your alert mailbox** (IMAP) - read only; nothing is deleted, marked as read or sent.
 - **The AI provider you choose** (Gemini, Groq, OpenRouter, Claude, OpenAI) - the offer text, profile descriptions, salary expectations and experience. Never keys, passwords or notes. With Ollama, AI runs on your computer and nothing leaves it. Data at an AI service is covered by that service's privacy policy.
 - **Offer pages you open yourself** in the preview window.

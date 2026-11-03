@@ -49,9 +49,9 @@ pub fn best(results: impl IntoIterator<Item = FilterResult>) -> FilterResult {
     best.unwrap_or(FilterResult::Pass)
 }
 
-/// Sources that search by keyword, but match words in the full text we never see (Adzuna
-/// gives only the start of the description) and sometimes return offers far from the search.
-const KEYWORD_SEARCH_SOURCES: &[&str] = &[crate::sources::adzuna::SOURCE];
+/// Sources that search by keyword, but match words in the full text we never see (Adzuna and
+/// Jooble give only the start of the description) and sometimes return offers far from the search.
+const KEYWORD_SEARCH_SOURCES: &[&str] = &[crate::sources::adzuna::SOURCE, crate::sources::jooble::SOURCE];
 
 /// An offer only from a keyword search that mentions no keyword of any profile - off topic.
 /// Offers also seen elsewhere (e.g. in the user's own e-mail alerts) are never off topic.
