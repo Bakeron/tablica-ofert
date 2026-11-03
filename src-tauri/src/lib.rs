@@ -6,6 +6,7 @@ mod clock;
 mod commands;
 mod db;
 mod dedup;
+mod diag;
 mod error;
 mod extract;
 mod filter;

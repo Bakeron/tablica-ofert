@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 
 use crate::error::{AppError, AppResult};
-use crate::{keycopy, secrets};
+use crate::{diag, keycopy, secrets};
 
 pub const DB_FILE: &str = "tablica.db";
 const BACKUP_DIR: &str = "kopie";
@@ -113,17 +113,31 @@ pub fn open_app_database(data_dir: &Path, backup: bool) -> AppResult<Connection>
     fs::create_dir_all(data_dir)?;
     let path = data_dir.join(DB_FILE);
     let exists = path.exists();
-    let (key, restored) = match secrets::get(secrets::DB_KEY)? {
+    let in_vault = secrets::get(secrets::DB_KEY)?;
+    let yes = |b: bool| if b { "yes" } else { "no" };
+    diag::log(
+        data_dir,
+        &format!(
+            "start ({}) - database: {}, key in Credential Manager: {}, key copy: {}",
+            if backup { "window" } else { "background or reopen" },
+            yes(exists),
+            yes(in_vault.is_some()),
+            yes(keycopy::path(data_dir).exists()),
+        ),
+    );
+    let (key, restored) = match in_vault {
         Some(key) => (key, false),
         // Key gone from Credential Manager: try the DPAPI copy next to the database.
         None if exists => match keycopy::read(data_dir) {
             Ok(Some(key)) => (key, true),
             Ok(None) => {
+                diag::log(data_dir, "ERROR key missing from Credential Manager and there is no copy - writes blocked");
                 return Err(AppError::Locked(
                     "the database exists, but its key is missing from Windows Credential Manager".into(),
                 ));
             }
             Err(e) => {
+                diag::log(data_dir, &format!("ERROR key missing from Credential Manager and the copy cannot be read: {e}"));
                 return Err(AppError::Locked(format!(
                     "the database key is missing from Windows Credential Manager and its copy cannot be read: {e}"
                 )));
@@ -139,12 +153,13 @@ pub fn open_app_database(data_dir: &Path, backup: bool) -> AppResult<Connection>
     let mut conn = open(&path, &key)?;
     if restored {
         secrets::set(secrets::DB_KEY, &key)?;
-        eprintln!("database key restored from the DPAPI copy");
+        diag::log(data_dir, "WARNING key was missing from Credential Manager - restored from the copy");
     }
     // Keep the copy in step with the key (not fatal - the next start tries again).
     if keycopy::read(data_dir).ok().flatten().as_deref() != Some(key.as_str()) {
-        if let Err(e) = keycopy::write(data_dir, &key) {
-            eprintln!("key copy failed: {e}");
+        match keycopy::write(data_dir, &key) {
+            Ok(()) => diag::log(data_dir, "key copy saved"),
+            Err(e) => diag::log(data_dir, &format!("key copy failed: {e}")),
         }
     }
     if exists && backup {
