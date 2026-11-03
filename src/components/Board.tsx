@@ -199,10 +199,15 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     <span className="offer-company">{o.company}</span>
                     {o.interest && <span className={`interest interest-${o.interest}`}>{t(`interest.${o.interest}`)}</span>}
                   </span>
-                  {o.sources.length > 1 && (
+                  {o.sources.length > 1 ? (
                     <span className="offer-sources">
                       {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}
                     </span>
+                  ) : (
+                    // Adzuna's terms: their offers carry their name also in the list (the logo is on the card).
+                    o.sources[0] === "adzuna" && (
+                      <span className="offer-sources">{t("sources.one", { list: sourceNames[0] })}</span>
+                    )
                   )}
                   {(view === "review" || view === "rejected") && <RowReasons row={o} />}
                 </td>
