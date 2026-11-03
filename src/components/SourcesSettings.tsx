@@ -235,7 +235,8 @@ export function SourceState({ s, lang }: { s: SourceStatus; lang: "pl" | "en" })
   const failed = s.lastError && s.lastTry && s.lastTry !== s.lastOk;
   return (
     <div className="source-state">
-      {!s.ready && (
+      {/* A missing key is a problem only for a source that is on - "not set" under the field says the rest. */}
+      {!s.ready && s.enabled && (
         <p className="source-warn">
           <IconWarning /> {t(s.source === "mail" ? "src.status.noMail" : "src.status.noKey")}
         </p>
