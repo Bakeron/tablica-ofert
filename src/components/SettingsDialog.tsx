@@ -2,8 +2,7 @@ import { useState } from "react";
 import type { Api } from "../api";
 import type { Profile, Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { IconClose } from "./Icons";
-import { Modal } from "./Modal";
+import { CloseButton, Modal } from "./Modal";
 import { AboutPart } from "./AboutPart";
 import { AiSettings } from "./AiSettings";
 import { DataSettings } from "./DataSettings";
@@ -112,9 +111,7 @@ function SettingsBody({
     <div className="sheet">
       <header className="sheet-head">
         <h2 id="settings-title">{t("settings.title")}</h2>
-        <button type="button" className="icon-btn" onClick={onClose} aria-label={closeLabel}>
-          <IconClose />
-        </button>
+        <CloseButton onClick={onClose} label={closeLabel} />
       </header>
       <nav className="settings-nav" aria-label={t("settings.section")}>
         {SECTIONS.map((s) => (

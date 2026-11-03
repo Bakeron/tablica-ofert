@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { Criteria } from "../api/types";
 import { useI18n } from "../i18n";
 import { droppedWords, wordDiff } from "../lib/diff";
-import { IconClose, IconWarning } from "./Icons";
-import { Modal } from "./Modal";
+import { IconWarning } from "./Icons";
+import { CloseButton, Modal } from "./Modal";
 
 /**
  * "Tidy up": the user's text and the AI proposal side by side, with what AI removed or changed
@@ -32,9 +32,7 @@ export function TidyDialog({
       <div className="sheet">
         <header className="sheet-head">
           <h2 id="tidy-title">{t("tidy.title")}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label={t("add.cancel")}>
-            <IconClose />
-          </button>
+          <CloseButton onClick={onClose} label={t("add.cancel")} />
         </header>
         <p className="hint">{t("tidy.intro")}</p>
         <div className="tidy-grid">
@@ -121,9 +119,7 @@ export function AssistDialog({
       <div className="sheet">
         <header className="sheet-head">
           <h2 id="assist-title">{title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label={t("settings.close")}>
-            <IconClose />
-          </button>
+          <CloseButton onClick={onClose} label={t("settings.close")} />
         </header>
         {busy ? (
           <p role="status">{t("assist.busy")}</p>

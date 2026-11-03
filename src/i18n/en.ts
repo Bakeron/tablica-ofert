@@ -153,6 +153,9 @@ export const en: Record<keyof typeof pl, string> = {
   "error.not_found": "This offer no longer exists.",
   "error.details": "Technical details",
   "error.dismiss": "Close",
+  "modal.leaveAsk": "Close without saving? Your changes will be lost.",
+  "modal.stay": "Back to editing",
+  "modal.leave": "Close without saving",
 
   "preview.badge": "Browser preview - sample data",
 
@@ -280,12 +283,12 @@ export const en: Record<keyof typeof pl, string> = {
   "first.s2": "AI provider",
   "first.s3": "Offer sources",
   "first.s1Intro":
-    "Describe the job you are looking for. The app sorts offers by it, and later AI will score them. You write it - AI does not make it up.",
+    "Describe the job you are looking for. The app sorts offers by it, and later AI will score them. You write it - AI does not make it up. Keywords (at the bottom) are needed to search the aggregators. Fields left empty do not limit anything.",
   "first.s2Text":
     "AI summarises offers and scores how well they fit the profile. A free key is enough (e.g. Gemini or Groq) - enter it in Settings (the gear in the top right corner), part “AI”. The app also works without AI: hard filters sort the offers and you decide the rest.",
   "first.s3Text":
-    "Offers come from e-mail alerts and aggregators (Adzuna, Remotive) - turn them on in Settings, part “Offer sources”. Aggregators are searched with the profile's keywords, so add them in the profile. A single offer can always be added with “Add offer”.",
-  "first.criteriaTip": "Set cities, contract and salary in the profile - the pencil button next to its name above the board.",
+    "Offers come from e-mail alerts and aggregators (Adzuna, Remotive) - turn them on in Settings, part “Offer sources”. Aggregators are searched with the profile's keywords (step 1). A single offer can always be added with “Add offer”.",
+  "first.criteriaTip": "Change the profile any time - the pencil button next to its name above the board.",
   "first.next": "Next",
   "first.back": "Back",
   "first.skip": "Skip for now",

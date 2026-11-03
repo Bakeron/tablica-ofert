@@ -1,14 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { ProfileInput } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { emptyCriteria } from "../lib/profile";
-import { DescriptionField } from "./DescriptionField";
 import { IconArrowRight } from "./Icons";
-import { Modal } from "./Modal";
+import { CloseButton, Modal } from "./Modal";
+import { ProfileFields, toForm, toInput, type Form } from "./ProfileDialog";
 
 const STEPS: TextKey[] = ["first.s1", "first.s2", "first.s3"];
 
-/** First start: 1) what you are looking for (creates the first profile), 2) AI provider, 3) offer sources. */
+/**
+ * First start: 1) the whole first profile - the same fields as the profile window, so
+ * nothing is hidden for later, 2) AI provider, 3) offer sources.
+ */
 export function FirstSteps({
   open,
   onSaveProfile,
@@ -21,17 +23,21 @@ export function FirstSteps({
 }) {
   const { t } = useI18n();
   const [step, setStep] = useState(0);
-  const [name, setName] = useState("Plan A");
-  const [description, setDescription] = useState("");
-  const [experience, setExperience] = useState("");
+  const [form, setForm] = useState<Form>(() => toForm(null, "", "Plan A"));
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [initial] = useState(() => JSON.stringify(form));
+
+  // The long profile form scrolls; every step starts at the top.
+  useEffect(() => {
+    document.getElementById("first-title")?.scrollIntoView({ block: "nearest" });
+  }, [step]);
 
   async function next(e: FormEvent) {
     e.preventDefault();
     if (step === 0 && !saved) {
       setBusy(true);
-      const ok = await onSaveProfile({ id: null, name, description, criteria: emptyCriteria() }, experience);
+      const ok = await onSaveProfile(toInput(form, null), form.experience);
       setBusy(false);
       if (!ok) return;
       setSaved(true);
@@ -41,11 +47,20 @@ export function FirstSteps({
   }
 
   return (
-    <Modal open={open} onClose={onFinish} labelledBy="first-title" className="modal-wide">
+    <Modal
+      open={open}
+      onClose={onFinish}
+      labelledBy="first-title"
+      className="modal-wide"
+      dirty={!saved && JSON.stringify(form) !== initial}
+    >
       <form className="sheet" onSubmit={next}>
         <header className="sheet-head">
           <h2 id="first-title">{t("first.title")}</h2>
-          <span className="first-count">{t("first.step", { n: step + 1 })}</span>
+          <span className="first-head-side">
+            <span className="first-count">{t("first.step", { n: step + 1 })}</span>
+            <CloseButton onClick={onFinish} label={saved ? t("settings.close") : t("first.skip")} />
+          </span>
         </header>
 
         <ol className="route" aria-label={t("first.title")}>
@@ -61,26 +76,7 @@ export function FirstSteps({
           // Once saved, the first profile is changed in the profile window, not here.
           <fieldset className="plain" disabled={saved}>
             <p>{t("first.s1Intro")}</p>
-            <label className="field field-name">
-              <span>
-                {t("profile.name")} <em className="req">({t("add.required")})</em>
-              </span>
-              <input required maxLength={40} value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-            <DescriptionField value={description} onChange={setDescription} autoFocus />
-            <label className="field">
-              <span>{t("profile.experience")}</span>
-              <textarea
-                rows={3}
-                maxLength={20000}
-                aria-describedby="first-experience-hint"
-                value={experience}
-                onChange={(e) => setExperience(e.target.value)}
-              />
-              <span id="first-experience-hint" className="hint">
-                {t("profile.experienceHint")}
-              </span>
-            </label>
+            <ProfileFields form={form} setForm={setForm} descriptionPrev={null} experiencePrev={null} aiOn={false} />
           </fieldset>
         )}
         {step === 1 && <p className="first-text">{t("first.s2Text")}</p>}

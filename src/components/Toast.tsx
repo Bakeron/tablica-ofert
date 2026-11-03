@@ -1,0 +1,51 @@
+import { createContext, useContext } from "react";
+import { useI18n } from "../i18n";
+import { CloseButton } from "./Modal";
+
+export interface Toast {
+  text: string;
+  undo?: () => void;
+}
+
+export const ToastContext = createContext<{ toast: Toast | null; close: () => void }>({ toast: null, close: () => {} });
+
+/**
+ * The message on a small black board. It stays until closed ("X" or Esc). Rendered on the
+ * page and inside every open window - an open window makes everything behind it inert,
+ * so only the copy in the topmost window can be read and clicked.
+ */
+export function ToastView() {
+  const { t } = useI18n();
+  const { toast, close } = useContext(ToastContext);
+  return (
+    <div className="toast-zone" aria-live="polite">
+      {toast && (
+        <div
+          className="toast"
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            // Only the message closes, not the window around it.
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }}
+        >
+          <span className="toast-text">{toast.text}</span>
+          {toast.undo && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                toast.undo?.();
+                close();
+              }}
+            >
+              {t("trash.undo")}
+            </button>
+          )}
+          <CloseButton small onClick={close} />
+        </div>
+      )}
+    </div>
+  );
+}

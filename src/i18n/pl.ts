@@ -153,6 +153,9 @@ export const pl = {
   "error.not_found": "Tej oferty już nie ma.",
   "error.details": "Szczegóły techniczne",
   "error.dismiss": "Zamknij",
+  "modal.leaveAsk": "Zamknąć bez zapisywania? Wpisane zmiany przepadną.",
+  "modal.stay": "Wróć do edycji",
+  "modal.leave": "Zamknij bez zapisywania",
 
   "preview.badge": "Podgląd w przeglądarce - przykładowe dane",
 
@@ -280,12 +283,12 @@ export const pl = {
   "first.s2": "Dostawca AI",
   "first.s3": "Źródła ofert",
   "first.s1Intro":
-    "Opisz, jakiej pracy szukasz. Na tej podstawie aplikacja sortuje oferty, a później oceni je AI. Opis piszesz Ty - AI go nie wymyśla.",
+    "Opisz, jakiej pracy szukasz. Na tej podstawie aplikacja sortuje oferty, a później oceni je AI. Opis piszesz Ty - AI go nie wymyśla. Słowa kluczowe (na dole) są potrzebne do wyszukiwania ofert w agregatorach. Pola, których nie wypełnisz, niczego nie ograniczają.",
   "first.s2Text":
     "AI streszcza oferty i ocenia, jak pasują do profilu. Wystarczy darmowy klucz (np. Gemini albo Groq) - wpiszesz go w Ustawieniach (zębatka w prawym górnym rogu), część „AI”. Bez AI aplikacja też działa: twarde filtry sortują oferty, a o reszcie decydujesz Ty.",
   "first.s3Text":
-    "Oferty zbieram z alertów e-mail i agregatorów (Adzuna, Remotive) - włączysz je w Ustawieniach, część „Źródła ofert”. Agregatory przeszukuję słowami kluczowymi z profilu, więc dopisz je w profilu. Pojedynczą ofertę dodasz zawsze przyciskiem „Dodaj ofertę”.",
-  "first.criteriaTip": "Miasta, umowę i widełki ustawisz w profilu - przycisk z ołówkiem obok jego nazwy nad tablicą.",
+    "Oferty zbieram z alertów e-mail i agregatorów (Adzuna, Remotive) - włączysz je w Ustawieniach, część „Źródła ofert”. Agregatory przeszukuję słowami kluczowymi z profilu (krok 1). Pojedynczą ofertę dodasz zawsze przyciskiem „Dodaj ofertę”.",
+  "first.criteriaTip": "Profil zmienisz w każdej chwili - przycisk z ołówkiem obok jego nazwy nad tablicą.",
   "first.next": "Dalej",
   "first.back": "Wstecz",
   "first.skip": "Pomiń na razie",

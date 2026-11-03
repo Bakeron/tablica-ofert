@@ -1,20 +1,42 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useI18n } from "../i18n";
+import { IconClose } from "./Icons";
+import { ToastView } from "./Toast";
 
-/** Native modal <dialog>: focus stays inside, Esc closes, the page behind is inert. */
+/** The same "X" in the top right corner of every window and message. */
+export function CloseButton({ onClick, label, small = false }: { onClick: () => void; label?: string; small?: boolean }) {
+  const { t } = useI18n();
+  return (
+    <button type="button" className={`icon-btn close-btn${small ? " icon-btn-small" : ""}`} onClick={onClick} aria-label={label ?? t("settings.close")}>
+      <IconClose />
+    </button>
+  );
+}
+
+/**
+ * Native modal <dialog>: focus stays inside, the page behind is inert. Esc and a click
+ * outside the window close it - but with unsaved changes (`dirty`) they ask first, so a
+ * stray click never throws away typed text.
+ */
 export function Modal({
   open,
   onClose,
   labelledBy,
   className = "",
+  dirty = false,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   labelledBy: string;
   className?: string;
+  dirty?: boolean;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOutside = useRef(false);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -25,11 +47,57 @@ export function Modal({
       dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     }
     if (!open && dialog.open) dialog.close();
+    if (!open) setAsking(false);
   }, [open]);
 
+  function softClose() {
+    if (dirty) setAsking(true);
+    else onClose();
+  }
+
+  // Only a click that starts and ends outside the window counts (not text selected
+  // inside and released outside).
+  const outside = (e: MouseEvent<HTMLDialogElement>) => {
+    if (e.target !== e.currentTarget) return false;
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+
   return (
-    <dialog ref={ref} className={`modal ${className}`} aria-labelledby={labelledBy} onClose={onClose}>
+    <dialog
+      ref={ref}
+      className={`modal ${className}`}
+      aria-labelledby={labelledBy}
+      onMouseDown={(e) => (pressedOutside.current = outside(e))}
+      onClick={(e) => {
+        if (pressedOutside.current && outside(e)) softClose();
+        pressedOutside.current = false;
+      }}
+      onCancel={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (dirty) {
+          e.preventDefault();
+          setAsking(true);
+        }
+      }}
+      onClose={(e) => {
+        // A window opened inside this one (e.g. "Tidy up") closing is not this one closing.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {open && asking && (
+        <div className="leave-ask" role="alert">
+          <p>{t("modal.leaveAsk")}</p>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => setAsking(false)} autoFocus>
+            {t("modal.stay")}
+          </button>
+          <button type="button" className="btn btn-danger btn-small" onClick={onClose}>
+            {t("modal.leave")}
+          </button>
+        </div>
+      )}
       {open && children}
+      {open && <ToastView />}
     </dialog>
   );
 }

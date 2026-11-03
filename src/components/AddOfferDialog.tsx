@@ -1,8 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Captured, Draft, OfferInput, Remote, SalaryPeriod } from "../api/types";
 import { useI18n } from "../i18n";
-import { IconClose } from "./Icons";
-import { Modal } from "./Modal";
+import { CloseButton, Modal } from "./Modal";
 
 const EMPTY = {
   title: "",
@@ -150,9 +149,7 @@ export function AddOfferDialog({
       <form onSubmit={submit} className="sheet">
         <header className="sheet-head">
           <h2 id="add-title">{t("add.title")}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label={t("add.cancel")}>
-            <IconClose />
-          </button>
+          <CloseButton onClick={onClose} label={t("add.cancel")} />
         </header>
         <p className="hint">{t("add.intro")}</p>
 

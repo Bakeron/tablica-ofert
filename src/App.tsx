@@ -26,6 +26,7 @@ import { AssistDialog } from "./components/AiDialogs";
 import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
+import { ToastContext, ToastView, type Toast } from "./components/Toast";
 import { IconBriefcase, IconDownload, IconGear, IconPlus, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
@@ -38,11 +39,6 @@ import { isWebUrl } from "./lib/format";
 import { viewFor } from "./lib/profile";
 
 const VIEWS: View[] = ["board", "review", "rejected", "trash"];
-
-interface Toast {
-  text: string;
-  undo?: () => void;
-}
 
 export default function App() {
   const [api, setApi] = useState<Api | null>(null);
@@ -189,10 +185,18 @@ export default function App() {
     };
   }, [api, selectedId, rows, fail]);
 
+  // A message stays until it is closed ("X" or Esc) - a new one takes its place.
+  const closeToast = useCallback(() => setToast(null), []);
+  const toastValue = useMemo(() => ({ toast, close: closeToast }), [toast, closeToast]);
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), toast.undo ? 8000 : 4000);
-    return () => clearTimeout(timer);
+    const onKey = (e: KeyboardEvent) => {
+      // Esc belongs to an open window or "?" bubble first.
+      if (e.key !== "Escape" || document.querySelector("dialog[open], .help-tip:popover-open")) return;
+      setToast(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [toast]);
 
   // Offers collected in the background (at start and every few hours) - refresh the board.
@@ -539,6 +543,7 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={i18n}>
+      <ToastContext.Provider value={toastValue}>
       <div className="app">
         <header className="topbar">
           <div className="brand">
@@ -717,25 +722,7 @@ export default function App() {
           />
         </main>
 
-        <div className="toast-zone" aria-live="polite">
-          {toast && (
-            <div className="toast">
-              <span>{toast.text}</span>
-              {toast.undo && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    toast.undo?.();
-                    setToast(null);
-                  }}
-                >
-                  {t("trash.undo")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <ToastView />
 
         <AddOfferDialog
           open={adding}
@@ -797,6 +784,7 @@ export default function App() {
           onClose={() => setConfirm(null)}
         />
       </div>
+      </ToastContext.Provider>
     </I18nContext.Provider>
   );
 }
