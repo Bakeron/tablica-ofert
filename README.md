@@ -2,7 +2,7 @@
 
 Osobista tablica do szukania pracy na Windows: sama zbiera nowe oferty z legalnych źródeł (alerty e-mail z portali, Adzuna, Remotive, Jooble, We Work Remotely, Remote OK), odsiewa je Twoimi filtrami, ocenia z pomocą AI (albo bez AI - ze słów) i przypomina o rozmowach. Jedna oferta z kilku portali to jeden wiersz, etapy rekrutacji mają historię. Bez konta i bez serwera - dane leżą na komputerze, w zaszyfrowanej bazie.
 
-> **Stan (2.11.2026):** etap 1 (aplikacja na PC) gotowy w kodzie i sprawdzony testami na zmyślonych danych; czeka na test z prawdziwymi kluczami i skrzynką. Dalej: synchronizacja z telefonem przez Google Dysk i aplikacja na Androida - plan w [`robota.md`](robota.md).
+> **Stan (2.11.2026):** etap 1 (aplikacja na PC) gotowy w kodzie i sprawdzony testami na zmyślonych danych; czeka na test z prawdziwymi kluczami i skrzynką. Dalej: synchronizacja z telefonem przez Google Dysk i aplikacja na Androida.
 
 ![Tablica ofert - motyw ciemny](Podgląd/01-tablica-ciemny.png)
 
@@ -16,7 +16,7 @@ Osobista tablica do szukania pracy na Windows: sama zbiera nowe oferty z legalny
 - **Etapy rekrutacji z historią** (nowa → wysłano → rozmowa HR → … → oferta pracy), zainteresowanie „bardzo / może / nie” (oferty z „nie” czekają w osobnej zakładce „Nie dla mnie”), ulubione, notatki.
 - **Profile „czego szukam”** (np. „Plan A - zdalnie”, „Plan B - Wrocław”) jako znaki kierunkowe nad tablicą: opis własnymi słowami, forma pracy, miasta z odległością, umowa, poziom, język, minimalne i oczekiwane widełki (UoP / B2B), firmy i słowa do pominięcia. Przy pierwszym uruchomieniu - „Pierwsze kroki”.
 - **Twarde filtry bez AI** - wynik „pasuje / nie pasuje / niepewne”. Filtr czyta całą treść oferty („Wrocław”, a w opisie „możliwa praca zdalna”; „raz w miesiącu w biurze”) i odrzuca tylko to, co na pewno nie pasuje. Niepewne trafiają do zakładki „Do sprawdzenia”, odrzucone - do „Odrzucone przez filtr”, zawsze z powodem.
-- **Oferty zbierają się same** - z alertów e-mail portali (JJIT, NFJ, Pracuj, theprotocol, Rocket Jobs, Bulldogjob, LinkedIn, Indeed; skrzynka tylko do odczytu), z Adzuny i Jooble (darmowe klucze użytkownika) oraz Remotive, We Work Remotely i Remote OK (praca zdalna, bez kluczy; z dwóch ostatnich zostają tylko oferty ze słowami kluczowymi profilu). Przy starcie, co kilka godzin i - przez Harmonogram zadań Windows - także przy zamkniętej aplikacji, z powiadomieniem o nowych ofertach. Każde źródło pilnuje swoich limitów zapytań. Portali aplikacja nie przegląda automatem (regulaminy - `zalozenia.md` §3).
+- **Oferty zbierają się same** - z alertów e-mail portali (JJIT, NFJ, Pracuj, theprotocol, Rocket Jobs, Bulldogjob, LinkedIn, Indeed; skrzynka tylko do odczytu), z Adzuny i Jooble (darmowe klucze użytkownika) oraz Remotive, We Work Remotely i Remote OK (praca zdalna, bez kluczy; z dwóch ostatnich zostają tylko oferty ze słowami kluczowymi profilu). Przy starcie, co kilka godzin i - przez Harmonogram zadań Windows - także przy zamkniętej aplikacji, z powiadomieniem o nowych ofertach. Każde źródło pilnuje swoich limitów zapytań. Portali aplikacja nie przegląda automatem - nie pozwalają na to ich regulaminy.
 - **Z linku albo z tekstu** - link otwiera się w oknie podglądu, „Pobierz treść ze strony” zabiera tekst otwartej strony, a pola uzupełnia AI albo zwykły kod.
 - **AI do wyboru** - darmowe (Gemini, Groq, OpenRouter, Ollama na własnym komputerze) albo płatne (Claude, OpenAI). Jedno zapytanie na ofertę: brakujące pola, streszczenie, „Uwagi”, ocena dopasowania do każdego profilu z powodem i cytatem z oferty (cytat zostaje tylko, gdy naprawdę jest w ofercie). Dzienny limit zapytań, „Sprawdź mój komputer” przy Ollamie. Na kliknięcie: wiadomość do rekrutera, pytania na rozmowę, „Czego mi brakuje”. W profilu: „Zaproponuj filtry” i „Uporządkuj” opis z porównaniem obu wersji. Bez AI ocena liczy się ze słów.
 - **Terminy i kontakty** - rozmowy i terminy zadań z przypomnieniem dzień i godzinę przed, „brak odpowiedzi od 7 dni”, „Dodaj do kalendarza” (Kalendarz Google albo plik `.ics`), kontakty i historia kontaktów przy ofercie.
@@ -54,8 +54,6 @@ Pomysł na wygląd: **tablica odlotów i znaki kierunkowe** - grafitowa tablica,
 | Pismo | Barlow Condensed, Atkinson Hyperlegible Next (SIL OFL) | wąskie, równe litery na tablicę i krój pod czytelność w treści; wbudowane, bez internetu |
 | Testy | `cargo test` (ok. 100), Vitest | baza na zaszyfrowanym pliku tymczasowym, zmyślone maile z alertami i odpowiedzi API / AI |
 
-Pełne założenia i odrzucone alternatywy: [`zalozenia.md`](zalozenia.md).
-
 ## Instalacja
 
 Instalator `.exe` (Windows 10/11) powstaje poleceniem `npm run tauri build` - poniżej. Wydania do pobrania z GitHuba - wkrótce.
@@ -84,17 +82,17 @@ Pierwsza kompilacja trwa kilkanaście minut (OpenSSL budowany ze źródeł), kol
 - Bez konta, bez serwera, bez analityki, bez czcionek i skryptów z internetu (ścisłe CSP).
 - Baza zaszyfrowana; jej klucz, klucze API i hasło do skrzynki tylko w sejfie systemu - nigdy w pliku, kopii, eksporcie ani w zapytaniu do AI.
 - Okno podglądu stron nie ma dostępu do aplikacji; teksty z zewnątrz (maile, API, AI, strony) nigdy nie są pokazywane jako HTML.
-- Aplikacja nigdy sama nie wysyła CV ani zgłoszeń i nie przegląda portali automatem - oferty przychodzą z alertów e-mail, oficjalnych API i z rąk użytkownika (szczegóły i sprawdzone regulaminy w `zalozenia.md` §3).
+- Aplikacja nigdy sama nie wysyła CV ani zgłoszeń i nie przegląda portali automatem - oferty przychodzą z alertów e-mail, oficjalnych API i z rąk użytkownika.
 - Pełna polityka: [`PRIVACY.md`](PRIVACY.md).
 
 ## Jak powstaje - praca z AI
 
 Aplikację piszę z [Claude Code](https://claude.com/claude-code). Podział jest stały:
 
-- **Ja decyduję.** Najpierw założenia (`zalozenia.md` - pytania, odpowiedzi, odrzucone warianty), dopiero potem kod. Każda nowa technologia, źródło ofert czy zmiana wyglądu czeka na moją decyzję; plan pracy i sprawy, które wymagają człowieka (konta, klucze, testy na prawdziwych danych), są w `robota.md`.
+- **Ja decyduję.** Najpierw założenia (pytania, odpowiedzi, odrzucone warianty), dopiero potem kod. Każda nowa technologia, źródło ofert czy zmiana wyglądu czeka na moją decyzję; plan pracy i sprawy, które wymagają człowieka (konta, klucze, testy na prawdziwych danych) prowadzę w notatkach poza repozytorium.
 - **AI pisze.** Kod Rust i React, testy, migracje bazy, teksty interfejsu w dwóch językach i dokumentację.
-- **Wszystko jest sprawdzane.** Testy po każdej zmianie (`npm test`, `npm run test:rust` - zmyślone maile, odpowiedzi API i AI, baza na pliku tymczasowym); zrzuty ekranu w obu motywach po każdej zmianie wyglądu; przed nowym źródłem ofert - regulamin i warunki API (`zalozenia.md` §3); okresowe audyty (dostępność i kontrast, teksty, zależności i licencje, bezpieczeństwo danych z zewnątrz), a poprawki z nich trafiają do zwykłych commitów.
-- **Zasady dla AI** są w [`CLAUDE.md`](CLAUDE.md): gdzie co leży, jak uruchamiać, czego nie wolno (np. prywatne dane w repozytorium, zmiana istniejącej migracji).
+- **Wszystko jest sprawdzane.** Testy po każdej zmianie (`npm test`, `npm run test:rust` - zmyślone maile, odpowiedzi API i AI, baza na pliku tymczasowym); zrzuty ekranu w obu motywach po każdej zmianie wyglądu; przed nowym źródłem ofert - regulamin i warunki API; okresowe audyty (dostępność i kontrast, teksty, zależności i licencje, bezpieczeństwo danych z zewnątrz), a poprawki z nich trafiają do zwykłych commitów.
+- **Zasady dla AI** są w osobnym pliku dla Claude Code (poza repozytorium): gdzie co leży, jak uruchamiać, czego nie wolno (np. prywatne dane w repozytorium, zmiana istniejącej migracji).
 
 ## Licencja
 

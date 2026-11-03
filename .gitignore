@@ -28,6 +28,39 @@ google-client.json
 .DS_Store
 Thumbs.db
 
-# Claude Code - local settings and skills (a work tool, not part of the app)
-.claude/settings.local.json
-.claude/skills/
+# Claude Code - settings, skills, notes (a work tool, not part of the app)
+.claude/
+CLAUDE.local.md
+# Every .md file except README - notes, plans, logs, CLAUDE.md stay only on the disk
+*.md
+!/README.md
+# Privacy policy for the users - stays in the repository until the author decides
+!/PRIVACY.md
+
+# Signing keys, passwords, service accounts
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.der
+*.crt
+HASLO*
+*haslo*
+*password*
+*secret*
+# App code with "secret" in the name, not secrets
+!/src-tauri/src/secrets.rs
+!/src/components/SecretField.tsx
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+*credentials*.json
+client_secret*.json
+
+# Memory dumps and repository copies
+*.dmp
+*.bundle
+*.orig
+*.bak
