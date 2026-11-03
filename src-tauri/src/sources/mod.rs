@@ -34,6 +34,13 @@ pub struct Query {
     pub radius_km: u16,
 }
 
+impl Query {
+    /// Stable name of the search, for remembering when it last ran.
+    pub fn key(&self) -> String {
+        format!("{}|{}|{}", self.keyword.to_lowercase(), self.city.as_deref().unwrap_or(""), self.radius_km)
+    }
+}
+
 /// How often a source may run and how many calls it may make.
 struct Limits {
     /// Hours between automatic runs.
@@ -197,9 +204,14 @@ fn due(last: &LastRun, limits: &Limits, force: bool, now: OffsetDateTime) -> boo
     }
 }
 
-/// Days of offers to ask Adzuna for: since the last good run (plus a day), 14 at first.
-fn days_back(last: &LastRun, now: OffsetDateTime) -> u32 {
-    match hours_since(last.last_ok.as_deref(), now) {
+/// Days of offers to ask Adzuna for in one search: three weeks when there are no offers at
+/// all (a fresh start, e.g. after deleting everything), two weeks for a search never made
+/// before (a new keyword), otherwise since its last good run plus a day.
+fn days_back(last_ok: Option<&str>, has_offers: bool, now: OffsetDateTime) -> u32 {
+    if !has_offers {
+        return 21;
+    }
+    match hours_since(last_ok, now) {
         Some(h) if h >= 0 => ((h / 24) + 2).clamp(1, 30) as u32,
         _ => 14,
     }
@@ -252,6 +264,23 @@ fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, repo
     Ok(())
 }
 
+fn query_runs(conn: &Connection, source: &str) -> AppResult<BTreeMap<String, String>> {
+    let mut stmt = conn.prepare("SELECT query, last_ok FROM source_queries WHERE source = ?1")?;
+    let rows = stmt.query_map([source], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    Ok(rows)
+}
+
+fn record_queries(conn: &Connection, source: &str, keys: &[String], now: &str) -> AppResult<()> {
+    for key in keys {
+        conn.execute(
+            "INSERT INTO source_queries (source, query, last_ok) VALUES (?1, ?2, ?3)
+             ON CONFLICT (source, query) DO UPDATE SET last_ok = excluded.last_ok",
+            params![source, key, now],
+        )?;
+    }
+    Ok(())
+}
+
 fn filter_result(conn: &Connection, id: i64) -> AppResult<Option<String>> {
     Ok(conn
         .query_row("SELECT filter_result FROM offers WHERE id = ?1", [id], |r| r.get(0))
@@ -262,6 +291,9 @@ struct Snapshot {
     settings: BTreeMap<String, String>,
     profiles: Vec<Profile>,
     runs: BTreeMap<String, LastRun>,
+    adzuna_queries: BTreeMap<String, String>,
+    /// Any offer outside the trash - none means starting from scratch.
+    has_offers: bool,
     adzuna_calls: i64,
     remotive_calls: i64,
 }
@@ -271,6 +303,8 @@ fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
         settings: settings::all(conn)?,
         profiles: profiles::list(conn)?,
         runs: last_runs(conn)?,
+        adzuna_queries: query_runs(conn, adzuna::SOURCE)?,
+        has_offers: conn.query_row("SELECT EXISTS (SELECT 1 FROM offers WHERE deleted_at IS NULL)", [], |r| r.get(0))?,
         adzuna_calls: usage::calls_today(conn, adzuna::SOURCE)?,
         remotive_calls: usage::calls_today(conn, remotive::SOURCE)?,
     })
@@ -322,13 +356,18 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         } else {
             let keys = keys.expect("checked above");
             let country = snap.settings.get("adzuna_country").cloned().unwrap_or_else(|| "pl".into());
-            let days = days_back(&last, now);
             let mut found = Vec::new();
+            let mut searched = Vec::new();
             let mut calls = 0;
             for q in for_this_run(&queries, limits.calls_a_run.min(left), snap.adzuna_calls) {
                 calls += 1;
+                let key = q.key();
+                let days = days_back(snap.adzuna_queries.get(&key).map(String::as_str), snap.has_offers, now);
                 match adzuna::search(&client, &keys, &country, q, days).await {
-                    Ok(mut list) => found.append(&mut list),
+                    Ok(mut list) => {
+                        found.append(&mut list);
+                        searched.push(key);
+                    }
                     Err(e) => {
                         run.error = Some((&e).into());
                         break;
@@ -339,6 +378,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             with_db(state, |c| {
                 usage::add_calls(c, adzuna::SOURCE, calls)?;
                 save(c, found, &mut run, &mut report)?;
+                record_queries(c, adzuna::SOURCE, &searched, &stamp)?;
                 record(c, &run, &stamp)
             })?;
         }
@@ -534,9 +574,11 @@ mod tests {
         assert!(due(&old, &REMOTIVE_LIMITS, false, now));
         assert!(due(&fresh, &adzuna_limits(6), true, now));
         assert!(!due(&fresh, &adzuna_limits(6), false, now));
-        assert_eq!(days_back(&LastRun::default(), now), 14);
-        assert_eq!(days_back(&fresh, now), 2);
-        assert_eq!(days_back(&old, now), 15);
+        assert_eq!(days_back(None, true, now), 14);
+        assert_eq!(days_back(fresh.last_ok.as_deref(), true, now), 2);
+        assert_eq!(days_back(old.last_ok.as_deref(), true, now), 15);
+        // No offers at all - a fresh start looks three weeks back.
+        assert_eq!(days_back(fresh.last_ok.as_deref(), false, now), 21);
     }
 
     #[test]
@@ -555,6 +597,19 @@ mod tests {
         assert_eq!(s.last_ok.as_deref(), Some("2026-11-02T10:00:00Z"));
         assert_eq!(s.last_error.as_deref(), Some("timeout"));
         assert_eq!((s.added, s.merged), (3, 1));
+    }
+
+    #[test]
+    fn each_search_remembers_its_last_good_run() {
+        let conn = crate::db::tests::test_db();
+        let q = |k: &str, city: Option<&str>| Query { keyword: k.into(), city: city.map(Into::into), radius_km: 0 };
+        let keys = vec![q("WordPress", None).key(), q("PHP", Some("Opole")).key()];
+        record_queries(&conn, "adzuna", &keys, "2026-11-02T10:00:00Z").unwrap();
+        record_queries(&conn, "adzuna", &keys[..1], "2026-11-03T10:00:00Z").unwrap();
+        let runs = query_runs(&conn, "adzuna").unwrap();
+        assert_eq!(runs.get("wordpress||0").map(String::as_str), Some("2026-11-03T10:00:00Z"));
+        assert_eq!(runs.get("php|Opole|0").map(String::as_str), Some("2026-11-02T10:00:00Z"));
+        assert!(query_runs(&conn, "remotive").unwrap().is_empty());
     }
 
     #[test]
