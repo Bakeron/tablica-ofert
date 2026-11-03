@@ -19,6 +19,25 @@ Set-Item "env:AR_$triple" "$bin/llvm-ar.exe"
 Set-Item "env:RANLIB_$triple" "$bin/llvm-ranlib.exe"
 # Plain clang.exe needs the Android API level in the target (24 = Tauri's minimum).
 Set-Item "env:CFLAGS_$triple" "--target=${triple}24"
+# Gradle's own downloads (wrapper, Maven) trust the Windows certificate store, not only Java's.
+$env:JAVA_OPTS = "-Djavax.net.ssl.trustStoreType=Windows-ROOT"
+$env:GRADLE_OPTS = $env:JAVA_OPTS
 Set-Location $root
-npx tauri android build --debug --target $Target --apk 2>&1 | ForEach-Object { "$_" }
-"exit=$LASTEXITCODE"
+$log = npx tauri android build --debug --target $Target --apk 2>&1 | ForEach-Object { "$_" }
+$log
+$code = $LASTEXITCODE
+# Without Windows Developer Mode the CLI cannot symlink the .so into jniLibs. The library is
+# already built at that point, so copy it and run Gradle directly, skipping the Rust task
+# (it would call the CLI again and fail on the same symlink).
+if ($code -ne 0 -and ($log -match "symbolic link")) {
+    $abi = @{ aarch64 = "arm64-v8a"; x86_64 = "x86_64" }[$Target]
+    $flavor = @{ aarch64 = "Arm64"; x86_64 = "X86_64" }[$Target]
+    $android = "$root\src-tauri\gen\android"
+    New-Item -ItemType Directory -Force "$android\app\src\main\jniLibs\$abi" | Out-Null
+    Copy-Item "$root\src-tauri\target\$triple\debug\libtablica_ofert_lib.so" "$android\app\src\main\jniLibs\$abi\" -Force
+    Set-Location $android
+    "Symlink not allowed - copied the library, running Gradle directly"
+    .\gradlew.bat "assemble${flavor}Debug" -x "rustBuild${flavor}Debug" --console=plain 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+}
+"exit=$code"
