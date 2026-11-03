@@ -176,6 +176,7 @@ export const en: Record<keyof typeof pl, string> = {
   "filter.reason.excluded_word": "excluded word: {value}",
   "filter.reason.keyword_missing": "none of the profile keywords",
   "filter.reason.keyword_unknown": "too little text to check the keywords",
+  "filter.reason.keyword_none": "none of your keywords",
   "filter.reason.work_mode_in_text": "in the text: “{value}”",
   "filter.reason.remote_not_wanted": "remote work, but you want an office",
   "filter.reason.office_not_wanted": "office only",

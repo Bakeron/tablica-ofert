@@ -90,7 +90,7 @@ pub async fn search(client: &Client, keys: &Keys, country: &str, q: &Query, max_
         ("app_id", keys.app_id.clone()),
         ("app_key", keys.app_key.clone()),
         ("results_per_page", PER_PAGE.to_string()),
-        ("what_or", q.keywords.join(" ")),
+        ("what", q.keyword.clone()),
         ("max_days_old", max_days_old.to_string()),
         ("sort_by", "date".into()),
         ("content-type", "application/json".into()),

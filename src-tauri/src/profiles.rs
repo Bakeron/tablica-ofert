@@ -212,7 +212,8 @@ pub fn experience_prev(conn: &Connection) -> AppResult<Option<String>> {
 // ---------- filter results ----------
 
 const FACT_COLUMNS: &str = "id, title, company, city, remote, salary_min, salary_max, salary_currency,
-    salary_period, contract, level, language, requirements, description";
+    salary_period, contract, level, language, requirements, description,
+    (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = offers.id)";
 
 fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
     Ok((
@@ -231,6 +232,10 @@ fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
             language: r.get(11)?,
             requirements: r.get(12)?,
             description: r.get(13)?,
+            sources: r
+                .get::<_, Option<String>>(14)?
+                .map(|s| s.split(',').map(str::to_string).collect())
+                .unwrap_or_default(),
         },
     ))
 }
@@ -238,8 +243,12 @@ fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
 fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -> AppResult<()> {
     tx.execute("DELETE FROM offer_filters WHERE offer_id = ?1", [offer_id])?;
     let mut results: Vec<FilterResult> = Vec::with_capacity(profiles.len());
+    let off_topic = filter::off_topic(facts, profiles);
     for p in profiles {
-        let e = filter::evaluate(facts, &p.criteria);
+        let mut e = filter::evaluate(facts, &p.criteria);
+        if off_topic {
+            e.reject_off_topic();
+        }
         let reasons = serde_json::to_string(&e.reasons).map_err(|e| AppError::Invalid(e.to_string()))?;
         tx.execute(
             "INSERT INTO offer_filters (offer_id, profile_id, result, reasons) VALUES (?1, ?2, ?3, ?4)",
@@ -444,6 +453,29 @@ mod tests {
         assert_eq!(c.keywords, vec!["React", "TypeScript"]);
         assert_eq!(c.work_modes, vec![Remote::Yes]);
         assert_eq!(c.cities, vec![CityRule { name: "Gdańsk".into(), radius_km: MAX_RADIUS_KM }]);
+    }
+
+    #[test]
+    fn off_topic_adzuna_offers_go_to_rejected_until_another_source_brings_them() {
+        let mut conn = test_db();
+        let criteria = Criteria { keywords: vec!["WordPress".into(), "PHP".into()], ..Default::default() };
+        save(&mut conn, plan("Plan A", criteria)).unwrap();
+        let from = |title: &str, source: &str| OfferInput {
+            title: title.into(),
+            company: "Koleje Zmyślone".into(),
+            source: source.into(),
+            description: Some("Obsługa rozjazdów na stacji.".into()),
+            ..Default::default()
+        };
+        offers::add(&mut conn, from("Zwrotniczy (K/M)", "adzuna")).unwrap();
+        offers::add(&mut conn, from("Programista PHP", "adzuna")).unwrap();
+        assert_eq!(ids(&offers::list(&conn, View::Rejected, None, false).unwrap()), vec!["Zwrotniczy (K/M)"]);
+        let rejected = offers::list(&conn, View::Rejected, None, false).unwrap();
+        assert_eq!(rejected[0].filter_reasons[0].code, "keyword_none");
+
+        // The same offer from the user's own alerts is not off topic any more.
+        offers::add(&mut conn, from("Zwrotniczy (K/M)", "mail")).unwrap();
+        assert!(offers::list(&conn, View::Rejected, None, false).unwrap().is_empty());
     }
 
     #[test]

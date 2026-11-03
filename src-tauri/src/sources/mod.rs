@@ -23,10 +23,12 @@ use crate::error::{AppError, AppResult};
 use crate::model::{AddOutcome, OfferInput, Profile, Remote};
 use crate::{clock, net, offers, profiles, settings, usage};
 
-/// One search derived from a profile.
+/// One search for one keyword of a profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Query {
-    pub keywords: Vec<String>,
+    /// Must appear in the offer (one word per search - a search for any of several words
+    /// brought offers far from all of them).
+    pub keyword: String,
     /// Only for profiles that do not accept remote work.
     pub city: Option<String>,
     pub radius_km: u16,
@@ -119,28 +121,44 @@ struct LastRun {
 
 // ---------- what to search for ----------
 
-/// One search per profile with keywords. A profile that accepts remote work searches the
-/// whole country; one without remote work searches around its first city.
+/// One search per keyword. Profiles take turns (first keyword of every profile, then the
+/// second...), so a run cut by the limits still covers every profile; repeats are skipped.
+/// A profile that accepts remote work searches the whole country; one without remote work
+/// searches around its first city.
 pub fn plan(profiles: &[Profile]) -> Vec<Query> {
     let mut out: Vec<Query> = Vec::new();
-    for p in profiles {
-        let c = &p.criteria;
-        let keywords: Vec<String> = c.keywords.iter().map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).take(8).collect();
-        if keywords.is_empty() {
-            continue;
-        }
-        let remote_ok = c.work_modes.is_empty() || c.work_modes.contains(&Remote::Yes);
-        let city = (!remote_ok).then(|| c.cities.first().cloned()).flatten();
-        let q = Query {
-            keywords,
-            radius_km: city.as_ref().map_or(0, |r| r.radius_km),
-            city: city.map(|r| r.name),
-        };
-        if !out.contains(&q) {
-            out.push(q);
+    for round in 0..8 {
+        for p in profiles {
+            let c = &p.criteria;
+            let Some(keyword) = c.keywords.iter().map(|k| k.trim()).filter(|k| !k.is_empty()).nth(round) else {
+                continue;
+            };
+            let remote_ok = c.work_modes.is_empty() || c.work_modes.contains(&Remote::Yes);
+            let city = (!remote_ok).then(|| c.cities.first().cloned()).flatten();
+            let q = Query {
+                keyword: keyword.to_string(),
+                radius_km: city.as_ref().map_or(0, |r| r.radius_km),
+                city: city.map(|r| r.name),
+            };
+            let repeat = out.iter().any(|o| {
+                o.keyword.to_lowercase() == q.keyword.to_lowercase() && o.city == q.city && o.radius_km == q.radius_km
+            });
+            if !repeat {
+                out.push(q);
+            }
         }
     }
     out
+}
+
+/// The searches for one run: at most `count`, starting further down the list with every call
+/// made today, so with more keywords than calls in a run the later ones get their turn too.
+fn for_this_run(queries: &[Query], count: usize, calls_today: i64) -> Vec<&Query> {
+    if queries.is_empty() {
+        return Vec::new();
+    }
+    let start = calls_today.max(0) as usize % queries.len();
+    queries.iter().cycle().skip(start).take(count.min(queries.len())).collect()
 }
 
 /// Keywords for Remotive (remote only): the first keyword of every profile, then the rest.
@@ -307,7 +325,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             let days = days_back(&last, now);
             let mut found = Vec::new();
             let mut calls = 0;
-            for q in queries.iter().take(limits.calls_a_run.min(left)) {
+            for q in for_this_run(&queries, limits.calls_a_run.min(left), snap.adzuna_calls) {
                 calls += 1;
                 match adzuna::search(&client, &keys, &country, q, days).await {
                     Ok(mut list) => found.append(&mut list),
@@ -476,10 +494,23 @@ mod tests {
             profile(&["react", "typescript"], vec![], Some("Gdańsk")),
         ];
         let q = plan(&p);
-        assert_eq!(q.len(), 2);
-        assert_eq!(q[0].city, None);
-        assert_eq!(q[1].city.as_deref(), Some("Opole"));
+        let words: Vec<(&str, Option<&str>)> = q.iter().map(|q| (q.keyword.as_str(), q.city.as_deref())).collect();
+        // Profiles take turns; the same word with the same place is searched once.
+        assert_eq!(words, vec![("react", None), ("księgowa", Some("Opole")), ("typescript", None)]);
         assert_eq!(q[1].radius_km, 30);
+    }
+
+    #[test]
+    fn runs_take_turns_through_the_keywords() {
+        let p = vec![profile(&["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"], vec![], None)];
+        let q = plan(&p);
+        let words = |calls_today| for_this_run(&q, 6, calls_today).iter().map(|q| q.keyword.clone()).collect::<Vec<_>>();
+        assert_eq!(words(0), vec!["a1", "a2", "a3", "a4", "a5", "a6"]);
+        assert_eq!(words(6), vec!["a7", "a8", "a1", "a2", "a3", "a4"]);
+        // Never the same search twice in one run.
+        let short = plan(&[profile(&["x", "y"], vec![], None)]);
+        assert_eq!(for_this_run(&short, 6, 5).len(), 2);
+        assert!(for_this_run(&[], 6, 0).is_empty());
     }
 
     #[test]

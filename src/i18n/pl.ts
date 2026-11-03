@@ -176,6 +176,7 @@ export const pl = {
   "filter.reason.excluded_word": "słowo wykluczające: {value}",
   "filter.reason.keyword_missing": "brak słów kluczowych z profilu",
   "filter.reason.keyword_unknown": "za mało treści, żeby sprawdzić słowa kluczowe",
+  "filter.reason.keyword_none": "brak Twoich słów kluczowych",
   "filter.reason.work_mode_in_text": "w treści: „{value}”",
   "filter.reason.remote_not_wanted": "praca zdalna, a szukasz biura",
   "filter.reason.office_not_wanted": "praca tylko w biurze",

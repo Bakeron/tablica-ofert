@@ -25,6 +25,8 @@ pub struct Facts {
     pub language: Option<String>,
     pub requirements: Option<String>,
     pub description: Option<String>,
+    /// Where the offer came from (`offer_sources`), e.g. `["adzuna", "mail"]`.
+    pub sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +47,33 @@ pub fn best(results: impl IntoIterator<Item = FilterResult>) -> FilterResult {
     }
     // No profiles yet = nothing to filter by.
     best.unwrap_or(FilterResult::Pass)
+}
+
+/// Sources that search by keyword, but match words in the full text we never see (Adzuna
+/// gives only the start of the description) and sometimes return offers far from the search.
+const KEYWORD_SEARCH_SOURCES: &[&str] = &[crate::sources::adzuna::SOURCE];
+
+/// An offer only from a keyword search that mentions no keyword of any profile - off topic.
+/// Offers also seen elsewhere (e.g. in the user's own e-mail alerts) are never off topic.
+pub fn off_topic(facts: &Facts, profiles: &[Profile]) -> bool {
+    if facts.sources.is_empty() || !facts.sources.iter().all(|s| KEYWORD_SEARCH_SOURCES.contains(&s.as_str())) {
+        return false;
+    }
+    let mut words = profiles.iter().flat_map(|p| &p.criteria.keywords).filter(|k| !k.trim().is_empty()).peekable();
+    if words.peek().is_none() {
+        return false;
+    }
+    let text = Text::new(facts);
+    !words.any(|k| text.mentions(k))
+}
+
+impl Evaluation {
+    /// Rejects an off-topic offer for this profile; replaces the profile's own keyword reasons.
+    pub fn reject_off_topic(&mut self) {
+        self.reasons.retain(|r| !r.code.starts_with("keyword_"));
+        self.reasons.push(Reason { kind: ReasonKind::Fail, code: "keyword_none".into(), value: None });
+        self.result = FilterResult::Fail;
+    }
 }
 
 pub fn evaluate(facts: &Facts, c: &Criteria) -> Evaluation {
@@ -987,6 +1016,41 @@ mod tests {
         let mut g = offer("Doradca", None, Remote::Yes, "Sprzedaż bezpośrednia u klienta.");
         g.company = "Inna Firma".into();
         assert_eq!(codes(&g, &c), vec!["excluded_word"]);
+    }
+
+    #[test]
+    fn offers_from_a_keyword_search_without_any_keyword_are_off_topic() {
+        let profile = |keywords: &[&str]| Profile {
+            id: 1,
+            name: "Plan".into(),
+            description: "x".into(),
+            position: 0,
+            description_prev: None,
+            criteria: Criteria { keywords: keywords.iter().map(|k| k.to_string()).collect(), ..Default::default() },
+        };
+        let profiles = vec![profile(&["WordPress", "PHP"]), profile(&[]), profile(&["ACF"])];
+        let mut f = offer("Zwrotniczy (K/M)", None, Remote::Unknown, "Praca na stacji kolejowej.");
+        f.sources = vec!["adzuna".into()];
+        assert!(off_topic(&f, &profiles));
+        // Any keyword of any profile, in the title or the description, is enough.
+        let mut g = f.clone();
+        g.description = Some("Wtyczki ACF i motywy.".into());
+        assert!(!off_topic(&g, &profiles));
+        // Seen in the user's own alerts too, or added by hand - never off topic.
+        let mut h = f.clone();
+        h.sources.push("mail".into());
+        assert!(!off_topic(&h, &profiles));
+        h.sources = vec!["manual".into()];
+        assert!(!off_topic(&h, &profiles));
+        // No keywords at all - nothing to compare with.
+        assert!(!off_topic(&f, &[profile(&[])]));
+
+        let mut c = Criteria { keywords: vec!["PHP".into()], ..Default::default() };
+        c.hard.keywords = true;
+        let mut e = evaluate(&f, &c);
+        e.reject_off_topic();
+        assert_eq!(e.result, FilterResult::Fail);
+        assert_eq!(e.reasons.iter().filter(|r| r.code.starts_with("keyword_")).map(|r| r.code.as_str()).collect::<Vec<_>>(), vec!["keyword_none"]);
     }
 
     #[test]
