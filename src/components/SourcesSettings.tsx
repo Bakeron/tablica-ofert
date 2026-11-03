@@ -63,7 +63,7 @@ export function SourcesSettings({
 
   useEffect(() => {
     load();
-  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_jooble, settings.source_mail, settings.mail_user, settings.mail_host]);
+  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_weworkremotely, settings.source_remoteok, settings.source_jooble, settings.source_mail, settings.mail_user, settings.mail_host]);
 
   async function saveSecret(name: SecretName, value: string) {
     try {
@@ -92,6 +92,8 @@ export function SourcesSettings({
   const of = (source: SourceStatus["source"]) => status.find((s) => s.source === source);
   const adzuna = of("adzuna");
   const remotive = of("remotive");
+  const wwr = of("weworkremotely");
+  const remoteok = of("remoteok");
   const jooble = of("jooble");
 
   return (
@@ -166,6 +168,23 @@ export function SourcesSettings({
         <SourceHead id="src-remotive" name="Remotive" on={settings.source_remotive === "on"} onToggle={(on) => onChange("source_remotive", on ? "on" : "off")} />
         <p>{t("src.remotive.text")}</p>
         {remotive && <SourceState s={remotive} lang={lang} />}
+      </section>
+
+      <section className="source" aria-labelledby="src-wwr">
+        <SourceHead
+          id="src-wwr"
+          name="We Work Remotely"
+          on={settings.source_weworkremotely === "on"}
+          onToggle={(on) => onChange("source_weworkremotely", on ? "on" : "off")}
+        />
+        <p>{t("src.wwr.text")}</p>
+        {wwr && <SourceState s={wwr} lang={lang} />}
+      </section>
+
+      <section className="source" aria-labelledby="src-remoteok">
+        <SourceHead id="src-remoteok" name="Remote OK" on={settings.source_remoteok === "on"} onToggle={(on) => onChange("source_remoteok", on ? "on" : "off")} />
+        <p>{t("src.remoteok.text")}</p>
+        {remoteok && <SourceState s={remoteok} lang={lang} />}
       </section>
 
       <section className="source" aria-labelledby="src-jooble">

@@ -67,6 +67,14 @@ pub fn off_topic(facts: &Facts, profiles: &[Profile]) -> bool {
     !words.any(|k| text.mentions(k))
 }
 
+/// Does this text mention any of the words (whole words, like the keyword filter)? For feeds
+/// that send their whole list instead of searching - only offers for the user's words are kept.
+pub fn mentions_any(title: &str, description: &str, words: &[String]) -> bool {
+    let all = format!("{title}\n{description}");
+    let text = Text { padded: format!(" {} ", normalize(&all)), raw: all.to_lowercase(), body_words: 0 };
+    words.iter().any(|w| text.mentions(w))
+}
+
 impl Evaluation {
     /// Rejects an off-topic offer for this profile; replaces the profile's own keyword reasons.
     pub fn reject_off_topic(&mut self) {

@@ -66,6 +66,8 @@ export const pl = {
   "source.manual": "ręcznie",
   "source.adzuna": "Adzuna",
   "source.remotive": "Remotive",
+  "source.weworkremotely": "We Work Remotely",
+  "source.remoteok": "Remote OK",
   "source.jooble": "Jooble",
   "source.jjit": "JJIT",
   "source.nfj": "NFJ",
@@ -289,7 +291,7 @@ export const pl = {
   "first.s2Text":
     "AI streszcza oferty i ocenia, jak pasują do profilu. Wystarczy darmowy klucz (np. Gemini albo Groq) - wpiszesz go w Ustawieniach (zębatka w prawym górnym rogu), część „AI”. Bez AI aplikacja też działa: twarde filtry sortują oferty, a o reszcie decydujesz Ty.",
   "first.s3Text":
-    "Oferty zbieram z alertów e-mail i agregatorów (Adzuna, Remotive, Jooble) - włączysz je w Ustawieniach, część „Źródła ofert”. Agregatory przeszukuję słowami kluczowymi z profilu (krok 1). Pojedynczą ofertę dodasz zawsze przyciskiem „Dodaj ofertę”.",
+    "Oferty zbieram z alertów e-mail i agregatorów (Adzuna, Remotive, Jooble, We Work Remotely, Remote OK) - włączysz je w Ustawieniach, część „Źródła ofert”. Agregatory przeszukuję słowami kluczowymi z profilu (krok 1). Pojedynczą ofertę dodasz zawsze przyciskiem „Dodaj ofertę”.",
   "first.criteriaTip": "Profil zmienisz w każdej chwili - przycisk z ołówkiem obok jego nazwy nad tablicą.",
   "first.next": "Dalej",
   "first.back": "Wstecz",
@@ -331,6 +333,8 @@ export const pl = {
   "src.adzuna.country": "Kraj ofert",
   "src.adzuna.appId": "App ID",
   "src.adzuna.appKey": "App Key",
+  "src.wwr.text": "Tylko praca zdalna, oferty po angielsku, bez klucza. To publiczna lista 100 najnowszych ofert bez wyszukiwania - sprawdzam ją raz dziennie i zostawiam tylko oferty ze słowami kluczowymi profili, które dopuszczają pracę zdalną. Każda oferta prowadzi do swojej strony na We Work Remotely (ich warunek).",
+  "src.remoteok.text": "Tylko praca zdalna, oferty po angielsku, bez klucza. Lista 100 najnowszych ofert bez wyszukiwania - sprawdzam ją raz dziennie i zostawiam tylko oferty ze słowami kluczowymi profili, które dopuszczają pracę zdalną. Widełki podane przez Remote OK często są niepełne, więc trafiają tylko do opisu. Każda oferta prowadzi do swojej strony na Remote OK (ich warunek).",
   "src.remotive.text": "Tylko praca zdalna, oferty głównie po angielsku, bez klucza. Remotive pozwala na kilka zapytań dziennie, więc sprawdzam je najwyżej raz dziennie; oferty pojawiają się z dobowym opóźnieniem.",
   "src.jooble.text": "Agregator ofert z wielu stron, także polskich. Potrzebny darmowy klucz z formularza na stronie Jooble (klucz z polskiej strony daje oferty z Polski). Jeden klucz to tylko 500 zapytań na zawsze, więc pytam najwyżej raz dziennie - po jednym słowie kluczowym, na zmianę.",
   "src.jooble.signup": "Poproś o darmowy klucz",

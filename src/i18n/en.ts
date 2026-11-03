@@ -67,6 +67,8 @@ export const en: Record<keyof typeof pl, string> = {
   "source.manual": "manual",
   "source.adzuna": "Adzuna",
   "source.remotive": "Remotive",
+  "source.weworkremotely": "We Work Remotely",
+  "source.remoteok": "Remote OK",
   "source.jooble": "Jooble",
   "source.jjit": "JJIT",
   "source.nfj": "NFJ",
@@ -289,7 +291,7 @@ export const en: Record<keyof typeof pl, string> = {
   "first.s2Text":
     "AI summarises offers and scores how well they fit the profile. A free key is enough (e.g. Gemini or Groq) - enter it in Settings (the gear in the top right corner), part “AI”. The app also works without AI: hard filters sort the offers and you decide the rest.",
   "first.s3Text":
-    "Offers come from e-mail alerts and aggregators (Adzuna, Remotive, Jooble) - turn them on in Settings, part “Offer sources”. Aggregators are searched with the profile's keywords (step 1). A single offer can always be added with “Add offer”.",
+    "Offers come from e-mail alerts and aggregators (Adzuna, Remotive, Jooble, We Work Remotely, Remote OK) - turn them on in Settings, part “Offer sources”. Aggregators are searched with the profile's keywords (step 1). A single offer can always be added with “Add offer”.",
   "first.criteriaTip": "Change the profile any time - the pencil button next to its name above the board.",
   "first.next": "Next",
   "first.back": "Back",
@@ -331,6 +333,8 @@ export const en: Record<keyof typeof pl, string> = {
   "src.adzuna.country": "Country of offers",
   "src.adzuna.appId": "App ID",
   "src.adzuna.appKey": "App Key",
+  "src.wwr.text": "Remote work only, offers in English, no key. A public list of the 100 newest offers without search - checked once a day, and only offers with keywords of profiles that accept remote work are kept. Every offer links to its page on We Work Remotely (their condition).",
+  "src.remoteok.text": "Remote work only, offers in English, no key. A list of the 100 newest offers without search - checked once a day, and only offers with keywords of profiles that accept remote work are kept. Pay ranges from Remote OK are often incomplete, so they only go into the description. Every offer links to its page on Remote OK (their condition).",
   "src.remotive.text": "Remote work only, offers mostly in English, no key. Remotive allows a few requests a day, so it is checked at most once a day; offers appear with a one-day delay.",
   "src.jooble.text": "Aggregator of offers from many sites. Needs a free key from the form on the Jooble site (a key from the site of a country gives offers from that country). One key allows only 500 requests ever, so it is asked at most once a day - one keyword at a time, taking turns.",
   "src.jooble.signup": "Ask for a free key",

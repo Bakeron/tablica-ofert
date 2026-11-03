@@ -338,6 +338,8 @@ export function createMockApi(): Api {
       return [
         one("adzuna", Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]), 25),
         one("remotive", true, 4),
+        one("weworkremotely", true, 4),
+        one("remoteok", true, 4),
         one("jooble", Boolean(secrets["jooble-key"]), 1, 500),
         one("mail", Boolean(settings.mail_user && secrets["mail-password"]), 0),
       ];

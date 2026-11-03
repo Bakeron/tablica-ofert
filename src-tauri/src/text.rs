@@ -69,7 +69,9 @@ pub fn decode_entities(s: &str) -> String {
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         rest = &rest[amp..];
-        let semi = rest[..rest.len().min(12)].find(';');
+        // Entities are short; the window must end on a character boundary ("& •" is plain text).
+        let end = (0..=rest.len().min(12)).rev().find(|&i| rest.is_char_boundary(i)).unwrap_or(0);
+        let semi = rest[..end].find(';');
         let decoded = semi.and_then(|semi| entity(&rest[1..semi]).map(|c| (c, semi)));
         match decoded {
             Some((c, semi)) => {
@@ -195,6 +197,9 @@ mod tests {
         assert_eq!(html_to_text("a < b and <unclosed"), "a < b and <unclosed");
         assert_eq!(html_to_text("&unknown; &amp"), "&unknown; &amp");
         assert_eq!(html_to_text("<script>never closed"), "");
+        // Multi-byte letters right after "&" (found in a real feed - used to panic).
+        assert_eq!(decode_entities("A &amp; B •••• C & żółć ąę"), "A & B •••• C & żółć ąę");
+        assert_eq!(decode_entities("&ą;&łódź"), "&ą;&łódź");
     }
 
     #[test]

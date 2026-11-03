@@ -1,5 +1,6 @@
 //! Collecting offers from the legal sources (zalozenia.md §3): aggregators with an official
-//! API (Adzuna, Remotive, Jooble) and e-mail alerts. Plain code, no AI and no tokens.
+//! API (Adzuna, Remotive, Jooble), public feeds that allow reuse (We Work Remotely, Remote OK)
+//! and e-mail alerts. Plain code, no AI and no tokens.
 //!
 //! Every source has its own limits: how often it may run and how many calls a day it may
 //! make. The network part runs without holding the database; offers are saved afterwards,
@@ -9,7 +10,9 @@ pub mod adzuna;
 pub mod alerts;
 pub mod jooble;
 pub mod mail;
+pub mod remoteok;
 pub mod remotive;
+pub mod weworkremotely;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
@@ -47,6 +50,10 @@ struct Limits {
 }
 
 const REMOTIVE_LIMITS: Limits = Limits { every_hours: 24, forced_hours: 6, calls_a_day: 4, calls_a_run: 2 };
+
+/// Feeds without search (We Work Remotely, Remote OK): the whole list in one call, once a day.
+const FEED_LIMITS: Limits = Limits { every_hours: 24, forced_hours: 6, calls_a_day: 4, calls_a_run: 1 };
+const FEEDS: [&str; 2] = [weworkremotely::SOURCE, remoteok::SOURCE];
 
 /// Adzuna does not publish its free limits; this stays well below the commonly quoted ~1000 a month.
 fn adzuna_limits(every_hours: i64) -> Limits {
@@ -270,6 +277,7 @@ struct Snapshot {
     runs: BTreeMap<String, LastRun>,
     adzuna_calls: i64,
     remotive_calls: i64,
+    feed_calls: BTreeMap<&'static str, i64>,
     jooble_calls: i64,
     jooble_total: i64,
 }
@@ -282,6 +290,7 @@ fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
 
         adzuna_calls: usage::calls_today(conn, adzuna::SOURCE)?,
         remotive_calls: usage::calls_today(conn, remotive::SOURCE)?,
+        feed_calls: FEEDS.iter().map(|s| Ok((*s, usage::calls_today(conn, s)?))).collect::<AppResult<_>>()?,
         jooble_calls: usage::calls_today(conn, jooble::SOURCE)?,
         jooble_total: usage::calls_total(conn, jooble::SOURCE)?,
     })
@@ -419,6 +428,46 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         report.runs.push(run);
     }
 
+    // We Work Remotely, Remote OK - the whole feed once a day; only offers with the keywords
+    // of profiles that accept remote work are kept.
+    for source in FEEDS {
+        if !on(&format!("source_{source}")) {
+            continue;
+        }
+        let limits = FEED_LIMITS;
+        let last = snap.runs.get(source).cloned().unwrap_or_default();
+        let mut run = SourceRun { source: source.into(), ..Default::default() };
+        let words = remote_keywords(&snap.profiles);
+        let left = limits.calls_a_day - snap.feed_calls.get(source).copied().unwrap_or(0);
+        if snap.profiles.is_empty() {
+            run.skipped = Some("no_profiles");
+        } else if words.is_empty() {
+            run.skipped = Some("no_keywords");
+        } else if !due(&last, &limits, force, now) {
+            run.skipped = Some("not_due");
+        } else if left <= 0 {
+            run.skipped = Some("limit");
+        } else {
+            let answer = if source == weworkremotely::SOURCE {
+                weworkremotely::fetch(&client, &words).await
+            } else {
+                remoteok::fetch(&client, &words).await
+            };
+            let found = answer.unwrap_or_else(|e| {
+                run.error = Some((&e).into());
+                Vec::new()
+            });
+            let stamp = clock::now();
+            with_db(state, |c| {
+                usage::add_calls(c, source, 1)?;
+                save(c, found, &mut run, &mut report)?;
+                record(c, &run, &stamp)
+            })?;
+        }
+        report.added += run.added;
+        report.runs.push(run);
+    }
+
     // Jooble - one search a day; the keywords take turns day after day.
     if on("source_jooble") {
         let limits = JOOBLE_LIMITS;
@@ -530,6 +579,8 @@ pub fn status(conn: &Connection, adzuna_ready: bool, jooble_ready: bool, mail_re
     Ok(vec![
         one(adzuna::SOURCE, adzuna_ready, adzuna_limits(6).calls_a_day)?,
         one(remotive::SOURCE, true, REMOTIVE_LIMITS.calls_a_day)?,
+        one(weworkremotely::SOURCE, true, FEED_LIMITS.calls_a_day)?,
+        one(remoteok::SOURCE, true, FEED_LIMITS.calls_a_day)?,
         SourceStatus {
             calls_left: Some((jooble::KEY_CALLS - usage::calls_total(conn, jooble::SOURCE)?).max(0)),
             ..one(jooble::SOURCE, jooble_ready, JOOBLE_LIMITS.calls_a_day)?
