@@ -181,7 +181,8 @@ pub async fn set_experience(state: State<'_, AppState>, text: String) -> AppResu
 
 // ---------- secrets (keys, passwords) ----------
 
-/// Which user secrets are set, as name -> last 4 characters. Values never leave Rust.
+/// Which user secrets are set, as name -> last 4 characters. A whole value leaves Rust only
+/// through `reveal_secret`, on a "Show key" click.
 #[tauri::command]
 pub async fn secret_hints() -> AppResult<BTreeMap<String, String>> {
     secrets::user_hints()
@@ -202,6 +203,12 @@ pub async fn set_secret(state: State<'_, AppState>, name: String, value: String)
 #[tauri::command]
 pub async fn delete_secret(name: String) -> AppResult<()> {
     secrets::delete_user(&name)
+}
+
+/// The saved value of one user key or password - "Show key" in the settings.
+#[tauri::command]
+pub async fn reveal_secret(name: String) -> AppResult<Option<String>> {
+    secrets::reveal_user(&name)
 }
 
 // ---------- offer sources ----------

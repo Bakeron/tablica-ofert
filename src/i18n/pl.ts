@@ -378,7 +378,7 @@ export const pl = {
   "secret.hideKey": "Ukryj klucz",
   "secret.saved": "Zapisano w sejfie Windows",
   "secret.deleted": "Usunięto z sejfu Windows",
-  "secret.hint": "Klucze trzymam w sejfie Windows (Menedżer poświadczeń), nigdy w pliku. Na ekranie widać tylko 4 ostatnie znaki.",
+  "secret.hint": "Klucze trzymam w sejfie Windows (Menedżer poświadczeń), nigdy w pliku. Na ekranie widać 4 ostatnie znaki, cały klucz - po kliknięciu „Pokaż”.",
   "adzuna.credit": "Oferty z",
   "country.pl": "Polska",
   "country.at": "Austria",

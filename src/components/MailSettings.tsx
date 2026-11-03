@@ -86,7 +86,7 @@ export function MailSettings({
           type="email"
           onSave={(v) => onChange("mail_user", v)}
         />
-        <SecretField name="mail-password" label={t("mail.password")} hint={hints["mail-password"]} onSave={onSaveSecret} onDelete={onDeleteSecret} />
+        <SecretField name="mail-password" label={t("mail.password")} hint={hints["mail-password"]} onSave={onSaveSecret} onDelete={onDeleteSecret} onReveal={api.revealSecret} />
         <TextSetting label={t("mail.host")} value={settings.mail_host} onSave={(v) => onChange("mail_host", v)} />
         <TextSetting label={t("mail.port")} value={settings.mail_port} inputMode="numeric" onSave={(v) => onChange("mail_port", v)} />
       </div>

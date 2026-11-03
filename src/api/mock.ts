@@ -7,7 +7,7 @@ import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
 import type { AiStatus, Criteria, OfferAi } from "./types";
 import { bestResult, viewFor } from "../lib/profile";
 import type { Api } from "./index";
-import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type Settings, type SourceStatus, type View } from "./types";
+import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -64,6 +64,7 @@ export function createMockApi(): Api {
   }
   const settings: Settings = { ...DEFAULT_SETTINGS, onboarding: firstRun ? "pending" : "done", source_remotive: "on" };
   const secrets: SecretHints = {};
+  const secretValues: Partial<Record<SecretName, string>> = {};
   const sourceRuns: Partial<Record<string, Pick<SourceStatus, "lastTry" | "lastOk" | "lastError" | "added" | "merged" | "callsToday">>> = {
     remotive: { lastTry: hoursAgo(5), lastOk: hoursAgo(5), lastError: null, added: 4, merged: 1, callsToday: 2 },
   };
@@ -331,9 +332,14 @@ export function createMockApi(): Api {
       const v = (name === "mail-password" ? value.split(" ").join("") : value).trim();
       if (!v || /\s/.test(v)) throw { code: "invalid", detail: "the key has a wrong format" };
       secrets[name] = v.length > 8 ? `••••${v.slice(-4)}` : "••••";
+      secretValues[name] = v;
     },
     async deleteSecret(name) {
       delete secrets[name];
+      delete secretValues[name];
+    },
+    async revealSecret(name) {
+      return secretValues[name] ?? null;
     },
     async sourceStatus() {
       const one = (source: SourceStatus["source"], ready: boolean, callsADay: number, callsLeft: number | null = null): SourceStatus => ({

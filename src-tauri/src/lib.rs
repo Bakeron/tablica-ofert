@@ -131,6 +131,7 @@ pub fn run() {
             commands::get_experience_prev,
             commands::secret_hints,
             commands::set_secret,
+            commands::reveal_secret,
             commands::delete_secret,
             commands::source_status,
             commands::fetch_offers,

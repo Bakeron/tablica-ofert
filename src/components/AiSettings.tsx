@@ -126,7 +126,7 @@ export function AiSettings({
             </div>
           )}
           {keyName && (
-            <SecretField name={keyName} label={t("ai.key")} hint={hints[keyName]} onSave={saveSecret} onDelete={deleteSecret} />
+            <SecretField name={keyName} label={t("ai.key")} hint={hints[keyName]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
           )}
           {provider === "ollama" && (
             <>

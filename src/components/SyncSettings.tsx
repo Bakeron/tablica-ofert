@@ -163,6 +163,7 @@ export function SyncSettings({
                     await load();
                     return true;
                   }}
+                  onReveal={api.revealSecret}
                 />
               </div>
             </section>

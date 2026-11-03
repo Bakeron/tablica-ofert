@@ -62,6 +62,8 @@ export interface Api {
   secretHints(): Promise<SecretHints>;
   setSecret(name: SecretName, value: string): Promise<void>;
   deleteSecret(name: SecretName): Promise<void>;
+  /** The saved value - only for "Show key" clicked in the settings. */
+  revealSecret(name: SecretName): Promise<string | null>;
   sourceStatus(): Promise<SourceStatus[]>;
   /** Logs in to the alert mailbox (read-only) and returns the number of messages. */
   mailTest(): Promise<number>;
@@ -168,6 +170,7 @@ async function tauriApi(): Promise<Api> {
     secretHints: () => invoke("secret_hints"),
     setSecret: (name, value) => invoke("set_secret", { name, value }),
     deleteSecret: (name) => invoke("delete_secret", { name }),
+    revealSecret: (name) => invoke("reveal_secret", { name }),
     sourceStatus: () => invoke("source_status"),
     mailTest: () => invoke("mail_test"),
     fetchOffers: () => invoke("fetch_offers"),

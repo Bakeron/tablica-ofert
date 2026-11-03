@@ -149,8 +149,8 @@ export function SourcesSettings({
           </label>
         </div>
         <div className="secret-pair">
-          <SecretField name="adzuna-app-id" label={t("src.adzuna.appId")} hint={hints["adzuna-app-id"]} onSave={saveSecret} onDelete={deleteSecret} />
-          <SecretField name="adzuna-app-key" label={t("src.adzuna.appKey")} hint={hints["adzuna-app-key"]} onSave={saveSecret} onDelete={deleteSecret} />
+          <SecretField name="adzuna-app-id" label={t("src.adzuna.appId")} hint={hints["adzuna-app-id"]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
+          <SecretField name="adzuna-app-key" label={t("src.adzuna.appKey")} hint={hints["adzuna-app-key"]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
         </div>
         <p className="hint">{t("secret.hint")}</p>
         {adzuna && <SourceState s={adzuna} lang={lang} />}
@@ -187,7 +187,7 @@ export function SourcesSettings({
             {t("src.jooble.signup")} <IconArrowOut />
           </button>
         </div>
-        <SecretField name="jooble-key" label={t("src.jooble.key")} hint={hints["jooble-key"]} onSave={saveSecret} onDelete={deleteSecret} />
+        <SecretField name="jooble-key" label={t("src.jooble.key")} hint={hints["jooble-key"]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
         <p className="hint">{t("secret.hint")}</p>
         {jooble && <SourceState s={jooble} lang={lang} />}
       </section>

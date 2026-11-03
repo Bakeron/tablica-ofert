@@ -97,6 +97,12 @@ fn without_groups(name: &str, value: &str) -> String {
     }
 }
 
+/// A saved key or password the user typed in the settings - only for "Show key" clicked
+/// by the person (never the database or sync keys: `user_secret` lets through only user ones).
+pub fn reveal_user(name: &str) -> AppResult<Option<String>> {
+    get(user_secret(name)?)
+}
+
 pub fn delete_user(name: &str) -> AppResult<()> {
     delete(user_secret(name)?)
 }

@@ -32,6 +32,7 @@ export function SecretField({
   hint,
   onSave,
   onDelete,
+  onReveal,
 }: {
   name: SecretName;
   label: string;
@@ -39,12 +40,37 @@ export function SecretField({
   hint: string | undefined;
   onSave: (name: SecretName, value: string) => Promise<boolean>;
   onDelete: (name: SecretName) => Promise<boolean>;
+  /** The saved value, read from the credential store only when "Show" is clicked. */
+  onReveal: (name: SecretName) => Promise<string | null>;
 }) {
   const { t } = useI18n();
   const id = useId();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(false);
+  // The saved value put into the field by "Show" - unchanged, it is not saved again and
+  // "Hide" takes it off the screen.
+  const [revealed, setRevealed] = useState<string | null>(null);
+
+  async function toggle(show: boolean) {
+    if (!show) {
+      if (revealed !== null && value === revealed) setValue("");
+      setRevealed(null);
+      setShown(false);
+      return;
+    }
+    setShown(true);
+    if (value === "" && hint) {
+      await attempt(async () => {
+        const saved = await onReveal(name);
+        if (saved !== null) {
+          setValue(saved);
+          setRevealed(saved);
+        }
+        return true;
+      });
+    }
+  }
   const isPassword = name === "mail-password";
   // Shown under the field - the app's error bar is behind the settings window.
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +91,11 @@ export function SecretField({
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!value.trim()) return;
-    if (await attempt(() => onSave(name, value))) setValue("");
+    if (await attempt(() => onSave(name, value))) {
+      setValue("");
+      setRevealed(null);
+      setShown(false);
+    }
   }
 
   return (
@@ -74,8 +104,8 @@ export function SecretField({
         <label className="field" htmlFor={id}>
           <span>{label}</span>
         </label>
-        {/* Shows only what is being typed - a saved value never leaves the credential store. */}
-        <ShowToggle controls={id} shown={shown} onToggle={setShown} kind={isPassword ? "password" : "key"} />
+        {/* Shows what is typed, or - with an empty field - the saved value from the credential store. */}
+        <ShowToggle controls={id} shown={shown} onToggle={toggle} kind={isPassword ? "password" : "key"} />
       </div>
       <div className="secret-row">
         <input
@@ -89,7 +119,7 @@ export function SecretField({
           aria-describedby={`${id}-state`}
           onChange={(e) => setValue(e.target.value)}
         />
-        <button type="submit" className="btn btn-sign btn-small" disabled={busy || !value.trim()}>
+        <button type="submit" className="btn btn-sign btn-small" disabled={busy || !value.trim() || value === revealed}>
           {t("secret.save")}
         </button>
         {hint && (
@@ -97,7 +127,12 @@ export function SecretField({
             type="button"
             className="btn btn-ghost btn-small"
             disabled={busy}
-            onClick={() => attempt(() => onDelete(name))}
+            onClick={async () => {
+              if ((await attempt(() => onDelete(name))) && revealed !== null) {
+                setValue("");
+                setRevealed(null);
+              }
+            }}
           >
             {t("secret.delete")}
           </button>
