@@ -235,6 +235,9 @@ pub struct OfferRow {
     /// The nearest date (interview, deadline) from 3 hours ago on - for "INTERVIEW TODAY".
     pub next_event: Option<String>,
     pub next_event_kind: Option<String>,
+    /// Language of the AI translation ('pl' / 'en') - shown only when it is the app language.
+    pub translation_lang: Option<String>,
+    pub title_translated: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

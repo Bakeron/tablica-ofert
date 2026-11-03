@@ -23,6 +23,7 @@ mod score;
 mod settings;
 mod sources;
 mod sync;
+mod synonyms;
 mod text;
 mod usage;
 mod net;

@@ -23,6 +23,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/007_sync.sql"),
     include_str!("migrations/008_source_queries.sql"),
     include_str!("migrations/009_api_totals.sql"),
+    include_str!("migrations/010_filter_rules.sql"),
+    include_str!("migrations/011_translation.sql"),
 ];
 
 /// Schema version this app writes (copies from newer versions are refused).
@@ -172,8 +174,9 @@ pub fn open_app_database(data_dir: &Path, backup: bool) -> AppResult<Connection>
     }
     let before: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     migrate(&mut conn)?;
-    // Version 5 added scores without AI - count them once for offers saved before.
-    if (1..5).contains(&before) {
+    // Version 5 added scores without AI, version 10 new filter reasons - check offers saved
+    // before once again.
+    if (1..10).contains(&before) {
         let tx = conn.transaction()?;
         crate::profiles::recheck_all(&tx)?;
         tx.commit()?;

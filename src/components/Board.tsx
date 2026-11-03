@@ -2,7 +2,8 @@ import { Fragment, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { addedLabel, placeLabel, salaryShort } from "../lib/format";
+import { addedLabel, placeLabel, salaryShort, translatedTitle } from "../lib/format";
+import { isNarrowLayout } from "../lib/fit";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { Flap } from "./Flap";
 import { IconStar } from "./Icons";
@@ -165,7 +166,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                 onClick={() => {
                   onSelect(o.id);
                   // On a phone the card is below the list - go to it.
-                  if (window.matchMedia("(max-width: 600px)").matches) onOpen();
+                  if (isNarrowLayout()) onOpen();
                 }}
                 onDoubleClick={onOpen}
                 onTouchStart={(e) => (touch.current = { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY })}
@@ -193,7 +194,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                         <span className="sr-only">{t("favorite.label")}</span>
                       </span>
                     )}
-                    <Flap className="offer-title" text={o.title} fresh={fresh} />
+                    <Flap className="offer-title" text={translatedTitle(o, lang) ?? o.title} fresh={fresh} />
                   </span>
                   <span className="offer-line">
                     <span className="offer-company">{o.company}</span>

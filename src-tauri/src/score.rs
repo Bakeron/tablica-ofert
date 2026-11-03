@@ -52,7 +52,10 @@ pub fn keyword_score(facts: &Facts, profile: &Profile) -> Option<i64> {
         .join(" "))
     );
     let has = |w: &str| text.contains(&format!(" {w} "));
-    let kw_part = (!keywords.is_empty()).then(|| keywords.iter().filter(|k| has(k)).count() as f64 / keywords.len() as f64);
+    // A keyword counts in either language ("programista" in a profile, "developer" in an offer).
+    let has_keyword = |k: &str| crate::synonyms::variants(k).iter().any(|v| has(v));
+    let kw_part =
+        (!keywords.is_empty()).then(|| keywords.iter().filter(|k| has_keyword(k)).count() as f64 / keywords.len() as f64);
     // A description has many words that never appear in offers - a third of them is a full match.
     let desc_part = (!described.is_empty()).then(|| {
         let hits = described.iter().filter(|w| has(w)).count() as f64;

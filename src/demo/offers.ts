@@ -65,7 +65,11 @@ export interface DemoOffer {
   event?: { kind: "interview" | "deadline" | "other"; inHours: number; note: string };
   contact?: { name: string; role: string; email: string; phone: string; linkedin: string };
   /** What AI "read" (made up); scores use the profile index instead of the id. */
-  ai?: Omit<OfferAi, "scores"> & { scores: { profile: number; score: number; why: string; quote: string | null }[] };
+  ai?: Omit<OfferAi, "scores" | "descriptionTranslated" | "offerLanguage"> & {
+    scores: { profile: number; score: number; why: string; quote: string | null }[];
+  };
+  /** Made-up AI translation into Polish (an offer in English). */
+  translation?: { title: string; description: string };
 }
 
 export const DEMO_OFFERS: DemoOffer[] = [
@@ -424,6 +428,68 @@ export const DEMO_OFFERS: DemoOffer[] = [
       level: "mid",
       language: "pl",
       description: "Projektujemy i składamy interfejsy aplikacji dla bibliotek miejskich. Raz w miesiącu w biurze.",
+    },
+  },
+  {
+    hoursAgo: 3,
+    score: 22,
+    scoreSource: "keywords",
+    filters: [
+      {
+        result: "unsure",
+        reasons: [
+          { kind: "unsure", code: "level_not_in_profile", value: "Senior Backend Developer (Kotlin)" },
+          { kind: "unsure", code: "salary_far_above" },
+        ],
+      },
+      { result: "unsure", reasons: [{ kind: "unsure", code: "low_keyword_score", value: "22" }] },
+    ],
+    input: {
+      title: "Senior Backend Developer (Kotlin)",
+      company: "Żuraw Labs",
+      source: "adzuna",
+      url: "https://example.com/oferty/zuraw-kotlin",
+      remote: "yes",
+      salaryMin: 18000,
+      salaryMax: 23000,
+      description: "Aplikacja do planowania posiłków. Kotlin, Spring, PostgreSQL. Praca w pełni zdalna.",
+    },
+  },
+  {
+    hoursAgo: 2,
+    score: 81,
+    scoreSource: "ai",
+    filters: [fit, { result: "unsure", reasons: [{ kind: "unsure", code: "remote_not_wanted" }] }],
+    ai: {
+      status: "done",
+      at: null,
+      summary: "Wtyczki i motywy WordPressa dla sieci księgarni, w pełni zdalnie, kontrakt B2B w euro.",
+      flags: ["Widełki w euro, na godzinę - przelicz na złotówki przed rozmową."],
+      remoteQuote: null,
+      error: null,
+      scores: [
+        { profile: 0, score: 81, why: "WordPress, PHP i ACF - jak w opisie profilu, w pełni zdalnie.", quote: "Fully remote, anywhere in Europe" },
+        { profile: 1, score: 40, why: "Praca zdalna, a Plan B szuka biura we Wrocławiu.", quote: null },
+      ],
+    },
+    translation: {
+      title: "Programista PHP (WordPress)",
+      description:
+        "Tworzymy wtyczki i motywy WordPressa dla sieci niezależnych księgarń. Szukamy osoby, która dobrze zna PHP i ACF i lubi porządny kod.\n\nW pełni zdalnie, z dowolnego miejsca w Europie.",
+    },
+    input: {
+      title: "PHP Developer (WordPress)",
+      company: "Kestrel Works",
+      source: "remoteok",
+      url: "https://example.com/oferty/kestrel-wp",
+      remote: "yes",
+      salaryMin: 30,
+      salaryMax: 40,
+      salaryCurrency: "EUR",
+      salaryPeriod: "hour",
+      language: "en",
+      description:
+        "We build WordPress plugins and themes for a network of independent bookshops. We are looking for someone who knows PHP and ACF well and likes tidy code.\n\nFully remote, anywhere in Europe.",
     },
   },
 ];

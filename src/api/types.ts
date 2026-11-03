@@ -136,6 +136,9 @@ export interface OfferRow {
   /** The nearest date (from 3 hours ago on) - for "INTERVIEW TODAY". */
   nextEvent: string | null;
   nextEventKind: EventKind | null;
+  /** Language of the AI translation - used only when it is the app language. */
+  translationLang: OfferLanguage | null;
+  titleTranslated: string | null;
 }
 
 export type EventKind = "interview" | "deadline" | "other";
@@ -224,6 +227,10 @@ export interface OfferAi {
   remoteQuote: string | null;
   error: string | null;
   scores: ScoreView[];
+  /** The description translated by AI, in `translationLang` of the row. */
+  descriptionTranslated: string | null;
+  /** Language of the offer text when known ("AI would translate it"). */
+  offerLanguage: OfferLanguage | null;
 }
 
 export type AiProvider = "none" | "gemini" | "groq" | "openrouter" | "ollama" | "anthropic" | "openai";
@@ -290,10 +297,16 @@ export interface AppStatus {
   version: string;
 }
 
+/** From the smallest to the largest - Ctrl + / Ctrl - step through this list. */
+export const TEXT_SIZES = ["small", "normal", "large", "xlarge"] as const;
+export type TextSize = (typeof TEXT_SIZES)[number];
+
 export interface Settings {
   theme: "system" | "dark" | "light";
   language: "system" | "pl" | "en";
   motion: "system" | "full" | "reduced";
+  /** Size of all text; on the PC also Ctrl + / Ctrl - / Ctrl 0. */
+  text_size: TextSize;
   sound: "off" | "on";
   /** "First steps" at the first start, until finished or skipped. */
   onboarding: "pending" | "done";
@@ -339,6 +352,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   language: "system",
   motion: "system",
+  text_size: "normal",
   sound: "off",
   onboarding: "done",
   fetch_auto: "on",

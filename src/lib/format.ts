@@ -97,3 +97,8 @@ export function nowLocalInput(now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
+
+/** The title translated by AI into the app language, when there is one. */
+export function translatedTitle(o: Pick<OfferRow, "titleTranslated" | "translationLang">, lang: Lang): string | null {
+  return o.translationLang === lang && o.titleTranslated ? o.titleTranslated : null;
+}

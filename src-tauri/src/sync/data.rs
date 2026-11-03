@@ -14,7 +14,7 @@ const OFFER_COLS: &[&str] = &[
     "fingerprint", "title", "company", "url", "city", "remote", "salary_min", "salary_max", "salary_currency",
     "salary_period", "contract", "level", "language", "requirements", "description", "notes", "interest", "favorite",
     "stage", "stage_changed_at", "expires_at", "expired", "added_at", "updated_at", "deleted_at", "ai_status", "ai_at",
-    "ai_summary", "ai_flags", "ai_remote_quote",
+    "ai_summary", "ai_flags", "ai_remote_quote", "ai_tr_lang", "ai_title_tr", "ai_description_tr",
 ];
 const PROFILE_COLS: &[&str] = &["name", "position", "description", "criteria", "description_prev", "created_at", "updated_at"];
 const EVENT_COLS: &[&str] = &["kind", "at", "minutes", "note", "created_at"];

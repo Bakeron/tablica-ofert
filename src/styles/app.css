@@ -66,7 +66,7 @@
 :root {
   --font-board: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-text: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
-  --pass-width: clamp(340px, 34vw, 500px);
+  --pass-width: clamp(21.25rem, 34vw, 31.25rem);
   font-family: var(--font-text);
   font-size: 16px;
   line-height: 1.45;
@@ -75,6 +75,19 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Text size from the settings - everything is sized in rem, so the whole layout follows. */
+:root[data-text-size="small"] {
+  font-size: 14px;
+}
+
+:root[data-text-size="large"] {
+  font-size: 18px;
+}
+
+:root[data-text-size="xlarge"] {
+  font-size: 20px;
 }
 
 html,
@@ -122,6 +135,10 @@ textarea {
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* Layout steps below are container queries in rem, not media queries in px: with a larger
+     text size (Settings → Look) the narrower layout comes earlier, so nothing gets squeezed.
+     At the normal 16px: 1100 / 928 / 700 / 600 px. */
+  container: app / inline-size;
 }
 
 .split {
@@ -222,6 +239,62 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* Everything in the bar stays on one line; `useFitLevels` (App.tsx) measures whether it fits and
+   picks the full size, the tighter one (`is-compact`) or the tabs in their own row (`is-stacked`). */
+.topbar > *,
+.topbar-actions > * {
+  flex-shrink: 0;
+}
+
+.topbar .tab,
+.topbar .btn,
+.brand h1 {
+  white-space: nowrap;
+}
+
+.topbar.is-compact {
+  gap: 0.6rem;
+  padding-inline: 0.75rem;
+}
+
+.topbar.is-compact .brand h1 {
+  font-size: 1.4rem;
+  letter-spacing: 0.04em;
+}
+
+.topbar.is-compact .clock {
+  font-size: 1.2rem;
+}
+
+.topbar.is-compact .tabs {
+  gap: 0;
+}
+
+.topbar.is-compact .tab {
+  padding-inline: 0.45rem;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+}
+
+.topbar.is-compact .topbar-actions .btn {
+  padding-inline: 0.6rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+}
+
+.topbar.is-stacked {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.topbar.is-stacked .tabs {
+  order: 3;
+  width: 100%;
+  flex-shrink: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .topbar .btn-sign {
@@ -363,9 +436,9 @@ textarea {
     background-color: color-mix(in srgb, var(--btn-bg) calc(100% - var(--hover-mix)), var(--btn-ink, currentColor));
   }
 
-  /* A halo instead of padding, so the layout does not move. */
+  /* A halo instead of padding, so the layout does not move. Shape and size are set at rest
+     (.choice-item) - only the colour changes, so the highlight fades in without a jump. */
   .choice-item:hover {
-    border-radius: 2px;
     background-color: color-mix(in srgb, currentColor 10%, transparent);
     box-shadow: 0 0 0 0.25rem color-mix(in srgb, currentColor 10%, transparent);
   }
@@ -1010,6 +1083,20 @@ details[open]::details-content {
   box-shadow: none;
 }
 
+/* "Word match" is longer than "Match" - two short lines instead of a wide stamp */
+.stamp-plain .stamp-label {
+  max-width: 7.5rem;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.stamp .help-btn {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
 .stamp-none {
   border: 2px dotted var(--paper-dim);
   color: var(--paper-dim);
@@ -1069,6 +1156,15 @@ details[open]::details-content {
 .pass-meta {
   font-size: 0.85rem;
   color: var(--paper-dim);
+}
+
+.pass-translation {
+  margin: 0.35rem 0 0;
+}
+
+.pass-translation .btn {
+  margin-left: 0.25rem;
+  vertical-align: baseline;
 }
 
 .pass-note {
@@ -1359,6 +1455,11 @@ textarea {
   border-radius: 4px;
 }
 
+.choice > .hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .choice legend {
   padding: 0 0.3rem;
   font-weight: 700;
@@ -1369,6 +1470,9 @@ textarea {
   align-items: center;
   gap: 0.4rem;
   cursor: pointer;
+  border-radius: 2px;
+  background-color: color-mix(in srgb, currentColor 0%, transparent);
+  box-shadow: 0 0 0 0.25rem color-mix(in srgb, currentColor 0%, transparent);
 }
 
 .choice-item input {
@@ -1884,7 +1988,7 @@ fieldset.plain {
   font-size: 1.05rem;
 }
 
-@media (max-width: 700px) {
+@container app (max-width: 43.75rem) {
   .describe {
     grid-template-columns: 1fr;
   }
@@ -1947,23 +2051,9 @@ fieldset.plain {
 
 /* ---------- narrower windows ---------- */
 
-@media (max-width: 1100px) {
+@container app (max-width: 68.75rem) {
   .keys-hint {
     display: none;
-  }
-
-  .topbar {
-    flex-wrap: wrap;
-    row-gap: 0.25rem;
-  }
-
-  .tabs {
-    order: 3;
-    width: 100%;
-  }
-
-  .tab {
-    white-space: nowrap;
   }
 
   .c-place {
@@ -1971,7 +2061,7 @@ fieldset.plain {
   }
 }
 
-@media (max-width: 860px) {
+@container app (max-width: 58rem) {
   .split {
     flex-direction: column;
     overflow: auto;
@@ -2688,7 +2778,7 @@ fieldset.plain {
 
 /* ---------- phone: rows become cards, one under another ---------- */
 
-@media (max-width: 600px) {
+@container app (max-width: 37.5rem) {
   .topbar {
     padding: 0.4rem 0.6rem;
   }

@@ -250,7 +250,7 @@ const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_
     o.salary_currency, o.salary_period, o.stage, o.stage_changed_at, o.interest, o.favorite,
     o.score, o.score_source,
     (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
-    o.expired, {result}, o.added_at, {reasons}, {next}";
+    o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr";
 
 /// The nearest date of an offer from 3 hours ago on (an interview that just started still counts).
 const NEXT_EVENT: &str = "(SELECT e.at || '|' || e.kind FROM events e WHERE e.offer_id = o.id
@@ -315,6 +315,8 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         filter_reasons: profiles::reasons_from(r.get(19)?),
         next_event: next.as_ref().map(|(at, _)| at.clone()),
         next_event_kind: next.map(|(_, kind)| kind),
+        translation_lang: r.get(21)?,
+        title_translated: r.get(22)?,
     })
 }
 
@@ -402,15 +404,15 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         .query_row(&sql, [id], |r| {
             Ok(OfferDetail {
                 row: row_from(r)?,
-                url: r.get(21)?,
-                contract: r.get(22)?,
-                level: r.get(23)?,
-                language: r.get(24)?,
-                requirements: r.get(25)?,
-                description: r.get(26)?,
-                notes: r.get(27)?,
-                expires_at: r.get(28)?,
-                deleted_at: r.get(29)?,
+                url: r.get(23)?,
+                contract: r.get(24)?,
+                level: r.get(25)?,
+                language: r.get(26)?,
+                requirements: r.get(27)?,
+                description: r.get(28)?,
+                notes: r.get(29)?,
+                expires_at: r.get(30)?,
+                deleted_at: r.get(31)?,
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),

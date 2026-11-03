@@ -129,8 +129,13 @@ Never invent facts - when the offer does not say something, use null or \"unknow
 Every quote must be copied word for word from the offer text. \
 Judge the match only by the job seeker's profiles and experience; a poor match gets a low score, not an excuse.";
 
-fn rate_prompt(f: &Facts, profiles: &[Profile], experience: &str, language: &str) -> String {
+fn language_name(code: &str) -> &'static str {
+    if code == "en" { "English" } else { "Polish" }
+}
+
+fn rate_prompt(f: &Facts, profiles: &[Profile], experience: &str, language: &str, app_language: &str) -> String {
     let profiles_text = profiles.iter().map(profile_block).collect::<Vec<_>>().join("\n");
+    let target = language_name(app_language);
     format!(
         "JOB SEEKER\nExperience: {}\n{}\n\n<offer>\n{}\n</offer>\n\n\
 Answer with this JSON object (write summary, flags and why in {language}):\n\
@@ -148,7 +153,9 @@ Answer with this JSON object (write summary, flags and why in {language}):\n\
   \"requirements\": short comma-separated list of required skills or null,\n\
   \"summary\": 2-3 sentences: what the job really is,\n\
   \"flags\": up to 5 short warnings for the job seeker (e.g. unpaid trial task, sales targets, no salary range, very long list of duties), [] if none,\n\
-  \"scores\": [ {{ \"profile\": profile id, \"score\": 0-100, \"why\": one sentence, \"quote\": the most telling sentence of the offer or null }} ] - one entry for every profile above\n\
+  \"scores\": [ {{ \"profile\": profile id, \"score\": 0-100, \"why\": one sentence, \"quote\": the most telling sentence of the offer or null }} ] - one entry for every profile above,\n\
+  \"translated_title\": only when the offer is NOT written in {target}: the title translated into {target}, otherwise null,\n\
+  \"translated_description\": only when the offer is NOT written in {target}: the description translated into {target} - plain text, the same paragraphs and meaning, names of technologies and companies unchanged; otherwise null\n\
 }}",
         if experience.trim().is_empty() { "not given" } else { experience.trim() },
         profiles_text,
@@ -176,7 +183,19 @@ pub struct Reading {
     pub summary: Option<String>,
     pub flags: Vec<String>,
     pub scores: Vec<ProfileScore>,
+    /// Title and description in the app language, when the offer is in another one.
+    pub translation: Option<Translation>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Translation {
+    pub lang: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Longest translated description kept (the offer sent to AI is shorter anyway).
+const MAX_TRANSLATION: usize = 20_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -207,7 +226,7 @@ fn real_quote(quote: Option<String>, offer_text: &str) -> Option<String> {
     (nq.len() >= 8 && normalize(offer_text).contains(&nq)).then(|| cut(&q, 300))
 }
 
-pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64]) -> Reading {
+pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64], app_language: &str) -> Reading {
     let remote = v.get("remote").and_then(Value::as_str).and_then(Remote::parse).filter(|r| *r != Remote::Unknown);
     let currency = s(v, "salary_currency", 3)
         .map(|c| c.to_ascii_uppercase())
@@ -240,6 +259,7 @@ pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64]) -> Rea
         });
     }
     let has_salary = salary_min.is_some() || salary_max.is_some();
+    let translation = translation(v, language.as_deref(), app_language);
     Reading {
         title: s(v, "title", 300),
         company: s(v, "company", 300),
@@ -261,7 +281,23 @@ pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64]) -> Rea
         summary: s(v, "summary", 1000),
         flags,
         scores,
+        translation,
     }
+}
+
+/// Kept only for an offer AI says is in another language than the app - a "translation" of a
+/// Polish offer into Polish would only be a worse copy of the original.
+fn translation(v: &Value, offer_language: Option<&str>, app_language: &str) -> Option<Translation> {
+    if offer_language? == app_language {
+        return None;
+    }
+    let title = s(v, "translated_title", 300);
+    let description = v
+        .get("translated_description")
+        .and_then(Value::as_str)
+        .map(|t| cut(&crate::text::squeeze(t), MAX_TRANSLATION))
+        .filter(|t| !t.is_empty() && normalize(t) != "null");
+    (title.is_some() || description.is_some()).then(|| Translation { lang: app_language.to_string(), title, description })
 }
 
 // ---------- storing ----------
@@ -313,6 +349,11 @@ pub fn store(conn: &mut Connection, offer_id: i64, r: &Reading) -> AppResult<()>
             offer_id, r.city, r.remote, r.contract, r.level, r.language, r.requirements, clock::now(), r.summary, flags,
             r.remote_quote
         ],
+    )?;
+    let tr = r.translation.as_ref();
+    tx.execute(
+        "UPDATE offers SET ai_tr_lang = ?2, ai_title_tr = ?3, ai_description_tr = ?4 WHERE id = ?1",
+        params![offer_id, tr.map(|t| &t.lang), tr.and_then(|t| t.title.as_ref()), tr.and_then(|t| t.description.as_ref())],
     )?;
     tx.execute("DELETE FROM offer_scores WHERE offer_id = ?1 AND source = 'ai'", [offer_id])?;
     for sc in &r.scores {
@@ -392,15 +433,15 @@ impl Drop for Rating<'_> {
     }
 }
 
-async fn rate(ai: &Ai, job: &Job) -> AppResult<Reading> {
+async fn rate(ai: &Ai, job: &Job, app_language: &str) -> AppResult<Reading> {
     let texts: Vec<&str> = job.profiles.iter().map(|p| p.description.as_str()).collect();
     let language = answer_language(&texts);
-    let prompt = rate_prompt(&job.facts, &job.profiles, &job.experience, language);
+    let prompt = rate_prompt(&job.facts, &job.profiles, &job.experience, language, app_language);
     let answer = ai.ask(RATE_SYSTEM, &prompt, true).await?;
     let value = client::json_object(&answer)?;
     let offer_text = offer_block(&job.facts);
     let allowed: Vec<i64> = job.profiles.iter().map(|p| p.id).collect();
-    Ok(read_answer(&value, &offer_text, &allowed))
+    Ok(read_answer(&value, &offer_text, &allowed, app_language))
 }
 
 /// Reads offers waiting for AI (newest first, at most `PER_RUN`), within the daily limit.
@@ -414,6 +455,8 @@ pub async fn process(state: &AppState, only: Option<i64>) -> AppResult<RateRepor
     let Some(cfg) = config(&s) else { return Ok(RateReport::default()) };
     let ai = connect(&cfg)?;
     let key = cfg.provider.usage_key();
+    // Offers in another language get a translation into the language of the app.
+    let app_language = if crate::notify::polish(state) { "pl" } else { "en" };
     let ids = match only {
         Some(id) => vec![id],
         None => with_db(state, |c| pending_ids(c, PER_RUN))?,
@@ -429,7 +472,7 @@ pub async fn process(state: &AppState, only: Option<i64>) -> AppResult<RateRepor
         if i > 0 {
             tokio::time::sleep(cfg.provider.pause()).await;
         }
-        let result = rate(&ai, &job).await;
+        let result = rate(&ai, &job, app_language).await;
         with_db(state, |c| usage::add_calls(c, &key, 1))?;
         match result {
             Ok(reading) => {
@@ -476,6 +519,10 @@ pub struct OfferAi {
     pub remote_quote: Option<String>,
     pub error: Option<String>,
     pub scores: Vec<ScoreView>,
+    /// The description translated by AI (the title is in the row), in `translation_lang` of the row.
+    pub description_translated: Option<String>,
+    /// Language of the offer text ('pl' / 'en') when known - for "AI would translate it".
+    pub offer_language: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -492,7 +539,7 @@ pub struct ScoreView {
 pub fn offer_ai(conn: &Connection, offer_id: i64) -> AppResult<OfferAi> {
     let mut out = conn
         .query_row(
-            "SELECT ai_status, ai_at, ai_summary, ai_flags, ai_remote_quote, ai_error FROM offers WHERE id = ?1",
+            "SELECT ai_status, ai_at, ai_summary, ai_flags, ai_remote_quote, ai_error, ai_description_tr FROM offers WHERE id = ?1",
             [offer_id],
             |r| {
                 Ok(OfferAi {
@@ -503,11 +550,14 @@ pub fn offer_ai(conn: &Connection, offer_id: i64) -> AppResult<OfferAi> {
                     remote_quote: r.get(4)?,
                     error: r.get(5)?,
                     scores: Vec::new(),
+                    description_translated: r.get(6)?,
+                    offer_language: None,
                 })
             },
         )
         .optional()?
         .ok_or(AppError::NotFound)?;
+    out.offer_language = profiles::facts_of(conn, offer_id)?.and_then(|f| crate::filter::offer_language(&f)).map(|l| l.as_str().to_string());
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, s.score, s.source, s.why, s.quote FROM offer_scores s JOIN profiles p ON p.id = s.profile_id
          WHERE s.offer_id = ?1 ORDER BY s.source = 'ai' DESC, s.score DESC",
@@ -688,7 +738,7 @@ The text may contain menus and other parts of the page - ignore them.",
     let answer = ai.ask(RATE_SYSTEM, &prompt, true).await;
     with_db(state, |c| usage::add_calls(c, &key, 1))?;
     let value = client::json_object(&answer?)?;
-    let r = read_answer(&value, &offer_text, &[]);
+    let r = read_answer(&value, &offer_text, &[], "pl");
     let fallback = crate::extract::from_text(text, title_hint);
     Ok(crate::extract::Draft {
         title: r.title.or(fallback.title),
@@ -766,6 +816,53 @@ mod tests {
     const OFFER: &str = "Title: Frontend Developer\nDescription:\nPraca w 100% zdalna. Budujemy system rezerwacji dla klinik. Wynagrodzenie 12 000 - 16 000 zł netto na B2B.";
 
     #[test]
+    fn translation_only_for_an_offer_in_another_language() {
+        let v = serde_json::json!({
+            "language": "en",
+            "translated_title": "Programista PHP (zdalnie)",
+            "translated_description": "  Budujemy wtyczki do WordPressa.\n\n\n\nPraca zdalna.  ",
+        });
+        let t = read_answer(&v, OFFER, &[], "pl").translation.unwrap();
+        assert_eq!(t.lang, "pl");
+        assert_eq!(t.title.as_deref(), Some("Programista PHP (zdalnie)"));
+        assert_eq!(t.description.as_deref(), Some("Budujemy wtyczki do WordPressa.\n\nPraca zdalna."));
+        // An offer already in the app language, or of unknown language - nothing to keep.
+        assert_eq!(read_answer(&v, OFFER, &[], "en").translation, None);
+        let mut unknown = v.clone();
+        unknown["language"] = serde_json::Value::Null;
+        assert_eq!(read_answer(&unknown, OFFER, &[], "pl").translation, None);
+        // Nothing translated - no translation.
+        let empty = serde_json::json!({ "language": "en", "translated_title": null, "translated_description": "null" });
+        assert_eq!(read_answer(&empty, OFFER, &[], "pl").translation, None);
+    }
+
+    #[test]
+    fn translation_is_stored_and_shown_with_its_language() {
+        let mut conn = test_db();
+        let id = match crate::offers::add(
+            &mut conn,
+            OfferInput { title: "PHP Developer".into(), company: "Zmyślona Firma".into(), source: "remoteok".into(), ..Default::default() },
+        )
+        .unwrap()
+        {
+            AddOutcome::Added { id } => id,
+            other => panic!("{other:?}"),
+        };
+        let reading = Reading {
+            translation: Some(Translation { lang: "pl".into(), title: Some("Programista PHP".into()), description: Some("Opis.".into()) }),
+            ..Default::default()
+        };
+        store(&mut conn, id, &reading).unwrap();
+        let d = crate::offers::detail(&conn, id).unwrap();
+        assert_eq!(d.row.title, "PHP Developer");
+        assert_eq!((d.row.translation_lang.as_deref(), d.row.title_translated.as_deref()), (Some("pl"), Some("Programista PHP")));
+        assert_eq!(offer_ai(&conn, id).unwrap().description_translated.as_deref(), Some("Opis."));
+        // Rated again without a translation - the old one goes.
+        store(&mut conn, id, &Reading::default()).unwrap();
+        assert_eq!(crate::offers::detail(&conn, id).unwrap().row.title_translated, None);
+    }
+
+    #[test]
     fn answer_is_checked_field_by_field() {
         let v = json!({
             "title": "Frontend Developer", "company": "  Przykładowa\nFirma ", "city": "null",
@@ -781,7 +878,7 @@ mod tests {
                 {"profile": "1", "score": 10}
             ]
         });
-        let r = read_answer(&v, OFFER, &[1, 2]);
+        let r = read_answer(&v, OFFER, &[1, 2], "pl");
         assert_eq!(r.company.as_deref(), Some("Przykładowa Firma"));
         assert_eq!(r.city, None);
         assert_eq!(r.remote, Some(Remote::Yes));

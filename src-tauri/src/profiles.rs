@@ -240,15 +240,35 @@ fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
     ))
 }
 
+/// Below this score without AI an offer that passed the filter goes to "Do sprawdzenia" instead of
+/// standing next to good ones. Kept low: Adzuna and Jooble give only the start of the description,
+/// so even fitting offers rarely show many of the profile's words.
+const LOW_KEYWORD_SCORE: i64 = 30;
+
 fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -> AppResult<()> {
     tx.execute("DELETE FROM offer_filters WHERE offer_id = ?1", [offer_id])?;
     let mut results: Vec<FilterResult> = Vec::with_capacity(profiles.len());
+    let mut scores: Vec<Option<i64>> = Vec::with_capacity(profiles.len());
     let off_topic = filter::off_topic(facts, profiles);
+    // Offers typed in by hand were chosen by the user - a low score does not move them.
+    let by_hand = facts.sources.iter().any(|s| s == "manual");
     for p in profiles {
-        let mut e = filter::evaluate(facts, &p.criteria);
+        let mut e = filter::evaluate_profile(facts, p);
         if off_topic {
             e.reject_off_topic();
         }
+        let score = crate::score::keyword_score(facts, p);
+        if let Some(s) = score.filter(|s| *s < LOW_KEYWORD_SCORE) {
+            let rated_by_ai: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM offer_scores WHERE offer_id = ?1 AND profile_id = ?2 AND source = 'ai')",
+                params![offer_id, p.id],
+                |r| r.get(0),
+            )?;
+            if e.result == FilterResult::Pass && !by_hand && !rated_by_ai {
+                e.add(ReasonKind::Unsure, "low_keyword_score", Some(s.to_string()));
+            }
+        }
+        scores.push(score);
         let reasons = serde_json::to_string(&e.reasons).map_err(|e| AppError::Invalid(e.to_string()))?;
         tx.execute(
             "INSERT INTO offer_filters (offer_id, profile_id, result, reasons) VALUES (?1, ?2, ?3, ?4)",
@@ -262,11 +282,11 @@ fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -
     )?;
     // Score without AI for every profile the offer did not fail; AI scores stay as they are.
     tx.execute("DELETE FROM offer_scores WHERE offer_id = ?1 AND source = 'keywords'", [offer_id])?;
-    for (p, result) in profiles.iter().zip(&results) {
+    for ((p, result), score) in profiles.iter().zip(&results).zip(scores) {
         if *result == FilterResult::Fail {
             continue;
         }
-        if let Some(score) = crate::score::keyword_score(facts, p) {
+        if let Some(score) = score {
             tx.execute(
                 "INSERT OR IGNORE INTO offer_scores (offer_id, profile_id, score, source) VALUES (?1, ?2, ?3, 'keywords')",
                 params![offer_id, p.id, score],
@@ -476,6 +496,39 @@ mod tests {
         // The same offer from the user's own alerts is not off topic any more.
         offers::add(&mut conn, from("Zwrotniczy (K/M)", "mail")).unwrap();
         assert!(offers::list(&conn, View::Rejected, None, false).unwrap().is_empty());
+    }
+
+    #[test]
+    fn low_keyword_score_sends_offers_to_review_until_ai_rates_them() {
+        let mut conn = test_db();
+        let criteria = Criteria { keywords: vec!["WordPress".into(), "PHP".into(), "JavaScript".into(), "ACF".into()], ..Default::default() };
+        let p = save(&mut conn, plan("Plan A", criteria)).unwrap();
+        let from = |title: &str, description: &str, source: &str| OfferInput {
+            title: title.into(),
+            company: "Zmyślona Firma".into(),
+            source: source.into(),
+            remote: Some(Remote::Yes),
+            description: Some(description.into()),
+            ..Default::default()
+        };
+        let weak = match offers::add(&mut conn, from("Backend Engineer (Kotlin)", "Kotlin, JavaScript na froncie.", "adzuna")).unwrap() {
+            AddOutcome::Added { id } => id,
+            other => panic!("{other:?}"),
+        };
+        offers::add(&mut conn, from("Programista WordPress", "WordPress, PHP, ACF i JavaScript, frontend.", "adzuna")).unwrap();
+        offers::add(&mut conn, from("Backend Engineer (Go)", "Go i JavaScript.", "manual")).unwrap();
+        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Backend Engineer (Go)", "Programista WordPress"]);
+        let review = offers::list(&conn, View::Review, None, false).unwrap();
+        assert_eq!(ids(&review), vec!["Backend Engineer (Kotlin)"]);
+        assert_eq!(review[0].filter_reasons.last().unwrap().code, "low_keyword_score");
+
+        // AI rated it - its own score decides (and "hide below X" hides it when low).
+        conn.execute("INSERT OR REPLACE INTO offer_scores (offer_id, profile_id, score, source) VALUES (?1, ?2, 70, 'ai')", params![weak, p])
+            .unwrap();
+        let tx = conn.transaction().unwrap();
+        recheck_offer(&tx, weak).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 3);
     }
 
     #[test]

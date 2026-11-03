@@ -1,12 +1,13 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { useI18n } from "../i18n";
-import { fullDate, isWebUrl, placeLabel, salaryFull } from "../lib/format";
+import { fullDate, isWebUrl, placeLabel, salaryFull, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
 import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
 import { AgendaPart, type AgendaActions } from "./AgendaPart";
+import { Help } from "./Help";
 import { StatusTag } from "./StatusTag";
 // Official logo from adzuna.com/press.html, scaled down (Adzuna's API terms ask for it next to their offers).
 import adzunaLogo from "../assets/adzuna-logo.png";
@@ -43,6 +44,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   const [notes, setNotes] = useState(offer?.notes ?? "");
 
   useEffect(() => setNotes(offer?.notes ?? ""), [offer?.id, offer?.notes]);
+  // An offer in another language shows the AI translation; the original is one click away.
+  const [showOriginal, setShowOriginal] = useState(false);
+  useEffect(() => setShowOriginal(false), [offer?.id]);
   // Another offer chosen - the card changes with a short fade, not a jump.
   const passRef = useRef<HTMLElement>(null);
   useAppearOn(passRef, offer?.id ?? null);
@@ -57,6 +61,11 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
 
   const inTrash = offer.deletedAt !== null;
   const missing = t("card.missing");
+  const titleTr = translatedTitle(offer, lang);
+  const descriptionTr = offer.translationLang === lang ? offer.ai.descriptionTranslated : null;
+  const hasTranslation = Boolean(titleTr || descriptionTr);
+  const translated = hasTranslation && !showOriginal;
+  const foreign = offer.ai.offerLanguage !== null && offer.ai.offerLanguage !== lang ? offer.ai.offerLanguage : null;
   const remoteText = t(`remote.${offer.remote}`);
 
   return (
@@ -65,9 +74,26 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
       <section className="pass-stub">
         <div className="pass-field pass-field-wide">
           <span className="pass-label">{t("card.title")}</span>
-          <h2 id="pass-title" ref={headingRef} tabIndex={-1} className="pass-title">
-            {offer.title}
+          <h2 id="pass-title" ref={headingRef} tabIndex={-1} className="pass-title" lang={translated && titleTr ? lang : (foreign ?? undefined)}>
+            {translated && titleTr ? titleTr : offer.title}
           </h2>
+          {hasTranslation ? (
+            <p className="pass-meta pass-translation">
+              {t(translated ? "card.translated" : "card.original")}{" "}
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowOriginal(!showOriginal)}>
+                {t(translated ? "card.showOriginal" : "card.showTranslation")}
+              </button>
+            </p>
+          ) : (
+            foreign &&
+            !inTrash && (
+              <p className="pass-meta pass-translation">
+                {t(!aiOn ? "card.translateNoAi" : offer.ai.status === "done" ? "card.translateAgain" : "card.translateWaiting", {
+                  language: t(`language.${foreign}`),
+                })}
+              </p>
+            )
+          )}
         </div>
         <div className="pass-field pass-field-wide">
           <span className="pass-label">{t("card.company")}</span>
@@ -255,7 +281,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
         {offer.description && (
           <section className="pass-text">
             <h3 className="pass-label">{t("card.description")}</h3>
-            <p>{offer.description}</p>
+            <p lang={translated && descriptionTr ? lang : (foreign ?? undefined)}>
+              {translated && descriptionTr ? descriptionTr : offer.description}
+            </p>
           </section>
         )}
 
@@ -326,11 +354,22 @@ function Stamp({ offer }: { offer: OfferDetail }) {
       </div>
     );
   }
+  if (offer.scoreSource === "keywords") {
+    return (
+      <div className="stamp stamp-plain">
+        <span className="stamp-label">{t("card.matchWords")}</span>
+        <span className="stamp-score">{offer.score}</span>
+        <span className="stamp-sub">
+          {t("card.matchOf100")} <Help text={t("card.matchWordsHelp")} />
+        </span>
+      </div>
+    );
+  }
   return (
-    <div className={offer.scoreSource === "keywords" ? "stamp stamp-plain" : "stamp"}>
+    <div className="stamp">
       <span className="stamp-label">{t("card.match")}</span>
       <span className="stamp-score">{offer.score}</span>
-      <span className="stamp-sub">{offer.scoreSource === "ai" ? t("card.matchAi") : t("card.matchKeywords")}</span>
+      <span className="stamp-sub">{t("card.matchAi")}</span>
     </div>
   );
 }

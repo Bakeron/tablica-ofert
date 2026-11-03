@@ -82,6 +82,12 @@ impl Evaluation {
         self.reasons.push(Reason { kind: ReasonKind::Fail, code: "keyword_none".into(), value: None });
         self.result = FilterResult::Fail;
     }
+
+    /// Adds one more reason and updates the result (a fail still wins over "unsure").
+    pub fn add(&mut self, kind: ReasonKind, code: &str, value: Option<String>) {
+        self.reasons.push(Reason { kind, code: code.into(), value });
+        self.result = result_of(&self.reasons);
+    }
 }
 
 pub fn evaluate(facts: &Facts, c: &Criteria) -> Evaluation {
@@ -110,16 +116,37 @@ pub fn evaluate(facts: &Facts, c: &Criteria) -> Evaluation {
     }
     if c.hard.salary {
         salary(facts, &text, c, &mut out);
+        salary_far_above(facts, &text, c, &mut out);
     }
-    let has = |kind| out.0.iter().any(|r: &Reason| r.kind == kind);
-    let result = if has(ReasonKind::Fail) {
+    Evaluation { result: result_of(&out.0), reasons: out.0 }
+}
+
+/// Like `evaluate`, plus what only the whole profile knows: the level named in its description
+/// when the level criterion is not set ("poziom mid - nie senior").
+pub fn evaluate_profile(facts: &Facts, profile: &Profile) -> Evaluation {
+    let mut e = evaluate(facts, &profile.criteria);
+    let c = &profile.criteria;
+    if c.hard.level && c.levels.is_empty() {
+        let wanted = levels_in_description(&profile.description);
+        if !wanted.is_empty() && wanted.len() < 3 {
+            let (found, shown) = offer_levels(facts);
+            if !found.is_empty() && !found.iter().any(|l| wanted.contains(l)) {
+                e.add(ReasonKind::Unsure, "level_not_in_profile", shown);
+            }
+        }
+    }
+    e
+}
+
+fn result_of(reasons: &[Reason]) -> FilterResult {
+    let has = |kind| reasons.iter().any(|r: &Reason| r.kind == kind);
+    if has(ReasonKind::Fail) {
         FilterResult::Fail
     } else if has(ReasonKind::Unsure) {
         FilterResult::Unsure
     } else {
         FilterResult::Pass
-    };
-    Evaluation { result, reasons: out.0 }
+    }
 }
 
 #[derive(Default)]
@@ -171,7 +198,8 @@ impl Text {
         }
     }
 
-    /// Does the offer mention this word or phrase given by the user?
+    /// Does the offer mention this word or phrase given by the user (or its other-language
+    /// name: "programista" also finds "developer")?
     fn mentions(&self, user_word: &str) -> bool {
         let word = user_word.trim().to_lowercase();
         let n = normalize(&word);
@@ -180,7 +208,7 @@ impl Text {
         if has_symbols || n.chars().count() < 2 {
             return !word.is_empty() && self.raw.contains(&word);
         }
-        contains_phrase(&self.padded, &n)
+        crate::synonyms::variants(&n).iter().any(|v| contains_phrase(&self.padded, v))
     }
 }
 
@@ -597,7 +625,35 @@ const JUNIOR: &[&str] = &[
     "praktykant", "praktykantka", "entry level",
 ];
 const MID: &[&str] = &["mid", "regular", "middle", "medior", "mid level"];
-const SENIOR: &[&str] = &["senior", "sr", "starszy", "starsza", "lead", "principal", "ekspert", "expert"];
+const SENIOR: &[&str] = &[
+    "senior", "sr", "starszy", "starsza", "lead", "leader", "principal", "staff", "head", "ekspert", "expert",
+];
+
+/// Level words looked for in the profile description - fewer than in offers: "staż pracy"
+/// or "ekspertem" in someone's own words do not name the level they want.
+const DESCRIPTION_LEVELS: &[(Level, &[&str])] = &[
+    (Level::Junior, &["junior", "mlodszy", "mlodsza", "stazysta", "stazystka", "trainee"]),
+    (Level::Mid, &["mid", "regular", "medior"]),
+    (Level::Senior, &["senior", "starszy", "starsza", "lead", "principal"]),
+];
+const NEGATIONS: &[&str] = &["nie", "bez", "not", "no", "non", "zaden", "zadnego"];
+
+/// Levels the user named in the profile description; "nie senior" / "not senior" do not count.
+pub fn levels_in_description(text: &str) -> Vec<Level> {
+    let normalized = normalize(text);
+    let tokens: Vec<&str> = normalized.split_whitespace().collect();
+    let mut found = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        let Some(level) = DESCRIPTION_LEVELS.iter().find(|(_, words)| words.contains(token)).map(|(l, _)| *l) else {
+            continue;
+        };
+        let negated = tokens[i.saturating_sub(3)..i].iter().any(|w| NEGATIONS.contains(w));
+        if !negated && !found.contains(&level) {
+            found.push(level);
+        }
+    }
+    found
+}
 
 fn levels_in(text: &str) -> Vec<Level> {
     let padded = format!(" {} ", normalize(text));
@@ -610,18 +666,22 @@ fn levels_in(text: &str) -> Vec<Level> {
     found
 }
 
+/// Level of the offer and the text it was read from. The level field first; otherwise the job
+/// title ("Senior ...") - the description is not used, it often mentions other levels
+/// ("you will mentor juniors").
+fn offer_levels(f: &Facts) -> (Vec<Level>, Option<String>) {
+    let found = f.level.as_deref().map(levels_in).unwrap_or_default();
+    if !found.is_empty() {
+        return (found, f.level.clone());
+    }
+    (levels_in(&f.title), Some(f.title.clone()))
+}
+
 fn level(f: &Facts, c: &Criteria, out: &mut Out) {
     if c.levels.is_empty() || c.levels.len() == 3 {
         return;
     }
-    // The level field first; otherwise the job title ("Senior ...") - the description
-    // is not used, it often mentions other levels ("you will mentor juniors").
-    let mut found = f.level.as_deref().map(levels_in).unwrap_or_default();
-    let mut shown = f.level.clone();
-    if found.is_empty() {
-        found = levels_in(&f.title);
-        shown = Some(f.title.clone());
-    }
+    let (found, shown) = offer_levels(f);
     if found.is_empty() {
         out.unsure("level_unknown", None);
     } else if !found.iter().any(|l| c.levels.contains(l)) {
@@ -662,6 +722,11 @@ fn field_language(f: &Facts) -> Option<OfferLanguage> {
         "en" | "eng" | "angielski" | "english" => Some(OfferLanguage::En),
         _ => None,
     }
+}
+
+/// Language of the offer from its field or its text, when it is clear.
+pub fn offer_language(f: &Facts) -> Option<OfferLanguage> {
+    field_language(f).or_else(|| detect_language(f))
 }
 
 fn language(f: &Facts, c: &Criteria, out: &mut Out) {
@@ -719,17 +784,7 @@ fn salary(f: &Facts, text: &Text, c: &Criteria, out: &mut Out) {
         let rule = if b2b { &c.salary_b2b } else { &c.salary_uop };
         let Some(min) = rule.min else { continue };
         checked = true;
-        // Offers usually give gross amounts for employment contracts and net (without VAT) for B2B.
-        let usual = if b2b { PayBasis::Net } else { PayBasis::Gross };
-        let mut needed = monthly(min, rule.period);
-        let exact = rule.basis == usual;
-        if !exact {
-            needed = match (b2b, rule.basis) {
-                (false, PayBasis::Net) => needed / UOP_NET_SHARE,
-                (true, PayBasis::Gross) => needed / VAT,
-                _ => needed,
-            };
-        }
+        let (needed, exact) = in_offer_terms(min, rule, b2b);
         if offer >= needed {
             reaches = true;
         } else if !exact {
@@ -743,6 +798,55 @@ fn salary(f: &Facts, text: &Text, c: &Criteria, out: &mut Out) {
         out.unsure("salary_maybe_low", None);
     } else {
         out.fail("salary_low", None);
+    }
+}
+
+/// A monthly amount of the user's rule in the terms offers usually use - gross for employment
+/// contracts, net (without VAT) for B2B - and whether no estimate was needed.
+fn in_offer_terms(amount: i64, rule: &SalaryRule, b2b: bool) -> (f64, bool) {
+    let usual = if b2b { PayBasis::Net } else { PayBasis::Gross };
+    let value = monthly(amount, rule.period);
+    if rule.basis == usual {
+        return (value, true);
+    }
+    let converted = match (b2b, rule.basis) {
+        (false, PayBasis::Net) => value / UOP_NET_SHARE,
+        (true, PayBasis::Gross) => value / VAT,
+        _ => value,
+    };
+    (converted, false)
+}
+
+/// The bottom of the range this many times above what the user expects usually means a higher
+/// level than the title says (e.g. 18 000 for someone expecting 7 000).
+const FAR_ABOVE: f64 = 2.0;
+
+/// Pay far above the expectation is not a reason to reject, but worth a look before applying.
+fn salary_far_above(f: &Facts, text: &Text, c: &Criteria, out: &mut Out) {
+    let Some(bottom) = f.salary_min else { return };
+    if f.salary_currency.as_deref().unwrap_or("PLN") != "PLN" {
+        return;
+    }
+    let offer = monthly(bottom, f.salary_period.unwrap_or(SalaryPeriod::Month));
+    let mut kinds = field_contracts(f);
+    if kinds.is_empty() {
+        kinds = contracts_in(&text.padded);
+    }
+    if kinds.is_empty() {
+        kinds = vec![Contract::Uop, Contract::B2b];
+    }
+    let mut checked = false;
+    for kind in kinds {
+        let b2b = kind == Contract::B2b;
+        let rule = if b2b { &c.salary_b2b } else { &c.salary_uop };
+        let Some(reference) = rule.expected.or(rule.min) else { continue };
+        checked = true;
+        if offer < FAR_ABOVE * in_offer_terms(reference, rule, b2b).0 {
+            return;
+        }
+    }
+    if checked {
+        out.unsure("salary_far_above", None);
     }
 }
 
@@ -944,6 +1048,70 @@ mod tests {
     }
 
     #[test]
+    fn lead_and_leader_titles_are_senior() {
+        let c = Criteria { levels: vec![Level::Junior, Level::Mid], ..Default::default() };
+        for title in ["Team Leader PHP", "Tech Lead (K/M)", "Principal Engineer", "Head of Development", "Staff Engineer"] {
+            assert_eq!(codes(&offer(title, None, Remote::Yes, ""), &c), vec!["level_mismatch"], "{title}");
+        }
+    }
+
+    fn profile_with(description: &str, criteria: Criteria) -> Profile {
+        Profile { id: 1, name: "Plan".into(), description: description.into(), position: 0, description_prev: None, criteria }
+    }
+
+    #[test]
+    fn level_named_only_in_the_description_sends_other_levels_to_review() {
+        assert_eq!(levels_in_description("Umowa o pracę, poziom mid (regular) - nie senior."), vec![Level::Mid]);
+        assert_eq!(levels_in_description("Junior albo mid, bez stanowisk lead."), vec![Level::Junior, Level::Mid]);
+        assert_eq!(levels_in_description("Staż pracy 12 lat, jestem ekspertem od WordPressa."), vec![]);
+
+        let p = profile_with("Szukam pracy jako programista, poziom mid (regular) - nie senior.", Criteria::default());
+        let senior = offer("Senior FullStack Developer (K/M)", Some("Gdańsk"), Remote::Unknown, "");
+        let e = evaluate_profile(&senior, &p);
+        assert_eq!(e.result, FilterResult::Unsure);
+        assert_eq!(e.reasons.last().unwrap().code, "level_not_in_profile");
+        // No level in the offer, or a fitting one - nothing to add.
+        assert_eq!(evaluate_profile(&offer("Backend Developer", None, Remote::Yes, ""), &p).result, FilterResult::Pass);
+        assert_eq!(evaluate_profile(&offer("Regular PHP Developer", None, Remote::Yes, ""), &p).result, FilterResult::Pass);
+        // The level criterion set in the profile decides on its own (and rejects for sure).
+        let set = profile_with(&p.description, Criteria { levels: vec![Level::Mid], ..Default::default() });
+        assert_eq!(evaluate_profile(&senior, &set).result, FilterResult::Fail);
+        // Level switched to "score only" - the description is not used either.
+        let mut soft = Criteria::default();
+        soft.hard.level = false;
+        assert_eq!(evaluate_profile(&senior, &profile_with(&p.description, soft)).result, FilterResult::Pass);
+    }
+
+    #[test]
+    fn salary_far_above_the_expectation_is_worth_a_look() {
+        let mut c = Criteria::default();
+        c.salary_uop.min = Some(7000);
+        let mut f = offer("Remote Backend Developer (Kotlin)", None, Remote::Yes, "");
+        f.salary_min = Some(18000);
+        f.salary_max = Some(23000);
+        assert_eq!(codes(&f, &c), vec!["salary_far_above"]);
+        // Up to twice the expectation is fine.
+        f.salary_min = Some(12000);
+        assert_eq!(result(&f, &c), FilterResult::Pass);
+        // The expected amount, when given, is the reference.
+        c.salary_uop.expected = Some(5000);
+        assert_eq!(codes(&f, &c), vec!["salary_far_above"]);
+        // B2B expectation counts for a B2B offer: 18 000 net is not far above 15 000.
+        let mut b = Criteria::default();
+        b.salary_uop.min = Some(7000);
+        b.salary_b2b.min = Some(15000);
+        f.salary_min = Some(18000);
+        assert_eq!(result(&f, &b), FilterResult::Pass);
+        f.contract = Some("B2B".into());
+        assert_eq!(result(&f, &b), FilterResult::Pass);
+        // Only the top of the range given ("up to") - no sign of the level.
+        f.contract = None;
+        f.salary_min = None;
+        f.salary_max = Some(30000);
+        assert_eq!(result(&f, &c), FilterResult::Pass);
+    }
+
+    #[test]
     fn language_from_the_field_or_enough_text() {
         let c = Criteria { languages: vec![OfferLanguage::Pl], ..Default::default() };
         let pl = offer("Dev", None, Remote::Yes, LONG_PL);
@@ -1059,6 +1227,14 @@ mod tests {
         e.reject_off_topic();
         assert_eq!(e.result, FilterResult::Fail);
         assert_eq!(e.reasons.iter().filter(|r| r.code.starts_with("keyword_")).map(|r| r.code.as_str()).collect::<Vec<_>>(), vec!["keyword_none"]);
+    }
+
+    #[test]
+    fn polish_keywords_find_english_offers() {
+        let words = vec!["programista".to_string(), "tester".to_string()];
+        assert!(mentions_any("Senior PHP Developer", "Remote, worldwide.", &words));
+        assert!(mentions_any("QA Engineer", "", &words));
+        assert!(!mentions_any("Account Executive", "Sales role.", &words));
     }
 
     #[test]

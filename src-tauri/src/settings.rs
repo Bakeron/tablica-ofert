@@ -25,6 +25,8 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("theme", Rule::One(&["system", "dark", "light"])),
     ("language", Rule::One(&["system", "pl", "en"])),
     ("motion", Rule::One(&["system", "full", "reduced"])),
+    // Size of all text (PC: also Ctrl + / Ctrl - / Ctrl 0).
+    ("text_size", Rule::One(&["normal", "small", "large", "xlarge"])),
     ("sound", Rule::One(&["off", "on"])),
     // "First steps" shown at the first start until finished or skipped.
     ("onboarding", Rule::One(&["pending", "done"])),

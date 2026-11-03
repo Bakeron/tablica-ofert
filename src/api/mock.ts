@@ -28,10 +28,16 @@ export function createMockApi(): Api {
   let aiCalls = 3;
 
   /** Made-up AI reading of a demo offer (profile index -> profile id). */
-  function demoAi(ai: (typeof DEMO_OFFERS)[number]["ai"], score: number | null, source: "ai" | "keywords" | null): OfferAi {
+  function demoAi(
+    ai: (typeof DEMO_OFFERS)[number]["ai"],
+    score: number | null,
+    source: "ai" | "keywords" | null,
+    extra: Pick<OfferAi, "descriptionTranslated" | "offerLanguage"> = { descriptionTranslated: null, offerLanguage: null },
+  ): OfferAi {
     if (ai) {
       return {
         ...ai,
+        ...extra,
         scores: ai.scores.map((s) => ({
           profileId: s.profile + 1,
           profileName: DEMO_PROFILES[s.profile].name,
@@ -49,6 +55,7 @@ export function createMockApi(): Api {
       flags: [],
       remoteQuote: null,
       error: null,
+      ...extra,
       scores:
         score === null
           ? []
@@ -89,6 +96,8 @@ export function createMockApi(): Api {
       addedAt: added,
       nextEvent: demo.event ? hoursAgo(-demo.event.inHours) : null,
       nextEventKind: demo.event ? demo.event.kind : null,
+      translationLang: demo.translation ? "pl" : null,
+      titleTranslated: demo.translation?.title ?? null,
       url: input.url ?? null,
       contract: input.contract ?? null,
       level: input.level ?? null,
@@ -105,7 +114,10 @@ export function createMockApi(): Api {
       })),
       history: stage === "new" ? [{ stage, at: added }] : [{ stage: "new", at: added }, { stage, at: added }],
       filters: [],
-      ai: demoAi(demo.ai, demo.score ?? null, demo.scoreSource ?? null),
+      ai: demoAi(demo.ai, demo.score ?? null, demo.scoreSource ?? null, {
+        descriptionTranslated: demo.translation?.description ?? null,
+        offerLanguage: input.language === "pl" || input.language === "en" ? input.language : null,
+      }),
       agenda: demo.event
         ? {
             events: [{ id: nextEventId++, offerId: id, kind: demo.event.kind, at: hoursAgo(-demo.event.inHours), minutes: 60, note: demo.event.note }],
@@ -210,6 +222,8 @@ export function createMockApi(): Api {
         addedAt: at,
         nextEvent: null,
         nextEventKind: null,
+        translationLang: null,
+        titleTranslated: null,
         url: input.url ?? null,
         contract: input.contract ?? null,
         level: input.level ?? null,

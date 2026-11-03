@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Api } from "../api";
-import type { Profile, Settings } from "../api/types";
+import { TEXT_SIZES, type Profile, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { CloseButton, Modal } from "./Modal";
 import { AboutPart } from "./AboutPart";
@@ -10,10 +10,12 @@ import { SourcesSettings } from "./SourcesSettings";
 import { SyncSettings } from "./SyncSettings";
 import { isPhone } from "../lib/platform";
 
-const OPTIONS: { key: "language" | "theme" | "motion"; label: TextKey; values: string[] }[] = [
+const OPTIONS: { key: "language" | "theme" | "motion" | "text_size"; label: TextKey; values: readonly string[]; hint?: TextKey }[] = [
   { key: "language", label: "settings.language", values: ["system", "pl", "en"] },
   { key: "theme", label: "settings.theme", values: ["system", "dark", "light"] },
   { key: "motion", label: "settings.motion", values: ["system", "full", "reduced"] },
+  // Keyboard shortcuts only on the PC.
+  { key: "text_size", label: "settings.text_size", values: TEXT_SIZES, hint: isPhone() ? undefined : "settings.text_size.keys" },
 ];
 
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
@@ -141,6 +143,7 @@ function SettingsBody({
                 </span>
               </label>
             ))}
+            {option.hint && <p className="hint">{t(option.hint)}</p>}
           </fieldset>
         ))}
 

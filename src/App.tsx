@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Api } from "./api";
 import {
   DEFAULT_SETTINGS,
+  TEXT_SIZES,
   isAppError,
   type AppStatus,
   type AssistKind,
@@ -37,9 +38,12 @@ import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18
 import { playClack, playGong } from "./lib/sound";
 import { isPhone, scheduleReminders } from "./lib/platform";
 import { isWebUrl } from "./lib/format";
+import { useFitLevels } from "./lib/fit";
 import { viewFor } from "./lib/profile";
 
 const VIEWS: View[] = ["board", "review", "rejected", "declined", "trash"];
+
+const TOPBAR_FIT = ["", "is-compact", "is-stacked", "is-stacked is-compact"];
 
 export default function App() {
   const [api, setApi] = useState<Api | null>(null);
@@ -91,6 +95,9 @@ export default function App() {
     return () => window.removeEventListener("tablica-share", onShare);
   }, []);
   const cardHeading = useRef<HTMLHeadingElement>(null);
+  const topbarRef = useRef<HTMLElement>(null);
+  // One line in the top bar: full size, a bit tighter, then the tabs in their own row.
+  useFitLevels(topbarRef, TOPBAR_FIT);
 
   // ----- language, theme, motion -----
   const lang = resolveLang(settings.language, navigator.language);
@@ -109,6 +116,7 @@ export default function App() {
       root.dataset.motion =
         settings.motion === "system" ? (motionMedia.matches ? "reduced" : "full") : settings.motion;
       root.lang = lang;
+      root.dataset.textSize = settings.text_size;
     };
     apply();
     media.addEventListener("change", apply);
@@ -117,7 +125,7 @@ export default function App() {
       media.removeEventListener("change", apply);
       motionMedia.removeEventListener("change", apply);
     };
-  }, [settings.theme, settings.motion, lang]);
+  }, [settings.theme, settings.motion, settings.text_size, lang]);
 
   // ----- errors -----
   const fail = useCallback(
@@ -199,6 +207,28 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toast]);
+
+  // Ctrl + / Ctrl - / Ctrl 0 - the text size setting (instead of zooming the window, so it is
+  // remembered and the same as the choice in Settings → Look).
+  const textSize = settings.text_size;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const step =
+        e.key === "+" || e.key === "=" || e.code === "NumpadAdd" ? 1
+        : e.key === "-" || e.code === "NumpadSubtract" ? -1
+        : e.key === "0" || e.code === "Numpad0" ? 0
+        : null;
+      if (step === null) return;
+      e.preventDefault();
+      const now = TEXT_SIZES.indexOf(textSize);
+      const next = step === 0 ? "normal" : TEXT_SIZES[Math.min(TEXT_SIZES.length - 1, Math.max(0, now + step))];
+      if (next !== textSize) changeSettingRef.current("text_size", next);
+      setToast({ text: t("settings.text_size.changed", { value: t(`settings.text_size.${next}`) }) });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [textSize, t]);
 
   // Offers collected in the background (at start and every few hours) - refresh the board.
   const reloadRef = useRef(reload);
@@ -543,6 +573,9 @@ export default function App() {
     });
   }
 
+  const changeSettingRef = useRef(changeSetting);
+  changeSettingRef.current = changeSetting;
+
   function openLink(url: string) {
     if (!isWebUrl(url)) return;
     if ("__TAURI_INTERNALS__" in window) {
@@ -558,7 +591,7 @@ export default function App() {
     <I18nContext.Provider value={i18n}>
       <ToastContext.Provider value={toastValue}>
       <div className="app">
-        <header className="topbar">
+        <header className="topbar" ref={topbarRef}>
           <div className="brand">
             <span className="brand-mark">
               <IconBriefcase />
@@ -566,7 +599,7 @@ export default function App() {
             <h1>{t("app.name")}</h1>
           </div>
           <Clock label={t("app.clock")} lang={lang} />
-          <nav className="tabs" aria-label={t("tabs.label")}>
+          <nav className="tabs" aria-label={t("tabs.label")} data-own-row>
             {VIEWS.map((v) => (
               <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
                 {t(`tabs.${v}`)}
