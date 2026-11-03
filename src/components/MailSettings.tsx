@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { Api } from "../api";
 import { describeError, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { IconArrowOut, IconWarning } from "./Icons";
+import { IconArrowOut, IconHome, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
@@ -26,17 +26,18 @@ const PORTALS: { name: string; url: string; search: (q: string) => string }[] = 
 /** At most this many search buttons per portal - one alert per keyword is the usual setup. */
 const MAX_SEARCHES = 8;
 
-/** Keywords of all profiles, without repeats (case does not matter), in profile order. */
-function searchWords(profiles: Profile[]): string[] {
+/** The words for alerts (comma separated) or, when empty, the keywords of all profiles -
+ *  without repeats (case does not matter). The same rule as `settings::search_words` in Rust. */
+function searchWords(setting: string, profiles: Profile[]): string[] {
+  const own = setting.split(",");
+  const list = own.some((w) => w.trim()) ? own : profiles.flatMap((p) => p.criteria.keywords);
   const seen = new Set<string>();
   const words: string[] = [];
-  for (const p of profiles) {
-    for (const raw of p.criteria.keywords) {
-      const k = raw.trim();
-      if (!k || seen.has(k.toLowerCase())) continue;
-      seen.add(k.toLowerCase());
-      words.push(k);
-    }
+  for (const raw of list) {
+    const k = raw.trim();
+    if (!k || seen.has(k.toLowerCase())) continue;
+    seen.add(k.toLowerCase());
+    words.push(k);
   }
   return words.slice(0, MAX_SEARCHES);
 }
@@ -75,7 +76,7 @@ export function MailSettings({
   // The result stays under the button - the app's error bar is behind this window.
   const howtoRef = useRef<HTMLDetailsElement>(null);
   const isGmail = settings.mail_host.trim().toLowerCase() === GMAIL_HOST;
-  const words = searchWords(profiles);
+  const words = searchWords(settings.search_words, profiles);
   const [result, setResult] = useState<{ ok: boolean; text: string; detail?: string; appPassword?: boolean } | null>(null);
 
   async function test() {
@@ -161,6 +162,14 @@ export function MailSettings({
       </div>
       {status && <SourceState s={status} lang={lang} />}
 
+      <TextSetting
+        label={t("mail.searchWords")}
+        hint={t("mail.searchWordsHint")}
+        value={settings.search_words}
+        placeholder={t("mail.searchWordsPlaceholder")}
+        onSave={(v) => onChange("search_words", v)}
+      />
+
       <details className="howto" ref={howtoRef}>
         <summary>{t("mail.howto")}</summary>
         <p>{t("mail.howtoText")}</p>
@@ -171,9 +180,21 @@ export function MailSettings({
             <li key={p.name}>
               <span>{p.name}</span>
               <div className="portal-links">
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(p.url)}>
-                  {t(words.length > 0 ? "mail.openHome" : "mail.openPortal")} <IconArrowOut />
-                </button>
+                {words.length > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small btn-icon-only"
+                    aria-label={t("mail.openHome", { portal: p.name })}
+                    title={t("mail.openHome", { portal: p.name })}
+                    onClick={() => onOpenLink(p.url)}
+                  >
+                    <IconHome />
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(p.url)}>
+                    {t("mail.openPortal")} <IconArrowOut />
+                  </button>
+                )}
                 {words.map((w) => (
                   <button
                     key={w}
@@ -198,9 +219,12 @@ export function MailSettings({
   function AlertData({ email, profiles }: { email: string; profiles: Profile[] }) {
     const rows: { label: string; value: string }[] = [];
     if (email) rows.push({ label: t("mail.data.email"), value: email });
+    // Own words for alerts replace the profile keywords here too.
+    const ownWords = settings.search_words.trim() !== "";
+    if (ownWords) rows.push({ label: t("mail.searchWords"), value: words.join(", ") });
     for (const p of profiles) {
       const c = p.criteria;
-      if (c.keywords.length) rows.push({ label: `${p.name} - ${t("mail.data.keywords")}`, value: c.keywords.join(", ") });
+      if (!ownWords && c.keywords.length) rows.push({ label: `${p.name} - ${t("mail.data.keywords")}`, value: c.keywords.join(", ") });
       if (c.cities.length) rows.push({ label: `${p.name} - ${t("mail.data.city")}`, value: c.cities.map((x) => x.name).join(", ") });
       if (c.workModes.length) rows.push({ label: `${p.name} - ${t("mail.data.mode")}`, value: c.workModes.map((m) => t(WORK_MODE_KEYS[m] ?? "remote.unknown")).join(", ") });
     }

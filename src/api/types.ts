@@ -337,6 +337,8 @@ export interface Settings {
   mail_host: string;
   mail_port: string;
   mail_user: string;
+  /** Words for alerts on the portals and the Adzuna / Jooble searches, comma separated; empty = profile keywords. */
+  search_words: string;
   ai_provider: AiProvider;
   /** Empty = the provider's default model. */
   ai_model: string;
@@ -375,6 +377,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mail_host: "imap.gmail.com",
   mail_port: "993",
   mail_user: "",
+  search_words: "",
   ai_provider: "none",
   ai_model: "",
   ai_daily_limit: "200",

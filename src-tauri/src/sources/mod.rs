@@ -138,13 +138,15 @@ struct LastRun {
 /// One search per keyword. Profiles take turns (first keyword of every profile, then the
 /// second...), so a run cut by the limits still covers every profile; repeats are skipped.
 /// A profile that accepts remote work searches the whole country; one without remote work
-/// searches around its first city.
-pub fn plan(profiles: &[Profile]) -> Vec<Query> {
+/// searches around its first city. `words` (the "search_words" setting) replace the keywords
+/// of every profile when set - the keywords then only score the offers.
+pub fn plan(profiles: &[Profile], words: &[String]) -> Vec<Query> {
     let mut out: Vec<Query> = Vec::new();
     for round in 0..8 {
         for p in profiles {
             let c = &p.criteria;
-            let Some(keyword) = c.keywords.iter().map(|k| k.trim()).filter(|k| !k.is_empty()).nth(round) else {
+            let list = if words.is_empty() { &c.keywords } else { words };
+            let Some(keyword) = list.iter().map(|k| k.trim()).filter(|k| !k.is_empty()).nth(round) else {
                 continue;
             };
             let remote_ok = c.work_modes.is_empty() || c.work_modes.contains(&Remote::Yes);
@@ -318,6 +320,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
     let now = OffsetDateTime::now_utc();
     let mut report = FetchReport::default();
     let on = |key: &str| snap.settings.get(key).is_some_and(|v| v == "on");
+    let search_words = settings::search_words(snap.settings.get("search_words").map_or("", String::as_str));
     let client = net::client()?;
 
     // Adzuna
@@ -326,7 +329,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         let limits = adzuna_limits(every);
         let last = snap.runs.get(adzuna::SOURCE).cloned().unwrap_or_default();
         let mut run = SourceRun { source: adzuna::SOURCE.into(), ..Default::default() };
-        let queries = plan(&snap.profiles);
+        let queries = plan(&snap.profiles, &search_words);
         let keys = adzuna::keys()?;
         let left = (limits.calls_a_day - snap.adzuna_calls).max(0) as usize;
         if snap.profiles.is_empty() {
@@ -473,7 +476,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         let limits = JOOBLE_LIMITS;
         let last = snap.runs.get(jooble::SOURCE).cloned().unwrap_or_default();
         let mut run = SourceRun { source: jooble::SOURCE.into(), ..Default::default() };
-        let queries = plan(&snap.profiles);
+        let queries = plan(&snap.profiles, &search_words);
         let key = jooble::key()?;
         if snap.profiles.is_empty() {
             run.skipped = Some("no_profiles");
@@ -619,22 +622,27 @@ mod tests {
             profile(&[], vec![], None),
             profile(&["react", "typescript"], vec![], Some("Gdańsk")),
         ];
-        let q = plan(&p);
+        let q = plan(&p, &[]);
         let words: Vec<(&str, Option<&str>)> = q.iter().map(|q| (q.keyword.as_str(), q.city.as_deref())).collect();
         // Profiles take turns; the same word with the same place is searched once.
         assert_eq!(words, vec![("react", None), ("księgowa", Some("Opole")), ("typescript", None)]);
         assert_eq!(q[1].radius_km, 30);
+        // Words for alerts replace the keywords; each profile keeps its own place.
+        let w = vec!["WordPress".to_string(), "WordPress AI".to_string()];
+        let q = plan(&p, &w);
+        let words: Vec<(&str, Option<&str>)> = q.iter().map(|q| (q.keyword.as_str(), q.city.as_deref())).collect();
+        assert_eq!(words, vec![("WordPress", None), ("WordPress", Some("Opole")), ("WordPress AI", None), ("WordPress AI", Some("Opole"))]);
     }
 
     #[test]
     fn runs_take_turns_through_the_keywords() {
         let p = vec![profile(&["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"], vec![], None)];
-        let q = plan(&p);
+        let q = plan(&p, &[]);
         let words = |calls_today| for_this_run(&q, 6, calls_today).iter().map(|q| q.keyword.clone()).collect::<Vec<_>>();
         assert_eq!(words(0), vec!["a1", "a2", "a3", "a4", "a5", "a6"]);
         assert_eq!(words(6), vec!["a7", "a8", "a1", "a2", "a3", "a4"]);
         // Never the same search twice in one run.
-        let short = plan(&[profile(&["x", "y"], vec![], None)]);
+        let short = plan(&[profile(&["x", "y"], vec![], None)], &[]);
         assert_eq!(for_this_run(&short, 6, 5).len(), 2);
         assert!(for_this_run(&[], 6, 0).is_empty());
     }

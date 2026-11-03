@@ -51,6 +51,12 @@ export const IconTrash = () => (
   </Icon>
 );
 
+export const IconHome = () => (
+  <Icon>
+    <path d="M3 11 12 4l9 7M5 9.5V20h5v-6h4v6h5V9.5" />
+  </Icon>
+);
+
 export const IconArrowOut = () => (
   <Icon>
     <path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" />

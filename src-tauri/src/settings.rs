@@ -56,6 +56,9 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("mail_host", Rule::Text { max: 253, default: "imap.gmail.com", check: is_host }),
     ("mail_port", Rule::Text { max: 5, default: "993", check: is_port }),
     ("mail_user", Rule::Text { max: 254, default: "", check: is_mail_login }),
+    // Words for alerts on the portals and for the Adzuna / Jooble searches, comma separated;
+    // empty = the keywords of the profiles.
+    ("search_words", Rule::Text { max: 254, default: "", check: is_search_words }),
     // AI: provider, model (empty = the provider's default), daily cap of calls.
     ("ai_provider", Rule::One(&["none", "gemini", "groq", "openrouter", "ollama", "anthropic", "openai"])),
     ("ai_model", Rule::Text { max: 120, default: "", check: is_model }),
@@ -102,6 +105,22 @@ fn is_port(v: &str) -> bool {
 /// A login is usually the e-mail address; empty = not set yet.
 fn is_mail_login(v: &str) -> bool {
     v.chars().all(|c| !c.is_control() && !c.is_whitespace())
+}
+
+fn is_search_words(v: &str) -> bool {
+    v.chars().all(|c| !c.is_control())
+}
+
+/// The "search_words" setting as a list: trimmed, without repeats (case does not matter), at most 8.
+pub fn search_words(value: &str) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    for w in value.split(',').map(str::trim).filter(|w| !w.is_empty()) {
+        if !words.iter().any(|o| o.to_lowercase() == w.to_lowercase()) {
+            words.push(w.to_string());
+        }
+    }
+    words.truncate(8);
+    words
 }
 
 fn default_of(rule: &Rule) -> &'static str {
@@ -196,5 +215,16 @@ mod tests {
         assert!(set(&conn, "mail_user", "a b@example.com").is_err());
         set(&conn, "mail_user", "oferty@example.com").unwrap();
         assert!(set(&conn, "adzuna_country", "xx").is_err());
+        assert!(set(&conn, "search_words", "WordPress
+AI").is_err());
+        set(&conn, "search_words", " WordPress, WordPress AI ").unwrap();
+        assert_eq!(get(&conn, "search_words").unwrap(), "WordPress, WordPress AI");
+    }
+
+    #[test]
+    fn search_words_are_a_clean_list() {
+        assert_eq!(search_words(" WordPress, wordpress ,, Programista AI,"), vec!["WordPress", "Programista AI"]);
+        assert!(search_words("").is_empty());
+        assert_eq!(search_words("a,b,c,d,e,f,g,h,i,j").len(), 8);
     }
 }

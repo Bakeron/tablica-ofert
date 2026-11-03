@@ -2467,6 +2467,18 @@ fieldset.plain {
   overflow-wrap: anywhere;
 }
 
+.copy-list dd .btn {
+  flex-shrink: 0;
+}
+
+/* Narrow window: the label above its value - side by side a long value had no room left. */
+@container app (max-width: 37.5rem) {
+  .copy-list > div {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}
+
 /* ---------- AI ---------- */
 
 .ai-providers {
@@ -2949,4 +2961,15 @@ fieldset.plain {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+/* A button with only a pictogram (its name is in aria-label and title). */
+.btn-icon-only {
+  padding-inline: 0.45rem;
+}
+
+/* The arrow as tall as the capital letters - at full size its square sticks out below the word. */
+.portal-links .btn:not(.btn-icon-only) svg {
+  width: 1.05em;
+  height: 1.05em;
 }
