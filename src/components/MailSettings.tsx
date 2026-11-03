@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Api } from "../api";
 import { describeError, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
@@ -8,17 +8,41 @@ import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
 import { SourceHead, SourceState } from "./SourcesSettings";
 
-/** Portals that send alerts by e-mail - where to set them up (always by a person, once). */
-const PORTALS: { name: string; url: string }[] = [
-  { name: "Just Join IT", url: "https://justjoin.it" },
-  { name: "No Fluff Jobs", url: "https://nofluffjobs.com/pl" },
-  { name: "Pracuj.pl", url: "https://www.pracuj.pl" },
-  { name: "theprotocol.it", url: "https://theprotocol.it" },
-  { name: "Rocket Jobs", url: "https://rocketjobs.pl" },
-  { name: "Bulldogjob", url: "https://bulldogjob.pl" },
-  { name: "LinkedIn", url: "https://www.linkedin.com/jobs" },
-  { name: "Indeed", url: "https://pl.indeed.com" },
+/** Portals that send alerts by e-mail - where to set them up (always by a person, once).
+ *  `search` builds a ready search for one keyword in the whole country (checked 3.11.2026);
+ *  the city, work mode and salary are checked later by the app's own filter. */
+const PORTALS: { name: string; url: string; search: (q: string) => string }[] = [
+  { name: "Just Join IT", url: "https://justjoin.it", search: (q) => `https://justjoin.it/job-offers/all-locations?keyword=${q}` },
+  { name: "No Fluff Jobs", url: "https://nofluffjobs.com/pl", search: (q) => `https://nofluffjobs.com/pl/?criteria=keyword%3D${q}` },
+  { name: "Pracuj.pl", url: "https://www.pracuj.pl", search: (q) => `https://www.pracuj.pl/praca/${q};kw` },
+  { name: "theprotocol.it", url: "https://theprotocol.it", search: (q) => `https://theprotocol.it/praca?kw=${q}` },
+  { name: "Rocket Jobs", url: "https://rocketjobs.pl", search: (q) => `https://rocketjobs.pl/oferty-pracy/wszystkie-lokalizacje?keyword=${q}` },
+  { name: "Bulldogjob", url: "https://bulldogjob.pl", search: (q) => `https://bulldogjob.pl/companies/jobs/s/skills,${q}` },
+  // geoId = Poland; the name alone may be resolved by the visitor's country.
+  { name: "LinkedIn", url: "https://www.linkedin.com/jobs", search: (q) => `https://www.linkedin.com/jobs/search/?keywords=${q}&location=Poland&geoId=105072130` },
+  { name: "Indeed", url: "https://pl.indeed.com", search: (q) => `https://pl.indeed.com/jobs?q=${q}` },
 ];
+
+/** At most this many search buttons per portal - one alert per keyword is the usual setup. */
+const MAX_SEARCHES = 8;
+
+/** Keywords of all profiles, without repeats (case does not matter), in profile order. */
+function searchWords(profiles: Profile[]): string[] {
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const p of profiles) {
+    for (const raw of p.criteria.keywords) {
+      const k = raw.trim();
+      if (!k || seen.has(k.toLowerCase())) continue;
+      seen.add(k.toLowerCase());
+      words.push(k);
+    }
+  }
+  return words.slice(0, MAX_SEARCHES);
+}
+
+const GMAIL_HOST = "imap.gmail.com";
+const APP_PASSWORDS_URL = "https://myaccount.google.com/apppasswords";
 
 const WORK_MODE_KEYS: Record<string, TextKey> = { yes: "remote.yes", hybrid: "remote.hybrid", no: "remote.no" };
 
@@ -49,7 +73,10 @@ export function MailSettings({
   const { t, lang } = useI18n();
   const [testing, setTesting] = useState(false);
   // The result stays under the button - the app's error bar is behind this window.
-  const [result, setResult] = useState<{ ok: boolean; text: string; detail?: string } | null>(null);
+  const howtoRef = useRef<HTMLDetailsElement>(null);
+  const isGmail = settings.mail_host.trim().toLowerCase() === GMAIL_HOST;
+  const words = searchWords(profiles);
+  const [result, setResult] = useState<{ ok: boolean; text: string; detail?: string; appPassword?: boolean } | null>(null);
 
   async function test() {
     setTesting(true);
@@ -57,9 +84,13 @@ export function MailSettings({
     try {
       const count = await api.mailTest();
       setResult({ ok: true, text: t("mail.testOk", { count }) });
+      // The mailbox works - setting up alerts on the portals is what comes next.
+      if (howtoRef.current) howtoRef.current.open = true;
     } catch (e) {
       const { key, detail } = describeError(e);
-      setResult({ ok: false, text: t(key as TextKey), detail });
+      // Gmail refuses the normal Google password over IMAP - only an app password works.
+      const gmail = key === "error.auth" && isGmail;
+      setResult({ ok: false, text: t(gmail ? "mail.gmailAuth" : (key as TextKey)), detail, appPassword: gmail });
     } finally {
       setTesting(false);
     }
@@ -86,7 +117,7 @@ export function MailSettings({
           type="email"
           onSave={(v) => onChange("mail_user", v)}
         />
-        <SecretField name="mail-password" label={t("mail.password")} hint={hints["mail-password"]} onSave={onSaveSecret} onDelete={onDeleteSecret} onReveal={api.revealSecret} />
+        <SecretField name="mail-password" label={t(isGmail ? "mail.passwordGmail" : "mail.password")} hint={hints["mail-password"]} onSave={onSaveSecret} onDelete={onDeleteSecret} onReveal={api.revealSecret} />
         <TextSetting label={t("mail.host")} value={settings.mail_host} onSave={(v) => onChange("mail_host", v)} />
         <TextSetting label={t("mail.port")} value={settings.mail_port} inputMode="numeric" onSave={(v) => onChange("mail_port", v)} />
       </div>
@@ -100,12 +131,23 @@ export function MailSettings({
         <Reveal show={result !== null}>
           {result &&
             (result.ok ? (
-              <p className="source-state">{result.text}</p>
+              <p className="source-state">
+                {result.text}
+                <br />
+                {t("mail.nextStep")}
+              </p>
             ) : (
               <div className="source-warn">
                 <IconWarning />
                 <div>
                   {result.text}
+                  {result.appPassword && (
+                    <div>
+                      <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(APP_PASSWORDS_URL)}>
+                        {t("mail.gmailAuthOpen")} <IconArrowOut />
+                      </button>
+                    </div>
+                  )}
                   {result.detail && (
                     <details>
                       <summary>{t("error.details")}</summary>
@@ -119,17 +161,31 @@ export function MailSettings({
       </div>
       {status && <SourceState s={status} lang={lang} />}
 
-      <details className="howto">
+      <details className="howto" ref={howtoRef}>
         <summary>{t("mail.howto")}</summary>
         <p>{t("mail.howtoText")}</p>
         <AlertData email={settings.mail_user} profiles={profiles} />
-        <ul className="portal-list">
+        {words.length > 0 && <p className="hint">{t("mail.searchHint")}</p>}
+        <ul className={words.length > 0 ? "portal-list portal-list-search" : "portal-list"}>
           {PORTALS.map((p) => (
             <li key={p.name}>
               <span>{p.name}</span>
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(p.url)}>
-                {t("mail.openPortal")} <IconArrowOut />
-              </button>
+              <div className="portal-links">
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(p.url)}>
+                  {t(words.length > 0 ? "mail.openHome" : "mail.openPortal")} <IconArrowOut />
+                </button>
+                {words.map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    aria-label={t("mail.searchLabel", { portal: p.name, word: w })}
+                    onClick={() => onOpenLink(p.search(encodeURIComponent(w)))}
+                  >
+                    {w} <IconArrowOut />
+                  </button>
+                ))}
+              </div>
             </li>
           ))}
         </ul>

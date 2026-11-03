@@ -2935,3 +2935,18 @@ fieldset.plain {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Portals with ready searches: one portal per row, its buttons wrap. */
+.portal-list-search {
+  grid-template-columns: 1fr;
+}
+
+.portal-list-search li {
+  flex-wrap: wrap;
+}
+
+.portal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
