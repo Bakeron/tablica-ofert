@@ -45,7 +45,8 @@ describe("profile helpers", () => {
     expect(viewFor({ ...base, filterResult: "unsure" })).toBe("review");
     expect(viewFor({ ...base, filterResult: "fail" })).toBe("rejected");
     expect(viewFor({ ...base, filterResult: "fail", interest: "high" })).toBe("board");
-    expect(viewFor({ ...base, filterResult: "fail", interest: "no" })).toBe("rejected");
+    expect(viewFor({ ...base, filterResult: "fail", interest: "no" })).toBe("declined");
+    expect(viewFor({ ...base, filterResult: "pass", interest: "no", favorite: true })).toBe("declined");
     expect(viewFor({ ...base, filterResult: "unsure", stage: "applied" })).toBe("board");
   });
 

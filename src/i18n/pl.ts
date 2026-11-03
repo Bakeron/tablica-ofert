@@ -5,6 +5,7 @@ export const pl = {
 
   "tabs.board": "Oferty",
   "tabs.rejected": "Odrzucone przez filtr",
+  "tabs.declined": "Nie dla mnie",
   "tabs.trash": "Kosz",
   "tabs.label": "Widok",
 
@@ -15,6 +16,7 @@ export const pl = {
   "board.count.other": "{count} oferty",
   "board.empty.board": "Na tablicy nie ma jeszcze ofert. Dodaj pierwszą przyciskiem „Dodaj ofertę”.",
   "board.empty.rejected": "Filtr niczego nie odrzucił.",
+  "board.empty.declined": "Tu trafiają oferty, przy których wybierzesz „Nie”. Wrócą na swoje miejsce, gdy zmienisz zdanie.",
   "board.empty.trash": "Kosz jest pusty.",
   "board.keys": "Strzałki - poprzednia / następna · 1 / 2 / 3 - zainteresowanie · Del - do kosza",
   "board.closed": "Zakończone - odrzucone, wycofane i nieaktualne ({count})",
@@ -165,7 +167,7 @@ export const pl = {
 
   "tabs.review": "Do sprawdzenia",
   "board.empty.review": "Nie ma ofert do sprawdzenia.",
-  "board.movedToBoard": "Przeniesiono do zakładki „Oferty”",
+  "board.movedTo": "Przeniesiono do zakładki „{tab}”",
 
   "profiles.label": "Profile",
   "profiles.all": "Wszystkie profile",

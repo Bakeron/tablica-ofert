@@ -5,7 +5,7 @@
 
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
 import type { AiStatus, Criteria, OfferAi } from "./types";
-import { bestResult, isKept } from "../lib/profile";
+import { bestResult, viewFor } from "../lib/profile";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type Settings, type SourceStatus, type View } from "./types";
 
@@ -143,8 +143,7 @@ export function createMockApi(): Api {
   function inView(o: OfferDetail, view: View): boolean {
     if (view === "trash") return o.deletedAt !== null;
     if (o.deletedAt) return false;
-    if (view === "board") return o.filterResult === "pass" || isKept(o);
-    return !isKept(o) && o.filterResult === (view === "review" ? "unsure" : "fail");
+    return viewFor(o) === view;
   }
 
   const rowsOf = (view: View, profile: number | null) =>
@@ -162,6 +161,7 @@ export function createMockApi(): Api {
         board: rowsOf("board", profile).length,
         review: rowsOf("review", profile).length,
         rejected: rowsOf("rejected", profile).length,
+        declined: rowsOf("declined", profile).length,
         trash: rowsOf("trash", profile).length,
         hidden: 0,
       };

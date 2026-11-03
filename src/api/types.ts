@@ -17,7 +17,7 @@ export type Interest = "high" | "maybe" | "no";
 export type Remote = "yes" | "hybrid" | "no" | "unknown";
 export type SalaryPeriod = "month" | "hour";
 export type FilterResult = "pass" | "fail" | "unsure";
-export type View = "board" | "review" | "rejected" | "trash";
+export type View = "board" | "review" | "rejected" | "declined" | "trash";
 export type Contract = "uop" | "b2b" | "mandate";
 export type Level = "junior" | "mid" | "senior";
 export type OfferLanguage = "pl" | "en";
@@ -104,6 +104,8 @@ export interface ViewCounts {
   board: number;
   review: number;
   rejected: number;
+  /** Offers marked "no" - out of every other tab until the interest changes. */
+  declined: number;
   trash: number;
   /** Offers on the board hidden by "hide offers scored below X". */
   hidden: number;

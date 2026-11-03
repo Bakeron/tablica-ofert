@@ -71,8 +71,9 @@ export function isKept(o: Pick<OfferRow, "stage" | "favorite" | "interest">): bo
   return o.stage !== "new" || o.favorite || o.interest === "high" || o.interest === "maybe";
 }
 
-/** Tab an offer lands in, for its filter result. */
+/** Tab an offer lands in, for its filter result ("no" wins over everything, as in Rust). */
 export function viewFor(o: Pick<OfferRow, "stage" | "favorite" | "interest" | "filterResult">) {
+  if (o.interest === "no") return "declined" as const;
   if (isKept(o) || o.filterResult === "pass") return "board" as const;
   return o.filterResult === "unsure" ? ("review" as const) : ("rejected" as const);
 }

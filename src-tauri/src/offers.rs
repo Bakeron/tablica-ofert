@@ -259,6 +259,10 @@ const NEXT_EVENT: &str = "(SELECT e.at || '|' || e.kind FROM events e WHERE e.of
 /// The user already acted on these offers - they stay on the board whatever the filter says.
 const KEPT: &str = "(o.stage != 'new' OR o.favorite = 1 OR COALESCE(o.interest, '') IN ('high', 'maybe'))";
 
+/// The user said "no" - the offer leaves every other tab for "Not for me" (not the trash: it stays
+/// in the database, so fetching it again only merges).
+const DECLINED: &str = "(COALESCE(o.interest, '') = 'no')";
+
 /// Filter result and reasons: for one profile (`?1`), or the best over all profiles.
 fn filter_sql(profile: Option<i64>) -> (&'static str, &'static str) {
     match profile {
@@ -327,9 +331,10 @@ fn low(threshold: i64) -> String {
 fn view_condition(view: View, result: &str, hide: Option<i64>) -> String {
     let hidden = hide.map(|t| format!(" AND NOT {}", low(t))).unwrap_or_default();
     match view {
-        View::Board => format!("o.deleted_at IS NULL AND ({result} = 'pass' OR {KEPT}){hidden}"),
-        View::Review => format!("o.deleted_at IS NULL AND {result} = 'unsure' AND NOT {KEPT}"),
-        View::Rejected => format!("o.deleted_at IS NULL AND {result} = 'fail' AND NOT {KEPT}"),
+        View::Board => format!("o.deleted_at IS NULL AND NOT {DECLINED} AND ({result} = 'pass' OR {KEPT}){hidden}"),
+        View::Review => format!("o.deleted_at IS NULL AND NOT {DECLINED} AND {result} = 'unsure' AND NOT {KEPT}"),
+        View::Rejected => format!("o.deleted_at IS NULL AND NOT {DECLINED} AND {result} = 'fail' AND NOT {KEPT}"),
+        View::Declined => format!("o.deleted_at IS NULL AND {DECLINED}"),
         View::Trash => "o.deleted_at IS NOT NULL".to_string(),
     }
 }
@@ -362,15 +367,23 @@ pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> 
         None => "0".into(),
     };
     let sql = format!(
-        "SELECT {}, {}, {}, {}, {} FROM offers o",
+        "SELECT {}, {}, {}, {}, {}, {} FROM offers o",
         count(view_condition(View::Board, result, hide)),
         count(view_condition(View::Review, result, None)),
         count(view_condition(View::Rejected, result, None)),
+        count(view_condition(View::Declined, result, None)),
         count(view_condition(View::Trash, result, None)),
         hidden
     );
     let read = |r: &Row| {
-        Ok(ViewCounts { board: r.get(0)?, review: r.get(1)?, rejected: r.get(2)?, trash: r.get(3)?, hidden: r.get(4)? })
+        Ok(ViewCounts {
+            board: r.get(0)?,
+            review: r.get(1)?,
+            rejected: r.get(2)?,
+            declined: r.get(3)?,
+            trash: r.get(4)?,
+            hidden: r.get(5)?,
+        })
     };
     Ok(match profile {
         Some(p) => conn.query_row(&sql, [p], read)?,
@@ -650,6 +663,31 @@ mod tests {
         let stages: Vec<Stage> = d.history.iter().map(|e| e.stage).collect();
         assert_eq!(stages, vec![Stage::New, Stage::Applied, Stage::HrInterview]);
         assert_eq!(d.row.stage, Stage::HrInterview);
+    }
+
+    #[test]
+    fn no_moves_the_offer_to_its_own_tab_and_back() {
+        let mut conn = test_db();
+        let id = id_of(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap());
+        let tabs = |conn: &Connection| {
+            let c = counts(conn, None).unwrap();
+            (c.board, c.review, c.rejected, c.declined, c.trash)
+        };
+        assert_eq!(tabs(&conn), (1, 0, 0, 0, 0));
+
+        // "No" wins even over a favorite or a stage - the offer is in "Not for me" only.
+        set_interest(&conn, id, Some(Interest::No)).unwrap();
+        set_favorite(&conn, id, true).unwrap();
+        assert_eq!(tabs(&conn), (0, 0, 0, 1, 0));
+        assert_eq!(list(&conn, View::Declined, None, false).unwrap()[0].id, id);
+
+        // Fetched again: merged into the same offer, which stays where the user put it.
+        assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Merged { id });
+        assert_eq!(tabs(&conn), (0, 0, 0, 1, 0));
+
+        // Changing the interest brings it back.
+        set_interest(&conn, id, None).unwrap();
+        assert_eq!(tabs(&conn), (1, 0, 0, 0, 0));
     }
 
     #[test]

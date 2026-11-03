@@ -39,7 +39,7 @@ import { isPhone, scheduleReminders } from "./lib/platform";
 import { isWebUrl } from "./lib/format";
 import { viewFor } from "./lib/profile";
 
-const VIEWS: View[] = ["board", "review", "rejected", "trash"];
+const VIEWS: View[] = ["board", "review", "rejected", "declined", "trash"];
 
 export default function App() {
   const [api, setApi] = useState<Api | null>(null);
@@ -402,16 +402,26 @@ export default function App() {
   const onSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "offer" || key === "place" ? "asc" : "desc" }));
 
-  const setInterest = (id: number, interest: Interest | null) => run(() => api!.setInterest(id, interest));
+  /** Interest changes can move the offer to another tab ("very" from "To check" to "Offers", "no" to
+   *  "Not for me" and back) - then the next row gets selected and a message names the new tab. */
+  const setInterest = (id: number, next: Interest | null) => {
+    const row = rows.find((r) => r.id === id);
+    const target = row ? viewFor({ ...row, interest: next }) : view;
+    if (!row || target === view) return run(() => api!.setInterest(id, next));
+    const before = row.interest;
+    selectNeighbour(id);
+    return run(
+      () => api!.setInterest(id, next),
+      () =>
+        setToast({
+          text: t("board.movedTo", { tab: t(`tabs.${target}`) }),
+          undo: () => run(() => api!.setInterest(id, before)),
+        }),
+    );
+  };
   const toggleInterest = (id: number, interest: Interest) => {
     const row = rows.find((r) => r.id === id);
-    const next = row?.interest === interest ? null : interest;
-    // "Very" / "maybe" in "To check" or "Rejected": the offer moves to the board - keep the keyboard flow.
-    if ((view === "review" || view === "rejected") && (next === "high" || next === "maybe")) {
-      selectNeighbour(id);
-      return run(() => api!.setInterest(id, next), () => setToast({ text: t("board.movedToBoard") }));
-    }
-    return setInterest(id, next);
+    return setInterest(id, row?.interest === interest ? null : interest);
   };
 
   /** The row is about to leave the list: the next one (or the previous one at the end) becomes selected. */
@@ -560,7 +570,7 @@ export default function App() {
             {VIEWS.map((v) => (
               <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
                 {t(`tabs.${v}`)}
-                {counts && (v === "review" || v === "rejected") && counts[v] > 0 && (
+                {counts && (v === "review" || v === "rejected" || v === "declined") && counts[v] > 0 && (
                   <span className="tab-count">{counts[v]}</span>
                 )}
               </button>

@@ -54,7 +54,7 @@ word_enum!(SalaryPeriod { Month => "month", Hour => "hour" });
 
 word_enum!(FilterResult { Pass => "pass", Fail => "fail", Unsure => "unsure" });
 
-word_enum!(View { Board => "board", Review => "review", Rejected => "rejected", Trash => "trash" });
+word_enum!(View { Board => "board", Review => "review", Rejected => "rejected", Declined => "declined", Trash => "trash" });
 
 word_enum!(Contract { Uop => "uop", B2b => "b2b", Mandate => "mandate" });
 
@@ -200,6 +200,8 @@ pub struct ViewCounts {
     pub board: i64,
     pub review: i64,
     pub rejected: i64,
+    /// Offers the user marked "no" - out of every other tab until the interest changes.
+    pub declined: i64,
     pub trash: i64,
     /// Offers on the board hidden by "hide offers scored below X".
     pub hidden: i64,

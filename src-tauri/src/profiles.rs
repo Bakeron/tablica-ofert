@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(ids(&offers::list(&conn, View::Review, Some(b), false).unwrap()), vec!["Zdalna"]);
         assert_eq!(ids(&offers::list(&conn, View::Rejected, Some(b), false).unwrap()), vec!["Bez informacji", "Biuro Kraków"]);
         let counts = offers::counts(&conn, None).unwrap();
-        assert_eq!(counts, ViewCounts { board: 2, review: 1, rejected: 1, trash: 0, hidden: 0 });
+        assert_eq!(counts, ViewCounts { board: 2, review: 1, rejected: 1, declined: 0, trash: 0, hidden: 0 });
 
         // Reasons travel with the rows and the card.
         let rejected = offers::list(&conn, View::Rejected, Some(a), false).unwrap();
@@ -543,9 +543,13 @@ mod tests {
         offers::set_interest(&conn, id, Some(Interest::High)).unwrap();
         assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 0);
         assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
+        // "No" takes it out of every tab into "Not for me", whatever the filter or the stage says.
         offers::set_interest(&conn, id, Some(Interest::No)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 0);
+        assert_eq!(offers::list(&conn, View::Declined, None, false).unwrap().len(), 1);
         offers::set_stage(&mut conn, id, Stage::Applied).unwrap();
+        assert_eq!(offers::list(&conn, View::Declined, None, false).unwrap().len(), 1);
+        offers::set_interest(&conn, id, None).unwrap();
         assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
     }
 

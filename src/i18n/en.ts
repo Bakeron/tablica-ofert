@@ -6,6 +6,7 @@ export const en: Record<keyof typeof pl, string> = {
 
   "tabs.board": "Offers",
   "tabs.rejected": "Rejected by filter",
+  "tabs.declined": "Not for me",
   "tabs.trash": "Trash",
   "tabs.label": "View",
 
@@ -15,6 +16,7 @@ export const en: Record<keyof typeof pl, string> = {
   "board.count.many": "{count} offers",
   "board.count.other": "{count} offers",
   "board.empty.board": "No offers on the board yet. Add the first one with “Add offer”.",
+  "board.empty.declined": "Offers you mark “No” land here. They go back to their place when you change your mind.",
   "board.empty.rejected": "The filter has not rejected anything.",
   "board.empty.trash": "The trash is empty.",
   "board.keys": "Arrows - previous / next · 1 / 2 / 3 - interest · Del - to trash",
@@ -165,7 +167,7 @@ export const en: Record<keyof typeof pl, string> = {
 
   "tabs.review": "To check",
   "board.empty.review": "Nothing to check.",
-  "board.movedToBoard": "Moved to “Offers”",
+  "board.movedTo": "Moved to “{tab}”",
 
   "profiles.label": "Profiles",
   "profiles.all": "All profiles",
