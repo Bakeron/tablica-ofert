@@ -17,6 +17,7 @@ export const pl = {
   "board.empty.rejected": "Filtr niczego nie odrzucił.",
   "board.empty.trash": "Kosz jest pusty.",
   "board.keys": "Strzałki - poprzednia / następna · 1 / 2 / 3 - zainteresowanie · Del - do kosza",
+  "board.closed": "Zakończone - odrzucone, wycofane i nieaktualne ({count})",
 
   "col.added": "Dodano",
   "col.offer": "Stanowisko · firma",

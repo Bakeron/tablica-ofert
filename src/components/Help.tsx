@@ -1,25 +1,63 @@
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { useI18n } from "../i18n";
 
-/** Small "?" next to a harder field - one or two sentences of explanation on click. */
+/**
+ * Small "?" next to a harder field - a tooltip on hover or keyboard focus (tap on a phone).
+ * The tooltip is a popover in the top layer, anchored to the button with CSS anchor positioning,
+ * so it never moves the layout and is not cut off by the scrolling window.
+ */
 export function Help({ text }: { text: string }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   const id = useId();
+  const btn = useRef<HTMLButtonElement>(null);
+  const tip = useRef<HTMLSpanElement>(null);
+  // Clicked (or tapped) open - stays until clicked again or focus leaves.
+  const pinned = useRef(false);
+
+  useLayoutEffect(() => {
+    const anchor = `--help-${id.replace(/[^a-zA-Z0-9]/g, "")}`;
+    btn.current?.style.setProperty("anchor-name", anchor);
+    tip.current?.style.setProperty("position-anchor", anchor);
+  }, [id]);
+
+  const isOpen = () => tip.current?.matches(":popover-open") ?? false;
+  const show = () => {
+    if (!isOpen()) tip.current?.showPopover();
+  };
+  const hide = (force = false) => {
+    if (force) pinned.current = false;
+    if (!pinned.current && isOpen()) tip.current?.hidePopover();
+  };
+
   return (
     <span className="help">
       <button
+        ref={btn}
         type="button"
         className="help-btn"
-        aria-expanded={open}
-        aria-controls={id}
         aria-label={t("profile.help")}
-        title={t("profile.help")}
-        onClick={() => setOpen((o) => !o)}
+        aria-describedby={id}
+        onMouseEnter={show}
+        onMouseLeave={() => hide()}
+        onFocus={show}
+        onBlur={() => hide(true)}
+        onClick={() => {
+          pinned.current = !pinned.current;
+          if (pinned.current) show();
+          else hide(true);
+        }}
+        onKeyDown={(e) => {
+          // Esc closes the tooltip first, not the whole window.
+          if (e.key === "Escape" && isOpen()) {
+            e.preventDefault();
+            e.stopPropagation();
+            hide(true);
+          }
+        }}
       >
         ?
       </button>
-      <span id={id} className="help-text" hidden={!open}>
+      <span ref={tip} id={id} role="tooltip" popover="manual" className="help-tip">
         {text}
       </span>
     </span>

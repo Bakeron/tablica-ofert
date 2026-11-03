@@ -18,6 +18,7 @@ export const en: Record<keyof typeof pl, string> = {
   "board.empty.rejected": "The filter has not rejected anything.",
   "board.empty.trash": "The trash is empty.",
   "board.keys": "Arrows - previous / next · 1 / 2 / 3 - interest · Del - to trash",
+  "board.closed": "Finished - rejected, withdrawn and no longer listed ({count})",
 
   "col.added": "Added",
   "col.offer": "Position · company",

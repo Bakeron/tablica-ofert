@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { Fragment, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
@@ -23,6 +23,12 @@ const COLUMNS: { key: SortKey; label: TextKey; className: string }[] = [
   { key: "status", label: "col.status", className: "c-status" },
 ];
 
+/** Finished offers - rejected, withdrawn or no longer listed. Kept for later, greyed out at the bottom. */
+export function isClosed(o: OfferRow): boolean {
+  return o.stage === "rejected" || o.stage === "withdrawn" || o.expired;
+}
+
+/** Sorted by the chosen column, with finished offers always in their own group below the rest. */
 export function sortRows(rows: OfferRow[], sort: Sort): OfferRow[] {
   const value = (o: OfferRow): string | number => {
     switch (sort.key) {
@@ -42,6 +48,8 @@ export function sortRows(rows: OfferRow[], sort: Sort): OfferRow[] {
   };
   const factor = sort.dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
+    const group = Number(isClosed(a)) - Number(isClosed(b));
+    if (group) return group;
     const va = value(a);
     const vb = value(b);
     const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
@@ -66,6 +74,8 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
   const touch = useRef<{ id: number; x: number; y: number } | null>(null);
   const { t, lang } = useI18n();
   const index = rows.findIndex((r) => r.id === selectedId);
+  const firstClosed = rows.findIndex(isClosed);
+  const closedCount = firstClosed < 0 ? 0 : rows.length - firstClosed;
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.target !== e.currentTarget || rows.length === 0) return;
@@ -100,7 +110,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
         className="board"
         role="grid"
         aria-label={t("board.label")}
-        aria-rowcount={rows.length + 1}
+        aria-rowcount={rows.length + 1 + (closedCount > 0 ? 1 : 0)}
         aria-activedescendant={selectedId !== null ? `offer-${selectedId}` : undefined}
         tabIndex={0}
         onKeyDown={onKeyDown}
@@ -128,16 +138,28 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
           </tr>
         </thead>
         <tbody>
-          {rows.map((o) => {
+          {rows.map((o, i) => {
             const fresh = freshIds.has(o.id);
             const selected = o.id === selectedId;
             const sourceNames = o.sources.map((s) => sourceLabel(s, t));
             return (
+              <Fragment key={o.id}>
+              {i === firstClosed && (
+                <tr className="board-group">
+                  <th colSpan={COLUMNS.length} scope="colgroup">
+                    {t("board.closed", { count: closedCount })}
+                  </th>
+                </tr>
+              )}
               <tr
-                key={o.id}
                 id={`offer-${o.id}`}
                 aria-selected={selected}
-                className={[selected && "is-selected", o.interest === "no" && "is-dim", o.expired && "is-expired"]
+                className={[
+                  selected && "is-selected",
+                  o.interest === "no" && "is-dim",
+                  o.expired && "is-expired",
+                  i >= firstClosed && firstClosed >= 0 && "is-closed",
+                ]
                   .filter(Boolean)
                   .join(" ")}
                 onClick={() => {
@@ -204,6 +226,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   <StatusTag offer={o} fresh={fresh} />
                 </td>
               </tr>
+              </Fragment>
             );
           })}
         </tbody>
