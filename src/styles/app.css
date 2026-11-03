@@ -116,6 +116,16 @@ textarea {
   outline-offset: 2px;
 }
 
+/* The focus ring is there at rest, only invisible, so it fades in instead of popping up
+   (outline-color is in the shared transition below). Not in high contrast mode - there
+   a transparent outline is painted in a system colour. */
+@media not (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):not(:focus-visible) {
+    outline: 3px solid transparent;
+    outline-offset: 2px;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -372,6 +382,7 @@ textarea {
   height: 2.5rem;
   border: 2px solid currentColor;
   border-radius: 3px;
+  padding: 0;
   background: transparent;
   cursor: pointer;
   font-size: 1.4rem;
@@ -409,6 +420,10 @@ textarea {
 .board tbody tr,
 .howto summary,
 a,
+button,
+summary,
+[tabindex],
+.adzuna-credit img,
 input,
 select,
 textarea {
@@ -416,6 +431,9 @@ textarea {
     background-color 150ms ease-out,
     color 150ms ease-out,
     border-color 150ms ease-out,
+    outline-color 150ms ease-out,
+    text-decoration-color 150ms ease-out,
+    text-decoration-thickness 150ms ease-out,
     filter 150ms ease-out,
     box-shadow 150ms ease-out,
     transform 120ms ease-out;
@@ -516,7 +534,10 @@ textarea {
 .settings-part > *,
 .crit-group > *,
 .agenda-list > li,
+.agenda > .btn,
+.source > *,
 .source-state > *,
+.ai-quote-line,
 .fade {
   animation: appear var(--t-reveal) ease-out;
 }
@@ -669,6 +690,7 @@ details[open]::details-content {
   font-size: 1.1rem;
 }
 
+.board,
 .board:focus-visible {
   outline-offset: -3px;
 }
@@ -700,6 +722,8 @@ details[open]::details-content {
   cursor: pointer;
 }
 
+/* Offset set at rest too, so the fading ring does not jump. */
+.board th .sort,
 .board th .sort:focus-visible {
   outline-offset: -3px;
 }
@@ -1030,6 +1054,7 @@ details[open]::details-content {
   line-height: 1.1;
 }
 
+.pass-title,
 .pass-title:focus-visible {
   outline-offset: 4px;
 }
@@ -1315,6 +1340,22 @@ textarea {
   border-radius: 3px;
   background: var(--field);
   color: var(--paper-ink);
+}
+
+/* One height for every one-line field, so a select, a date and a text box in a row line up. */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
+select {
+  block-size: 2.55rem;
+}
+
+input::-webkit-datetime-edit {
+  padding-block: 0;
+}
+
+select:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
 }
 
 textarea {
@@ -1854,6 +1895,13 @@ fieldset.plain {
   outline-offset: 2px;
 }
 
+@media not (forced-colors: active) {
+  .chip input:not(:focus-visible) + span {
+    outline: 3px solid transparent;
+    outline-offset: 2px;
+  }
+}
+
 .hard-switch {
   display: inline-flex;
   flex-wrap: wrap;
@@ -2239,6 +2287,7 @@ fieldset.plain {
   padding: 0.25rem 0.45rem;
   border-radius: 3px;
   background: #fff;
+  outline: 2px solid transparent;
 }
 
 @media (hover: hover) {
@@ -2248,7 +2297,7 @@ fieldset.plain {
   }
 
   .adzuna-credit:hover img {
-    outline: 2px solid var(--signal);
+    outline-color: var(--signal);
   }
 }
 
