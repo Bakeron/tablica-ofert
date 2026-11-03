@@ -27,7 +27,7 @@ import { AssistDialog } from "./components/AiDialogs";
 import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
-import { ToastContext, ToastView, type Toast } from "./components/Toast";
+import { ErrorContext, ToastContext, ToastView, type Toast } from "./components/Toast";
 import { IconBriefcase, IconDownload, IconGear, IconPlus, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
@@ -194,6 +194,8 @@ export default function App() {
   const closeToast = useCallback(() => setToast(null), []);
   const [toastHeld, setToastHeld] = useState(false);
   const toastValue = useMemo(() => ({ toast, close: closeToast, hold: setToastHeld }), [toast, closeToast]);
+  // The same error is shown inside an open window (the bar below is behind it).
+  const errorValue = useMemo(() => ({ error, close: () => setError(null) }), [error]);
   useEffect(() => {
     if (!toast || toastHeld) return;
     const timer = window.setTimeout(() => setToast(null), 10_000);
@@ -595,6 +597,7 @@ export default function App() {
   return (
     <I18nContext.Provider value={i18n}>
       <ToastContext.Provider value={toastValue}>
+      <ErrorContext.Provider value={errorValue}>
       <div className="app">
         <header className="topbar" ref={topbarRef}>
           <div className="brand">
@@ -838,6 +841,7 @@ export default function App() {
           onClose={() => setConfirm(null)}
         />
       </div>
+      </ErrorContext.Provider>
       </ToastContext.Provider>
     </I18nContext.Provider>
   );

@@ -4,6 +4,27 @@ import { useI18n, type TextKey } from "../i18n";
 import { IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 
+/** The small "Show password" / "Show key" link beside the label of every password or key field. */
+export function ShowToggle({
+  controls,
+  shown,
+  onToggle,
+  kind = "password",
+}: {
+  controls: string;
+  shown: boolean;
+  onToggle: (shown: boolean) => void;
+  kind?: "password" | "key";
+}) {
+  const { t } = useI18n();
+  const key = kind === "password" ? (shown ? "secret.hidePassword" : "secret.showPassword") : shown ? "secret.hideKey" : "secret.showKey";
+  return (
+    <button type="button" className="link-btn" aria-controls={controls} aria-pressed={shown} onClick={() => onToggle(!shown)}>
+      {t(key)}
+    </button>
+  );
+}
+
 /** A key or password: typed once, saved straight to the credential store, shown only as "••••1234". */
 export function SecretField({
   name,
@@ -54,9 +75,7 @@ export function SecretField({
           <span>{label}</span>
         </label>
         {/* Shows only what is being typed - a saved value never leaves the credential store. */}
-        <button type="button" className="link-btn" aria-controls={id} aria-pressed={shown} onClick={() => setShown(!shown)}>
-          {t(isPassword ? (shown ? "secret.hidePassword" : "secret.showPassword") : shown ? "secret.hideKey" : "secret.showKey")}
-        </button>
+        <ShowToggle controls={id} shown={shown} onToggle={setShown} kind={isPassword ? "password" : "key"} />
       </div>
       <div className="secret-row">
         <input

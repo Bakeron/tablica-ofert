@@ -102,7 +102,7 @@ export function Modal({
         </div>
       )}
       {mounted && content}
-      {mounted && <ToastView />}
+      {mounted && <ToastView inWindow />}
     </dialog>
   );
 }

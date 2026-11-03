@@ -1311,7 +1311,8 @@ details[open]::details-content {
 }
 
 .field > span:first-child,
-.field > label:first-child {
+.field > label:first-child,
+.field > .secret-head > label {
   font-weight: 700;
   font-size: 0.92rem;
 }
@@ -2068,6 +2069,18 @@ fieldset.plain {
   left: 1rem;
   bottom: 1rem;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* An error inside an open window - in the corner above the message, never behind the window. */
+.window-error {
+  max-width: min(40rem, calc(100vw - 2rem));
+  max-height: 40vh;
+  overflow: auto;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
 }
 
 .toast {

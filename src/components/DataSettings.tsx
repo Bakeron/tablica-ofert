@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import type { Api } from "../api";
 import { useI18n } from "../i18n";
 import { IconWarning } from "./Icons";
+import { ShowToggle } from "./SecretField";
 
 /** Settings → "Data": a copy with a password, loading a copy, CSV export, deleting everything. */
 export function DataSettings({
@@ -23,6 +24,8 @@ export function DataSettings({
   const [savePass, setSavePass] = useState("");
   const [savePass2, setSavePass2] = useState("");
   const [loadPass, setLoadPass] = useState("");
+  const id = useId();
+  const [shown, setShown] = useState({ save: false, save2: false, load: false });
   const [busy, setBusy] = useState(false);
   const mismatch = savePass2 !== "" && savePass !== savePass2;
 
@@ -82,15 +85,21 @@ export function DataSettings({
         <h3 id="copy-title" className="source-title">{t("data.saveTitle")}</h3>
         <p>{t("data.saveText")}</p>
         <div className="mail-grid">
-          <label className="field">
-            <span>{t("data.password")}</span>
-            <input type="password" autoComplete="new-password" minLength={8} maxLength={200} value={savePass} onChange={(e) => setSavePass(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>{t("data.password2")}</span>
-            <input type="password" autoComplete="new-password" maxLength={200} value={savePass2} aria-invalid={mismatch} onChange={(e) => setSavePass2(e.target.value)} />
+          <div className="field">
+            <div className="secret-head">
+              <label htmlFor={`${id}-save`}>{t("data.password")}</label>
+              <ShowToggle controls={`${id}-save`} shown={shown.save} onToggle={(v) => setShown({ ...shown, save: v })} />
+            </div>
+            <input id={`${id}-save`} type={shown.save ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={200} value={savePass} onChange={(e) => setSavePass(e.target.value)} />
+          </div>
+          <div className="field">
+            <div className="secret-head">
+              <label htmlFor={`${id}-save2`}>{t("data.password2")}</label>
+              <ShowToggle controls={`${id}-save2`} shown={shown.save2} onToggle={(v) => setShown({ ...shown, save2: v })} />
+            </div>
+            <input id={`${id}-save2`} type={shown.save2 ? "text" : "password"} autoComplete="new-password" maxLength={200} value={savePass2} aria-invalid={mismatch} onChange={(e) => setSavePass2(e.target.value)} />
             {mismatch && <span className="source-warn">{t("data.mismatch")}</span>}
-          </label>
+          </div>
         </div>
         <p className="hint">{t("data.passwordHint")}</p>
         <div>
@@ -103,10 +112,13 @@ export function DataSettings({
       <form className="source" onSubmit={load} aria-labelledby="load-title">
         <h3 id="load-title" className="source-title">{t("data.loadTitle")}</h3>
         <p>{t("data.loadText")}</p>
-        <label className="field field-inline">
-          <span>{t("data.password")}</span>
-          <input type="password" autoComplete="off" maxLength={200} value={loadPass} onChange={(e) => setLoadPass(e.target.value)} />
-        </label>
+        <div className="field field-inline">
+          <div className="secret-head">
+            <label htmlFor={`${id}-load`}>{t("data.password")}</label>
+            <ShowToggle controls={`${id}-load`} shown={shown.load} onToggle={(v) => setShown({ ...shown, load: v })} />
+          </div>
+          <input id={`${id}-load`} type={shown.load ? "text" : "password"} autoComplete="off" maxLength={200} value={loadPass} onChange={(e) => setLoadPass(e.target.value)} />
+        </div>
         <div>
           <button type="submit" className="btn btn-ghost btn-small" disabled={busy || !loadPass}>
             {t("data.load")}
