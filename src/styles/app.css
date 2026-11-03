@@ -621,7 +621,8 @@ details[open]::details-content {
   flex: 1;
 }
 
-.alert code {
+.alert code,
+.source-warn code {
   display: block;
   margin-top: 0.3rem;
   font-size: 0.85rem;

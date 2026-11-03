@@ -8,16 +8,21 @@ export interface Toast {
   undo?: () => void;
 }
 
-export const ToastContext = createContext<{ toast: Toast | null; close: () => void }>({ toast: null, close: () => {} });
+export const ToastContext = createContext<{ toast: Toast | null; close: () => void; hold: (held: boolean) => void }>({
+  toast: null,
+  close: () => {},
+  hold: () => {},
+});
 
 /**
- * The message on a small black board. It stays until closed ("X" or Esc). Rendered on the
+ * The message on a small black board. It goes by itself after 10 s (held while the pointer
+ * is over it or focus is inside), or earlier with "X" or Esc. Rendered on the
  * page and inside every open window - an open window makes everything behind it inert,
  * so only the copy in the topmost window can be read and clicked.
  */
 export function ToastView() {
   const { t } = useI18n();
-  const { toast: live, close } = useContext(ToastContext);
+  const { toast: live, close, hold } = useContext(ToastContext);
   const { mounted, leaving } = usePresence(live !== null);
   const toast = useLastShown(live !== null, live);
   return (
@@ -29,6 +34,12 @@ export function ToastView() {
           className="toast fade"
           data-leaving={leaving || undefined}
           inert={leaving || undefined}
+          onMouseEnter={() => hold(true)}
+          onMouseLeave={() => hold(false)}
+          onFocus={() => hold(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) hold(false);
+          }}
           onKeyDown={(e) => {
             if (e.key !== "Escape") return;
             // Only the message closes, not the window around it.

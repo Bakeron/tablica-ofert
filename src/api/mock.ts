@@ -327,7 +327,8 @@ export function createMockApi(): Api {
       return { ...secrets };
     },
     async setSecret(name, value) {
-      const v = value.trim();
+      // Like `secrets::set_user`: an app password copied in four groups loses the spaces.
+      const v = (name === "mail-password" ? value.split(" ").join("") : value).trim();
       if (!v || /\s/.test(v)) throw { code: "invalid", detail: "the key has a wrong format" };
       secrets[name] = v.length > 8 ? `••••${v.slice(-4)}` : "••••";
     },

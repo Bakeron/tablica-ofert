@@ -210,7 +210,6 @@ export function SourcesSettings({
         onSaveSecret={saveSecret}
         onDeleteSecret={deleteSecret}
         onOpenLink={onOpenLink}
-        onError={onError}
         onToast={onToast}
       />
     </div>

@@ -3,7 +3,7 @@ import { createApi, type Api } from "./api";
 import {
   DEFAULT_SETTINGS,
   TEXT_SIZES,
-  isAppError,
+  describeError,
   type AppStatus,
   type AssistKind,
   type Captured,
@@ -130,13 +130,8 @@ export default function App() {
   // ----- errors -----
   const fail = useCallback(
     (e: unknown) => {
-      if (isAppError(e)) {
-        const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy"];
-        const key = (known.includes(e.code) ? `error.${e.code}` : "error.generic") as TextKey;
-        setError({ text: t(key), detail: e.detail });
-      } else {
-        setError({ text: t("error.generic"), detail: String(e) });
-      }
+      const { key, detail } = describeError(e);
+      setError({ text: t(key as TextKey), detail });
     },
     [t],
   );
@@ -194,9 +189,19 @@ export default function App() {
     };
   }, [api, selectedId, rows, fail]);
 
-  // A message stays until it is closed ("X" or Esc) - a new one takes its place.
+  // A message goes by itself after 10 s, or earlier with "X" or Esc; a new one takes its place.
+  // The pointer over it or focus inside it (e.g. on "Undo") holds it - the time starts again after.
   const closeToast = useCallback(() => setToast(null), []);
-  const toastValue = useMemo(() => ({ toast, close: closeToast }), [toast, closeToast]);
+  const [toastHeld, setToastHeld] = useState(false);
+  const toastValue = useMemo(() => ({ toast, close: closeToast, hold: setToastHeld }), [toast, closeToast]);
+  useEffect(() => {
+    if (!toast || toastHeld) return;
+    const timer = window.setTimeout(() => setToast(null), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [toast, toastHeld]);
+  useEffect(() => {
+    if (!toast) setToastHeld(false);
+  }, [toast]);
   useEffect(() => {
     if (!toast) return;
     const onKey = (e: KeyboardEvent) => {

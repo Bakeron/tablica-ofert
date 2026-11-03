@@ -84,7 +84,17 @@ pub fn clean_value(value: &str) -> AppResult<String> {
 
 /// Saves a secret typed in the settings.
 pub fn set_user(name: &str, value: &str) -> AppResult<()> {
-    set(user_secret(name)?, &clean_value(value)?)
+    set(user_secret(name)?, &clean_value(&without_groups(name, value))?)
+}
+
+/// Google shows an app password in four groups ("abcd efgh ijkl mnop") and the spaces come
+/// along when it is copied - they are not part of the password.
+fn without_groups(name: &str, value: &str) -> String {
+    if name == "mail-password" {
+        value.chars().filter(|c| *c != ' ').collect()
+    } else {
+        value.to_string()
+    }
 }
 
 pub fn delete_user(name: &str) -> AppResult<()> {
@@ -126,6 +136,12 @@ mod tests {
     fn hint_shows_only_the_end() {
         assert_eq!(hint("abcdefghijkl1234"), "••••1234");
         assert_eq!(hint("short"), "••••");
+    }
+
+    #[test]
+    fn app_password_groups_are_joined() {
+        assert_eq!(clean_value(&without_groups("mail-password", "abcd efgh ijkl mnop")).unwrap(), "abcdefghijklmnop");
+        assert!(clean_value(&without_groups("adzuna-app-key","abcd efgh")).is_err());
     }
 
     #[test]

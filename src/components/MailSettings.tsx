@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { Api } from "../api";
-import type { Profile, SecretHints, SecretName, Settings, SourceStatus } from "../api/types";
+import { describeError, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
+import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
 import { SourceHead, SourceState } from "./SourcesSettings";
@@ -32,7 +33,6 @@ export function MailSettings({
   onSaveSecret,
   onDeleteSecret,
   onOpenLink,
-  onError,
   onToast,
 }: {
   api: Api;
@@ -44,19 +44,22 @@ export function MailSettings({
   onSaveSecret: (name: SecretName, value: string) => Promise<boolean>;
   onDeleteSecret: (name: SecretName) => Promise<boolean>;
   onOpenLink: (url: string) => void;
-  onError: (e: unknown) => void;
   onToast: (text: string) => void;
 }) {
   const { t, lang } = useI18n();
   const [testing, setTesting] = useState(false);
+  // The result stays under the button - the app's error bar is behind this window.
+  const [result, setResult] = useState<{ ok: boolean; text: string; detail?: string } | null>(null);
 
   async function test() {
     setTesting(true);
+    setResult(null);
     try {
       const count = await api.mailTest();
-      onToast(t("mail.testOk", { count }));
+      setResult({ ok: true, text: t("mail.testOk", { count }) });
     } catch (e) {
-      onError(e);
+      const { key, detail } = describeError(e);
+      setResult({ ok: false, text: t(key as TextKey), detail });
     } finally {
       setTesting(false);
     }
@@ -92,6 +95,27 @@ export function MailSettings({
         <button type="button" className="btn btn-ghost btn-small" onClick={test} disabled={testing || !status?.ready} aria-busy={testing}>
           {testing ? t("mail.testing") : t("mail.test")}
         </button>
+      </div>
+      <div aria-live="polite">
+        <Reveal show={result !== null}>
+          {result &&
+            (result.ok ? (
+              <p className="source-state">{result.text}</p>
+            ) : (
+              <div className="source-warn">
+                <IconWarning />
+                <div>
+                  {result.text}
+                  {result.detail && (
+                    <details>
+                      <summary>{t("error.details")}</summary>
+                      <code>{result.detail}</code>
+                    </details>
+                  )}
+                </div>
+              </div>
+            ))}
+        </Reveal>
       </div>
       {status && <SourceState s={status} lang={lang} />}
 

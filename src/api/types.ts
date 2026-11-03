@@ -461,6 +461,13 @@ export function isAppError(value: unknown): value is AppError {
   );
 }
 
+/** Any thrown value as a text key (`error.*`) for the person plus the technical detail. */
+export function describeError(e: unknown): { key: string; detail: string } {
+  if (!isAppError(e)) return { key: "error.generic", detail: String(e) };
+  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy"];
+  return { key: known.includes(e.code) ? `error.${e.code}` : "error.generic", detail: e.detail };
+}
+
 /** Fields read from a pasted text or a preview page (mirrors `extract::Draft`). */
 export interface Draft {
   title: string | null;
