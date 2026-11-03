@@ -414,6 +414,10 @@ export interface FetchReport {
   added: number;
   /** New offers that passed the filter of at least one profile. */
   newOnBoard: number;
+  /** New offers in "To check" - the filter could not decide. */
+  newReview: number;
+  /** New offers in "Rejected by filter". */
+  newRejected: number;
 }
 
 /** Error shape sent by the Rust side (`AppError`). */

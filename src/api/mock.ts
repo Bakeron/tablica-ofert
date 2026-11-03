@@ -367,7 +367,7 @@ export function createMockApi(): Api {
         const ready = Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]);
         runs.push({ source: "adzuna" as const, skipped: ready ? null : ("missing_key" as const), added: 0, merged: 0, blocked: 0, invalid: 0, error: null });
       }
-      return { runs, added, newOnBoard: added };
+      return { runs, added, newOnBoard: added, newReview: 0, newRejected: 0 };
     },
     async onFetched() {
       return () => {};

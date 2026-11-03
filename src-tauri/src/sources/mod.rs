@@ -88,6 +88,10 @@ pub struct FetchReport {
     pub added: i64,
     /// New offers that passed the filter of at least one profile (for notifications).
     pub new_on_board: i64,
+    /// New offers in "To check" - the filter could not decide.
+    pub new_review: i64,
+    /// New offers in "Rejected by filter".
+    pub new_rejected: i64,
 }
 
 /// State of a source for the settings.
@@ -215,8 +219,10 @@ fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, repo
         match offers::add(conn, offer) {
             Ok(AddOutcome::Added { id }) => {
                 run.added += 1;
-                if on_board(conn, id)? {
-                    report.new_on_board += 1;
+                match filter_result(conn, id)?.as_deref() {
+                    Some("pass") => report.new_on_board += 1,
+                    Some("fail") => report.new_rejected += 1,
+                    _ => report.new_review += 1,
                 }
             }
             Ok(AddOutcome::Merged { .. }) => run.merged += 1,
@@ -228,11 +234,10 @@ fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, repo
     Ok(())
 }
 
-fn on_board(conn: &Connection, id: i64) -> AppResult<bool> {
+fn filter_result(conn: &Connection, id: i64) -> AppResult<Option<String>> {
     Ok(conn
-        .query_row("SELECT filter_result = 'pass' FROM offers WHERE id = ?1", [id], |r| r.get(0))
-        .optional()?
-        .unwrap_or(false))
+        .query_row("SELECT filter_result FROM offers WHERE id = ?1", [id], |r| r.get(0))
+        .optional()?)
 }
 
 struct Snapshot {
@@ -530,5 +535,6 @@ mod tests {
         save(&mut conn, vec![offer("Dev"), offer("Dev"), offer("  "), offer("QA")], &mut run, &mut report).unwrap();
         assert_eq!((run.added, run.merged, run.invalid), (2, 1, 1));
         assert_eq!(report.new_on_board, 2);
+        assert_eq!((report.new_review, report.new_rejected), (0, 0));
     }
 }

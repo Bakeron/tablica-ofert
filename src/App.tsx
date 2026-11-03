@@ -805,7 +805,9 @@ export default function App() {
 export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Record<string, string | number>) => string): string {
   const failed = report.runs.filter((r) => r.error);
   const parts: string[] = [];
-  if (report.added > 0) parts.push(t("fetch.new", { count: report.added, board: report.newOnBoard }));
+  if (report.added > 0) {
+    parts.push(t("fetch.new", { count: report.added, board: report.newOnBoard, review: report.newReview, rejected: report.newRejected }));
+  }
   if (failed.length > 0) {
     const names = failed.map((r) => t(`source.${r.source}` as TextKey)).join(", ");
     const code = failed[0].error?.code;

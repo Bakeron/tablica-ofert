@@ -303,7 +303,7 @@ export const en: Record<keyof typeof pl, string> = {
   "error.busy": "Fetching is already running - wait until it finishes.",
   "fetch.button": "Fetch offers",
   "fetch.busy": "Fetching…",
-  "fetch.new": "New offers: {count} (on the board: {board})",
+  "fetch.new": "New offers: {count} - in “Offers”: {board}, in “To check”: {review}, rejected by filter: {rejected}",
   "fetch.none": "No new offers",
   "fetch.noSources": "No offer source is turned on - turn one on in the settings (“Offer sources”).",
   "fetch.failed": "Could not fetch from: {list}",

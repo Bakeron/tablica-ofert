@@ -303,7 +303,7 @@ export const pl = {
   "error.busy": "Pobieranie już trwa - poczekaj, aż się skończy.",
   "fetch.button": "Pobierz oferty",
   "fetch.busy": "Pobieram…",
-  "fetch.new": "Nowe oferty: {count} (na tablicy: {board})",
+  "fetch.new": "Nowe oferty: {count} - w „Ofertach”: {board}, w „Do sprawdzenia”: {review}, odrzucone przez filtr: {rejected}",
   "fetch.none": "Brak nowych ofert",
   "fetch.noSources": "Żadne źródło ofert nie jest włączone - włącz je w ustawieniach („Źródła ofert”).",
   "fetch.failed": "Nie udało się pobrać z: {list}",
