@@ -2234,6 +2234,32 @@ fieldset.plain {
   gap: 0.4rem;
 }
 
+/* Label with a small "Show password" link beside it. */
+.secret-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.75rem;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--paper-dim);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .link-btn:hover {
+    color: var(--paper-ink);
+    text-decoration-thickness: 2px;
+  }
+}
+
 .secret-row input {
   flex: 1 1 auto;
   min-width: 0;

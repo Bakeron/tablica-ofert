@@ -1,6 +1,8 @@
 import { useId, useState, type FormEvent } from "react";
-import type { SecretName } from "../api/types";
-import { useI18n } from "../i18n";
+import { describeError, type SecretName } from "../api/types";
+import { useI18n, type TextKey } from "../i18n";
+import { IconWarning } from "./Icons";
+import { Reveal } from "./Reveal";
 
 /** A key or password: typed once, saved straight to the credential store, shown only as "••••1234". */
 export function SecretField({
@@ -21,24 +23,45 @@ export function SecretField({
   const id = useId();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(false);
+  const isPassword = name === "mail-password";
+  // Shown under the field - the app's error bar is behind the settings window.
+  const [error, setError] = useState<string | null>(null);
+
+  async function attempt(action: () => Promise<boolean>): Promise<boolean> {
+    setBusy(true);
+    setError(null);
+    try {
+      return await action();
+    } catch (err) {
+      setError(t(describeError(err).key as TextKey));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!value.trim()) return;
-    setBusy(true);
-    if (await onSave(name, value)) setValue("");
-    setBusy(false);
+    if (await attempt(() => onSave(name, value))) setValue("");
   }
 
   return (
     <form className="secret" onSubmit={save}>
-      <label className="field" htmlFor={id}>
-        <span>{label}</span>
-      </label>
+      <div className="secret-head">
+        <label className="field" htmlFor={id}>
+          <span>{label}</span>
+        </label>
+        {/* Shows only what is being typed - a saved value never leaves the credential store. */}
+        <button type="button" className="link-btn" aria-controls={id} aria-pressed={shown} onClick={() => setShown(!shown)}>
+          {t(isPassword ? (shown ? "secret.hidePassword" : "secret.showPassword") : shown ? "secret.hideKey" : "secret.showKey")}
+        </button>
+      </div>
       <div className="secret-row">
         <input
           id={id}
-          type="password"
+          type={shown ? "text" : "password"}
           autoComplete="off"
           spellCheck={false}
           maxLength={512}
@@ -55,11 +78,7 @@ export function SecretField({
             type="button"
             className="btn btn-ghost btn-small"
             disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              await onDelete(name);
-              setBusy(false);
-            }}
+            onClick={() => attempt(() => onDelete(name))}
           >
             {t("secret.delete")}
           </button>
@@ -68,6 +87,15 @@ export function SecretField({
       <span id={`${id}-state`} className="hint">
         {hint ? t("secret.set", { hint }) : t("secret.notSet")}
       </span>
+      <div aria-live="polite">
+        <Reveal show={error !== null}>
+          {error && (
+            <p className="source-warn">
+              <IconWarning /> {error}
+            </p>
+          )}
+        </Reveal>
+      </div>
     </form>
   );
 }

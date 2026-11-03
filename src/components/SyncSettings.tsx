@@ -152,18 +152,14 @@ export function SyncSettings({
                   name="google-client-secret"
                   label={t("sync.clientSecret")}
                   hint={hints["google-client-secret"]}
+                  // Errors are shown by the field itself, under the input.
                   onSave={async (name, value) => {
-                    try {
-                      await api.setSecret(name, value);
-                      await load();
-                      return true;
-                    } catch (e) {
-                      onError(e);
-                      return false;
-                    }
+                    await api.setSecret(name, value);
+                    await load();
+                    return true;
                   }}
                   onDelete={async (name) => {
-                    await api.deleteSecret(name).catch(onError);
+                    await api.deleteSecret(name);
                     await load();
                     return true;
                   }}

@@ -59,27 +59,19 @@ export function AiSettings({
   const keyName = provider !== "none" && provider !== "ollama" ? (`ai-key-${provider}` as SecretName) : null;
 
   async function saveSecret(name: SecretName, value: string) {
-    try {
-      await api.setSecret(name, value);
-      onToast(t("secret.saved"));
-      await load();
-      return true;
-    } catch (e) {
-      onError(e);
-      return false;
-    }
+    // An error is shown by the field itself, under the input (the app's error bar is behind this window).
+    await api.setSecret(name, value);
+    onToast(t("secret.saved"));
+    await load();
+    return true;
   }
 
   async function deleteSecret(name: SecretName) {
-    try {
-      await api.deleteSecret(name);
-      onToast(t("secret.deleted"));
-      await load();
-      return true;
-    } catch (e) {
-      onError(e);
-      return false;
-    }
+    // An error is shown by the field itself, under the input (the app's error bar is behind this window).
+    await api.deleteSecret(name);
+    onToast(t("secret.deleted"));
+    await load();
+    return true;
   }
 
   async function check() {

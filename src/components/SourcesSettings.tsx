@@ -66,27 +66,19 @@ export function SourcesSettings({
   }, [load, settings.source_adzuna, settings.source_remotive, settings.source_weworkremotely, settings.source_remoteok, settings.source_jooble, settings.source_mail, settings.mail_user, settings.mail_host]);
 
   async function saveSecret(name: SecretName, value: string) {
-    try {
-      await api.setSecret(name, value);
-      onToast(t("secret.saved"));
-      await load();
-      return true;
-    } catch (e) {
-      onError(e);
-      return false;
-    }
+    // An error is shown by the field itself, under the input (the app's error bar is behind this window).
+    await api.setSecret(name, value);
+    onToast(t("secret.saved"));
+    await load();
+    return true;
   }
 
   async function deleteSecret(name: SecretName) {
-    try {
-      await api.deleteSecret(name);
-      onToast(t("secret.deleted"));
-      await load();
-      return true;
-    } catch (e) {
-      onError(e);
-      return false;
-    }
+    // An error is shown by the field itself, under the input (the app's error bar is behind this window).
+    await api.deleteSecret(name);
+    onToast(t("secret.deleted"));
+    await load();
+    return true;
   }
 
   const of = (source: SourceStatus["source"]) => status.find((s) => s.source === source);
