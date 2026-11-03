@@ -7,8 +7,9 @@ $env:ANDROID_NDK_ROOT = $env:NDK_HOME
 # OpenSSL for Android needs a perl with Unix paths: Git's perl + a few pure-perl modules.
 # Relative path (no drive letter): the MSYS shell would turn "/c/..." into "C:/..." and perl
 # splits the list on ":". OpenSSL runs perl in target/<triple>/debug/build/openssl-sys-*/out/openssl-build/build/src.
-New-Item -ItemType Directory -Force "$root/src-tauri/target/perl-mods" | Out-Null
-Copy-Item "$env:LOCALAPPDATA\Programs\perl-mods\*" "$root/src-tauri/target/perl-mods" -Recurse -Force
+$perlMods = Join-Path $PSScriptRoot "..\src-tauri\target\perl-mods"
+New-Item -ItemType Directory -Force $perlMods | Out-Null
+Copy-Item "$env:LOCALAPPDATA\Programs\perl-mods\*" $perlMods -Recurse -Force
 $env:PERL5LIB = "../../../../../../../../perl-mods"
 $env:Path = "$env:USERPROFILE\.cargo\bin;C:\Program Files\Git\usr\bin;$env:LOCALAPPDATA\Programs\make-shim;$env:JAVA_HOME\bin;$env:Path"
 # OpenSSL's makefile runs in a Unix shell - compiler paths with forward slashes only.

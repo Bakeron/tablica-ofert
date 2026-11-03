@@ -79,9 +79,14 @@ Pierwsza kompilacja trwa kilkanaście minut (OpenSSL budowany ze źródeł), kol
 - Aplikacja nigdy sama nie wysyła CV ani zgłoszeń i nie przegląda portali automatem - oferty przychodzą z alertów e-mail, oficjalnych API i z rąk użytkownika (szczegóły i sprawdzone regulaminy w `zalozenia.md` §3).
 - Pełna polityka: [`PRIVACY.md`](PRIVACY.md).
 
-## Jak powstaje - praca z Claude Code
+## Jak powstaje - praca z AI
 
-Autor ustala założenia i podejmuje decyzje (`zalozenia.md` - najpierw pytania i odpowiedzi, potem kod), Claude Code pisze kod, testy i dokumentację i sprawdza wygląd zrzutami ekranu. Audyty (dostępność, wygląd, teksty, testy, zależności, wydanie, portfolio) są w `.claude/skills/`.
+Aplikację piszę z [Claude Code](https://claude.com/claude-code). Podział jest stały:
+
+- **Ja decyduję.** Najpierw założenia (`zalozenia.md` - pytania, odpowiedzi, odrzucone warianty), dopiero potem kod. Każda nowa technologia, źródło ofert czy zmiana wyglądu czeka na moją decyzję; plan pracy i sprawy, które wymagają człowieka (konta, klucze, testy na prawdziwych danych), są w `robota.md`.
+- **AI pisze.** Kod Rust i React, testy, migracje bazy, teksty interfejsu w dwóch językach i dokumentację.
+- **Wszystko jest sprawdzane.** Testy po każdej zmianie (`npm test`, `npm run test:rust` - zmyślone maile, odpowiedzi API i AI, baza na pliku tymczasowym); zrzuty ekranu w obu motywach po każdej zmianie wyglądu; przed nowym źródłem ofert - regulamin i warunki API (`zalozenia.md` §3); okresowe audyty (dostępność i kontrast, teksty, zależności i licencje, bezpieczeństwo danych z zewnątrz), a poprawki z nich trafiają do zwykłych commitów.
+- **Zasady dla AI** są w [`CLAUDE.md`](CLAUDE.md): gdzie co leży, jak uruchamiać, czego nie wolno (np. prywatne dane w repozytorium, zmiana istniejącej migracji).
 
 ## Licencja
 
