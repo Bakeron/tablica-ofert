@@ -338,7 +338,7 @@ export const en: Record<keyof typeof pl, string> = {
   "secret.saved": "Saved in Windows Credential Manager",
   "secret.deleted": "Removed from Windows Credential Manager",
   "secret.hint": "Keys are kept in Windows Credential Manager, never in a file. Only the last 4 characters are shown.",
-  "adzuna.credit": "Jobs by Adzuna",
+  "adzuna.credit": "Jobs by",
   "country.pl": "Poland",
   "country.at": "Austria",
   "country.au": "Australia",

@@ -548,7 +548,7 @@ textarea {
 .board-group th {
   padding: 1.2rem 0.6rem 0.4rem;
   border-bottom: 2px dashed var(--row-line);
-  color: var(--ink-dim);
+  color: var(--signal);
   font-family: var(--font-board);
   font-size: 0.9rem;
   font-weight: 600;
@@ -1939,15 +1939,39 @@ fieldset.plain {
   margin-top: 0.1rem;
 }
 
+/* "Jobs by [Adzuna logo]" - the logo on its own white plate (as Adzuna ships it), at least 116 x 23 px. */
 .adzuna-credit {
-  display: inline-block;
-  margin-left: 0.6rem;
-  padding: 0 0.4rem;
-  border: 1.5px solid currentColor;
-  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  margin-top: 0.45rem;
+  color: var(--paper-dim);
   font-size: 0.8rem;
   font-weight: 700;
+  text-decoration: none;
   white-space: nowrap;
+}
+
+.adzuna-credit img {
+  display: block;
+  box-sizing: content-box;
+  width: 120px;
+  height: 31px;
+  padding: 0.25rem 0.45rem;
+  border-radius: 3px;
+  background: #fff;
+}
+
+@media (hover: hover) {
+  .adzuna-credit:hover {
+    background: none;
+    color: var(--paper-ink);
+  }
+
+  .adzuna-credit:hover img {
+    outline: 2px solid var(--signal);
+  }
 }
 
 .topbar .btn-fetch {

@@ -338,7 +338,7 @@ export const pl = {
   "secret.saved": "Zapisano w sejfie Windows",
   "secret.deleted": "Usunięto z sejfu Windows",
   "secret.hint": "Klucze trzymam w sejfie Windows (Menedżer poświadczeń), nigdy w pliku. Na ekranie widać tylko 4 ostatnie znaki.",
-  "adzuna.credit": "Oferty z Adzuna",
+  "adzuna.credit": "Oferty z",
   "country.pl": "Polska",
   "country.at": "Austria",
   "country.au": "Australia",

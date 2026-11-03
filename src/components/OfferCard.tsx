@@ -7,6 +7,10 @@ import { sourceLabel } from "./Board";
 import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
 import { AgendaPart, type AgendaActions } from "./AgendaPart";
 import { StatusTag } from "./StatusTag";
+// Official logo from adzuna.com/press.html, scaled down (Adzuna's API terms ask for it next to their offers).
+import adzunaLogo from "../assets/adzuna-logo.png";
+
+const ADZUNA_URL = "https://www.adzuna.pl/";
 
 interface Props {
   offer: OfferDetail | null;
@@ -203,8 +207,20 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
                   )}
                 </span>
               ))}
-              {/* Adzuna's terms: offers from their API carry their name. */}
-              {offer.sources.includes("adzuna") && <span className="adzuna-credit">{t("adzuna.credit")}</span>}
+              {/* Adzuna's API terms: their logo, at least 116 x 23 px, linked to their site. */}
+              {offer.sources.includes("adzuna") && (
+                <a
+                  className="adzuna-credit"
+                  href={ADZUNA_URL}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenLink(ADZUNA_URL);
+                  }}
+                >
+                  <span>{t("adzuna.credit")}</span>
+                  <img src={adzunaLogo} width={120} height={31} alt="Adzuna" />
+                </a>
+              )}
             </dd>
           </div>
         </dl>
