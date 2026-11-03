@@ -144,7 +144,17 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         // In the trash: only the user brings it back.
         Some((_, true)) => return Ok(AddOutcome::Blocked),
         Some((id, false)) => {
-            merge_into(&tx, id, &input, &now)?;
+            let filled = merge_into(&tx, id, &input)?;
+            let new_source = tx.execute(
+                "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
+                params![id, input.source, input.url, now],
+            )? > 0;
+            if !filled && !new_source {
+                // Fetched again with nothing new: the row stays exactly as it was (no sync, no recheck).
+                tx.commit()?;
+                return Ok(AddOutcome::Unchanged { id });
+            }
+            tx.execute("UPDATE offers SET updated_at = ?2 WHERE id = ?1", params![id, now])?;
             AddOutcome::Merged { id }
         }
         None => {
@@ -172,7 +182,7 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
     };
 
     let id = match outcome {
-        AddOutcome::Added { id } | AddOutcome::Merged { id } => id,
+        AddOutcome::Added { id } | AddOutcome::Merged { id } | AddOutcome::Unchanged { id } => id,
         AddOutcome::Blocked => unreachable!(),
     };
     tx.execute(
@@ -185,8 +195,18 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
     Ok(outcome)
 }
 
+/// Columns `merge_into` may change - compared before and after to tell whether anything was filled in.
+const MERGED_COLUMNS: &str = "SELECT url, city, remote, contract, level, language, requirements, description,
+    expires_at, expired, salary_min, salary_max, salary_currency, salary_period FROM offers WHERE id = ?1";
+
+fn merged_columns(tx: &rusqlite::Transaction, id: i64) -> AppResult<Vec<rusqlite::types::Value>> {
+    Ok(tx.query_row(MERGED_COLUMNS, [id], |r| (0..14).map(|i| r.get(i)).collect())?)
+}
+
 /// Same offer seen again: fill in what was missing, keep the longer texts.
-fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str) -> AppResult<()> {
+/// Returns whether anything changed (the caller sets `updated_at` only then).
+fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput) -> AppResult<bool> {
+    let before = merged_columns(tx, id)?;
     let has_salary: bool = tx.query_row(
         "SELECT salary_min IS NOT NULL OR salary_max IS NOT NULL FROM offers WHERE id = ?1",
         [id],
@@ -213,15 +233,14 @@ fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str
                 THEN ?9 ELSE description END,
             expires_at = CASE WHEN expires_at IS NULL OR ?10 > expires_at THEN COALESCE(?10, expires_at)
                 ELSE expires_at END,
-            expired = 0,
-            updated_at = ?11
+            expired = 0
          WHERE id = ?1",
         params![
             id, input.url, input.city, input.remote, input.contract, input.level, input.language,
-            input.requirements, input.description, input.expires_at, now
+            input.requirements, input.description, input.expires_at
         ],
     )?;
-    Ok(())
+    Ok(merged_columns(tx, id)? != before)
 }
 
 // ---------- reading ----------
@@ -532,7 +551,7 @@ mod tests {
 
     fn id_of(outcome: AddOutcome) -> i64 {
         match outcome {
-            AddOutcome::Added { id } | AddOutcome::Merged { id } => id,
+            AddOutcome::Added { id } | AddOutcome::Merged { id } | AddOutcome::Unchanged { id } => id,
             AddOutcome::Blocked => panic!("unexpected Blocked"),
         }
     }

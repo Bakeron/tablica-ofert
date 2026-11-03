@@ -279,6 +279,7 @@ export interface OfferInput {
 export type AddOutcome =
   | { status: "added"; id: number }
   | { status: "merged"; id: number }
+  | { status: "unchanged"; id: number }
   | { status: "blocked" };
 
 export interface AppStatus {

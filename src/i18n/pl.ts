@@ -122,6 +122,7 @@ export const pl = {
   "add.cancel": "Anuluj",
   "add.added": "Dodano ofertę",
   "add.merged": "Ta oferta już jest na tablicy - dopisano nowe informacje",
+  "add.known": "Ta oferta już jest na tablicy - nic nowego w niej nie ma",
   "add.blocked": "Ta oferta była usunięta - nie wraca na tablicę",
 
   "trash.done": "Oferta w koszu",

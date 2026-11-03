@@ -35,12 +35,6 @@ pub struct Query {
     pub radius_km: u16,
 }
 
-impl Query {
-    /// Stable name of the search, for remembering when it last ran.
-    pub fn key(&self) -> String {
-        format!("{}|{}|{}", self.keyword.to_lowercase(), self.city.as_deref().unwrap_or(""), self.radius_km)
-    }
-}
 
 /// How often a source may run and how many calls it may make.
 struct Limits {
@@ -130,7 +124,6 @@ pub struct SourceStatus {
 #[derive(Debug, Clone, Default)]
 struct LastRun {
     last_try: Option<String>,
-    last_ok: Option<String>,
 }
 
 // ---------- what to search for ----------
@@ -211,25 +204,17 @@ fn due(last: &LastRun, limits: &Limits, force: bool, now: OffsetDateTime) -> boo
     }
 }
 
-/// Days of offers to ask Adzuna for in one search: three weeks when there are no offers at
-/// all (a fresh start, e.g. after deleting everything), two weeks for a search never made
-/// before (a new keyword), otherwise since its last good run plus a day.
-fn days_back(last_ok: Option<&str>, has_offers: bool, now: OffsetDateTime) -> u32 {
-    if !has_offers {
-        return 21;
-    }
-    match hours_since(last_ok, now) {
-        Some(h) if h >= 0 => ((h / 24) + 2).clamp(1, 30) as u32,
-        _ => 14,
-    }
-}
+/// Days of offers every Adzuna search asks for. Always the same three weeks: offers seen
+/// before only merge (and change nothing when nothing is new), deleted ones never come back.
+/// The `source_queries` table (migration 008) is no longer used.
+const ADZUNA_DAYS: u32 = 21;
 
 // ---------- database part ----------
 
 fn last_runs(conn: &Connection) -> AppResult<BTreeMap<String, LastRun>> {
-    let mut stmt = conn.prepare("SELECT source, last_try, last_ok FROM source_runs")?;
+    let mut stmt = conn.prepare("SELECT source, last_try FROM source_runs")?;
     let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, LastRun { last_try: r.get(1)?, last_ok: r.get(2)? })))?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, LastRun { last_try: r.get(1)? })))?
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     Ok(rows)
 }
@@ -263,6 +248,7 @@ fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, repo
                 }
             }
             Ok(AddOutcome::Merged { .. }) => run.merged += 1,
+            Ok(AddOutcome::Unchanged { .. }) => {}
             Ok(AddOutcome::Blocked) => run.blocked += 1,
             Err(AppError::Invalid(_)) => run.invalid += 1,
             Err(e) => return Err(e),
@@ -271,22 +257,6 @@ fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, repo
     Ok(())
 }
 
-fn query_runs(conn: &Connection, source: &str) -> AppResult<BTreeMap<String, String>> {
-    let mut stmt = conn.prepare("SELECT query, last_ok FROM source_queries WHERE source = ?1")?;
-    let rows = stmt.query_map([source], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
-    Ok(rows)
-}
-
-fn record_queries(conn: &Connection, source: &str, keys: &[String], now: &str) -> AppResult<()> {
-    for key in keys {
-        conn.execute(
-            "INSERT INTO source_queries (source, query, last_ok) VALUES (?1, ?2, ?3)
-             ON CONFLICT (source, query) DO UPDATE SET last_ok = excluded.last_ok",
-            params![source, key, now],
-        )?;
-    }
-    Ok(())
-}
 
 fn filter_result(conn: &Connection, id: i64) -> AppResult<Option<String>> {
     Ok(conn
@@ -298,9 +268,6 @@ struct Snapshot {
     settings: BTreeMap<String, String>,
     profiles: Vec<Profile>,
     runs: BTreeMap<String, LastRun>,
-    adzuna_queries: BTreeMap<String, String>,
-    /// Any offer outside the trash - none means starting from scratch.
-    has_offers: bool,
     adzuna_calls: i64,
     remotive_calls: i64,
     jooble_calls: i64,
@@ -312,8 +279,7 @@ fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
         settings: settings::all(conn)?,
         profiles: profiles::list(conn)?,
         runs: last_runs(conn)?,
-        adzuna_queries: query_runs(conn, adzuna::SOURCE)?,
-        has_offers: conn.query_row("SELECT EXISTS (SELECT 1 FROM offers WHERE deleted_at IS NULL)", [], |r| r.get(0))?,
+
         adzuna_calls: usage::calls_today(conn, adzuna::SOURCE)?,
         remotive_calls: usage::calls_today(conn, remotive::SOURCE)?,
         jooble_calls: usage::calls_today(conn, jooble::SOURCE)?,
@@ -369,20 +335,16 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             let country = snap.settings.get("adzuna_country").cloned().unwrap_or_else(|| "pl".into());
             let budget = limits.calls_a_run.min(left);
             let mut found = Vec::new();
-            let mut searched = Vec::new();
             // Searches whose first page was full - their second page goes after every first page.
             let mut more = Vec::new();
             let mut calls: usize = 0;
             for q in for_this_run(&queries, budget, snap.adzuna_calls) {
                 calls += 1;
-                let key = q.key();
-                let days = days_back(snap.adzuna_queries.get(&key).map(String::as_str), snap.has_offers, now);
-                match adzuna::search(&client, &keys, &country, q, days, 1).await {
+                match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 1).await {
                     Ok(mut page) => {
                         found.append(&mut page.offers);
-                        searched.push(key);
                         if page.full {
-                            more.push((q, days));
+                            more.push(q);
                         }
                     }
                     Err(e) => {
@@ -392,9 +354,9 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
                 }
             }
             if run.error.is_none() {
-                for (q, days) in more.into_iter().take(budget.saturating_sub(calls)) {
+                for q in more.into_iter().take(budget.saturating_sub(calls)) {
                     calls += 1;
-                    match adzuna::search(&client, &keys, &country, q, days, 2).await {
+                    match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 2).await {
                         Ok(mut page) => found.append(&mut page.offers),
                         Err(e) => {
                             run.error = Some((&e).into());
@@ -408,7 +370,6 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             with_db(state, |c| {
                 usage::add_calls(c, adzuna::SOURCE, calls)?;
                 save(c, found, &mut run, &mut report)?;
-                record_queries(c, adzuna::SOURCE, &searched, &stamp)?;
                 record(c, &run, &stamp)
             })?;
         }
@@ -640,19 +601,14 @@ mod tests {
     #[test]
     fn timing() {
         let now = datetime!(2026-11-02 12:00 UTC);
-        let fresh = LastRun { last_try: Some("2026-11-02T10:00:00Z".into()), last_ok: Some("2026-11-02T10:00:00Z".into()) };
-        let old = LastRun { last_try: Some("2026-11-01T05:00:00Z".into()), last_ok: Some("2026-10-20T05:00:00Z".into()) };
+        let fresh = LastRun { last_try: Some("2026-11-02T10:00:00Z".into()) };
+        let old = LastRun { last_try: Some("2026-11-01T05:00:00Z".into()) };
         assert!(due(&LastRun::default(), &REMOTIVE_LIMITS, false, now));
         assert!(!due(&fresh, &REMOTIVE_LIMITS, false, now));
         assert!(!due(&fresh, &REMOTIVE_LIMITS, true, now));
         assert!(due(&old, &REMOTIVE_LIMITS, false, now));
         assert!(due(&fresh, &adzuna_limits(6), true, now));
         assert!(!due(&fresh, &adzuna_limits(6), false, now));
-        assert_eq!(days_back(None, true, now), 14);
-        assert_eq!(days_back(fresh.last_ok.as_deref(), true, now), 2);
-        assert_eq!(days_back(old.last_ok.as_deref(), true, now), 15);
-        // No offers at all - a fresh start looks three weeks back.
-        assert_eq!(days_back(fresh.last_ok.as_deref(), false, now), 21);
     }
 
     #[test]
@@ -673,18 +629,6 @@ mod tests {
         assert_eq!((s.added, s.merged), (3, 1));
     }
 
-    #[test]
-    fn each_search_remembers_its_last_good_run() {
-        let conn = crate::db::tests::test_db();
-        let q = |k: &str, city: Option<&str>| Query { keyword: k.into(), city: city.map(Into::into), radius_km: 0 };
-        let keys = vec![q("WordPress", None).key(), q("PHP", Some("Opole")).key()];
-        record_queries(&conn, "adzuna", &keys, "2026-11-02T10:00:00Z").unwrap();
-        record_queries(&conn, "adzuna", &keys[..1], "2026-11-03T10:00:00Z").unwrap();
-        let runs = query_runs(&conn, "adzuna").unwrap();
-        assert_eq!(runs.get("wordpress||0").map(String::as_str), Some("2026-11-03T10:00:00Z"));
-        assert_eq!(runs.get("php|Opole|0").map(String::as_str), Some("2026-11-02T10:00:00Z"));
-        assert!(query_runs(&conn, "remotive").unwrap().is_empty());
-    }
 
     #[test]
     fn saving_counts_every_outcome() {
@@ -692,9 +636,47 @@ mod tests {
         let offer = |t: &str| OfferInput { title: t.into(), company: "Firma Testowa".into(), source: "adzuna".into(), ..Default::default() };
         let mut run = SourceRun::default();
         let mut report = FetchReport::default();
-        save(&mut conn, vec![offer("Dev"), offer("Dev"), offer("  "), offer("QA")], &mut run, &mut report).unwrap();
+        let mut dev = offer("Dev");
+        dev.city = Some("Opole".into());
+        save(&mut conn, vec![offer("Dev"), offer("  "), offer("QA"), dev], &mut run, &mut report).unwrap();
+        // The second "Dev" brings a city - merged; the empty title is invalid.
         assert_eq!((run.added, run.merged, run.invalid), (2, 1, 1));
         assert_eq!(report.new_on_board, 2);
         assert_eq!((report.new_review, report.new_rejected), (0, 0));
+    }
+
+    #[test]
+    fn the_same_answer_fetched_twice_changes_nothing() {
+        let mut conn = crate::db::tests::test_db();
+        let offer = |t: &str| OfferInput {
+            title: t.into(),
+            company: "Firma Testowa".into(),
+            source: "adzuna".into(),
+            url: Some(format!("https://example.com/{t}")),
+            city: Some("Wrocław".into()),
+            description: Some("Opis oferty".into()),
+            ..Default::default()
+        };
+        let answer = || vec![offer("Dev"), offer("QA")];
+        save(&mut conn, answer(), &mut SourceRun::default(), &mut FetchReport::default()).unwrap();
+        let stamp = "2026-01-01T00:00:00Z";
+        conn.execute("UPDATE offers SET updated_at = ?1", [stamp]).unwrap();
+        let touched = |conn: &Connection| -> i64 {
+            conn.query_row("SELECT count(*) FROM offers WHERE updated_at != ?1", [stamp], |r| r.get(0)).unwrap()
+        };
+
+        let mut run = SourceRun::default();
+        let mut report = FetchReport::default();
+        save(&mut conn, answer(), &mut run, &mut report).unwrap();
+        assert_eq!((run.added, run.merged, report.new_on_board), (0, 0, 0));
+        assert_eq!(touched(&conn), 0);
+
+        // A longer description from the next fetch is real news - merged and marked as changed.
+        let mut longer = offer("Dev");
+        longer.description = Some("Opis oferty - dłuższy, z wymaganiami".into());
+        let mut run = SourceRun::default();
+        save(&mut conn, vec![longer], &mut run, &mut FetchReport::default()).unwrap();
+        assert_eq!(run.merged, 1);
+        assert_eq!(touched(&conn), 1);
     }
 }

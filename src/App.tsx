@@ -447,7 +447,9 @@ export default function App() {
       const text =
         outcome.status === "merged"
           ? t("add.merged")
-          : target === "board"
+          : outcome.status === "unchanged"
+            ? t("add.known")
+            : target === "board"
             ? t("add.added")
             : t(target === "review" ? "add.landed.review" : "add.landed.rejected");
       setToast({ text });

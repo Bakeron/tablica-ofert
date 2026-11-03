@@ -304,6 +304,8 @@ pub enum AddOutcome {
     Added { id: i64 },
     /// Same offer already known - new source and missing fields merged into it.
     Merged { id: i64 },
+    /// Same offer from the same source with nothing new - the row is left untouched.
+    Unchanged { id: i64 },
     /// The user deleted this offer before - it does not come back.
     Blocked,
 }

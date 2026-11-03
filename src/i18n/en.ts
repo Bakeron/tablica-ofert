@@ -123,6 +123,7 @@ export const en: Record<keyof typeof pl, string> = {
   "add.cancel": "Cancel",
   "add.added": "Offer added",
   "add.merged": "This offer is already on the board - new details were merged in",
+  "add.known": "This offer is already on the board - nothing new in it",
   "add.blocked": "This offer was deleted before - it does not come back",
 
   "trash.done": "Offer moved to trash",
