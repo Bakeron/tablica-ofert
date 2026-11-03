@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useId, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import type {
   Contract,
   Criteria,
@@ -639,14 +639,19 @@ function ListField({
   onChange: (value: string) => void;
   side?: ReactNode;
 }) {
+  const id = useId();
+  // The switch sits on the line of the input (not of the hint) and wraps under it when
+  // there is no room - so the label points at the input by id instead of wrapping it.
   return (
-    <div className="crit-row">
-      <label className="field">
-        <span>{label}</span>
-        <input maxLength={5000} value={value} onChange={(e) => onChange(e.target.value)} />
-        <span className="hint">{hint}</span>
-      </label>
-      {side}
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="field-line">
+        <input id={id} aria-describedby={`${id}-hint`} maxLength={5000} value={value} onChange={(e) => onChange(e.target.value)} />
+        {side}
+      </div>
+      <span id={`${id}-hint`} className="hint">
+        {hint}
+      </span>
     </div>
   );
 }

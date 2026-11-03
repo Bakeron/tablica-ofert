@@ -1323,9 +1323,24 @@ details[open]::details-content {
   min-width: 0;
 }
 
-.field > span:first-child {
+.field > span:first-child,
+.field > label:first-child {
   font-weight: 700;
   font-size: 0.92rem;
+}
+
+/* An input with something beside it (e.g. "hard filter" switch): on the input's line,
+   and under the input when the line is too narrow. */
+.field-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.field .field-line > input {
+  flex: 1 1 18rem;
+  width: auto;
 }
 
 .field-inline {
@@ -1836,7 +1851,7 @@ fieldset.plain {
 .crit-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
 }
