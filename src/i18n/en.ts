@@ -491,7 +491,7 @@ export const en: Record<keyof typeof pl, string> = {
   "ai.check": "Check my computer",
   "ai.ollamaStep1": "Click “Get Ollama” and install it like any program. In another folder: run the installer from the command line with the folder, e.g. OllamaSetup.exe /DIR=\"D:\\Programs\\Ollama\".",
   "ai.ollamaStep2": "Models take a few GB each and go to drive C by default. Another place: in Windows add the user environment variable OLLAMA_MODELS with the folder (e.g. D:\\AI\\models) and restart Ollama (icon next to the clock).",
-  "ai.ollamaStep3": "Click “Check my computer”, then “Download model” - the app downloads the suggested model through Ollama, sets it and turns Ollama on.",
+  "ai.ollamaStep3": "Click “Check my computer” and “Check Ollama”, then “Download model” - the app downloads the suggested model through Ollama, sets it and turns Ollama on.",
   "ai.ollamaOff": "Ollama does not answer at this address - install it or start it (icon next to the clock).",
   "ai.ollamaHas": "Downloaded models: {list}.",
   "ai.ollamaEmpty": "Ollama works, but has no model yet.",

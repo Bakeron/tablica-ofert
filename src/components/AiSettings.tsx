@@ -245,7 +245,7 @@ export function AiSettings({
 }
 
 /**
- * What Ollama has (checked on unfolding and with a button) and "Download model X" for the
+ * What Ollama has (checked only on a click - nothing is asked before) and "Download model X" for the
  * suggested or entered model that is not there yet; after the download it is set and turned on.
  */
 function OllamaModels({
@@ -268,9 +268,10 @@ function OllamaModels({
   const look = useCallback(async () => {
     setModels(await api.ollamaModels().catch(() => "off" as const));
   }, [api]);
+  // Another address - the old answer no longer counts.
   useEffect(() => {
-    look();
-  }, [look, url]);
+    setModels(null);
+  }, [url]);
   const has = (m: string) => Array.isArray(models) && models.some((x) => x === m || x === `${m}:latest`);
 
   async function pull() {

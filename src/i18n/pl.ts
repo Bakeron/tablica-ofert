@@ -491,7 +491,7 @@ export const pl = {
   "ai.check": "Sprawdź mój komputer",
   "ai.ollamaStep1": "Kliknij „Pobierz Ollamę” i zainstaluj ją jak zwykły program. W innym folderze: uruchom instalator z wiersza poleceń z folderem, np. OllamaSetup.exe /DIR=\"D:\\Programy\\Ollama\".",
   "ai.ollamaStep2": "Modele mają po kilka GB i domyślnie trafiają na dysk C. Inne miejsce: w Windows dodaj zmienną środowiskową użytkownika OLLAMA_MODELS z folderem (np. D:\\AI\\modele) i uruchom Ollamę ponownie (ikona przy zegarze).",
-  "ai.ollamaStep3": "Kliknij „Sprawdź mój komputer”, a potem „Pobierz model” - aplikacja pobierze proponowany model przez Ollamę, wpisze go i włączy Ollamę.",
+  "ai.ollamaStep3": "Kliknij „Sprawdź mój komputer” i „Sprawdź Ollamę”, a potem „Pobierz model” - aplikacja pobierze proponowany model przez Ollamę, wpisze go i włączy Ollamę.",
   "ai.ollamaOff": "Ollama nie odpowiada pod tym adresem - zainstaluj ją albo uruchom (ikona przy zegarze).",
   "ai.ollamaHas": "Pobrane modele: {list}.",
   "ai.ollamaEmpty": "Ollama działa, ale nie ma jeszcze żadnego modelu.",
