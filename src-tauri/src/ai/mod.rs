@@ -39,16 +39,66 @@ pub struct Config {
     pub ollama_url: String,
 }
 
-/// `None` = AI turned off ("none").
-pub fn config(s: &BTreeMap<String, String>) -> Option<Config> {
-    let provider = Provider::parse(s.get("ai_provider")?)?;
-    let model = s.get("ai_model").filter(|m| !m.is_empty()).cloned().unwrap_or_else(|| provider.default_model().to_string());
-    Some(Config {
+/// Every provider in the order of the list in the settings - the order AI is asked in.
+pub const ORDER: [Provider; 6] = [Provider::Gemini, Provider::Groq, Provider::OpenRouter, Provider::Ollama, Provider::Anthropic, Provider::OpenAi];
+
+fn one_config(s: &BTreeMap<String, String>, provider: Provider) -> Config {
+    let model = s
+        .get(&format!("ai_model_{}", provider.as_str()))
+        .filter(|m| !m.is_empty())
+        .cloned()
+        .unwrap_or_else(|| provider.default_model().to_string());
+    Config {
         provider,
         model,
         daily_limit: s.get("ai_daily_limit").and_then(|v| v.parse().ok()).unwrap_or(200),
         ollama_url: s.get("ollama_url").cloned().unwrap_or_else(|| "http://localhost:11434".into()),
-    })
+    }
+}
+
+/// The providers turned on, in the order they are asked; empty = AI off.
+pub fn configs(s: &BTreeMap<String, String>) -> Vec<Config> {
+    let on: Vec<&str> = s.get("ai_providers").map_or("", String::as_str).split(',').collect();
+    ORDER.iter().filter(|p| on.contains(&p.as_str())).map(|&p| one_config(s, p)).collect()
+}
+
+/// Today's mark "the provider itself said: limit" (its answer 429) - asked again tomorrow.
+fn limit_key(p: Provider) -> String {
+    format!("ai-limit:{}", p.as_str())
+}
+
+/// Why this provider is not asked today: "app" = the daily cap from the settings is used,
+/// "provider" = the provider answered that its own limit is used.
+fn used_up(conn: &Connection, c: &Config) -> AppResult<Option<&'static str>> {
+    if usage::calls_today(conn, &c.provider.usage_key())? >= c.daily_limit {
+        return Ok(Some("app"));
+    }
+    if usage::calls_today(conn, &limit_key(c.provider))? > 0 {
+        return Ok(Some("provider"));
+    }
+    Ok(None)
+}
+
+/// AI on its own: due when `ai_every` minutes went by since its last run.
+pub fn auto_due(conn: &Connection) -> AppResult<bool> {
+    let every: i64 = settings::get(conn, "ai_every")?.parse().unwrap_or(30);
+    let due: Option<bool> = conn
+        .query_row(
+            "SELECT (julianday('now') - julianday(last_try)) * 1440 >= ?1 FROM source_runs WHERE source = 'ai-auto'",
+            [every],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(due.unwrap_or(true))
+}
+
+pub fn auto_ran(conn: &Connection) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO source_runs (source, last_try) VALUES ('ai-auto', ?1)
+         ON CONFLICT(source) DO UPDATE SET last_try = excluded.last_try",
+        [clock::now()],
+    )?;
+    Ok(())
 }
 
 fn connect(c: &Config) -> AppResult<Ai> {
@@ -454,9 +504,13 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
     }
     let _guard = Rating(state);
     let s = with_db(state, |c| settings::all(c))?;
-    let Some(cfg) = config(&s) else { return Ok(RateReport::default()) };
-    let ai = connect(&cfg)?;
-    let key = cfg.provider.usage_key();
+    let cfgs = configs(&s);
+    if cfgs.is_empty() {
+        return Ok(RateReport::default());
+    }
+    // Connected when first needed; `at` = the provider asked now - after its limit, the next one.
+    let mut ais: Vec<Option<Ai>> = cfgs.iter().map(|_| None).collect();
+    let mut at = 0;
     // Offers in another language get a translation into the language of the app.
     let app_language = if crate::notify::polish(state) { "pl" } else { "en" };
     let ids = match only {
@@ -464,33 +518,59 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
         None => with_db(state, |c| pending_ids(c, PER_RUN))?,
     };
     let mut report = RateReport::default();
-    for (i, id) in ids.iter().enumerate() {
-        let used = with_db(state, |c| usage::calls_today(c, &key))?;
-        if used >= cfg.daily_limit {
-            report.error = Some((&AppError::Limit("daily limit of AI calls".into())).into());
-            break;
-        }
+    'offers: for (i, id) in ids.iter().enumerate() {
         let Some(job) = with_db(state, |c| load_job(c, *id))? else { continue };
         progress(Some(Progress::new("ai", None, i + 1, ids.len())));
         if i > 0 {
-            tokio::time::sleep(cfg.provider.pause()).await;
+            tokio::time::sleep(cfgs[at.min(cfgs.len() - 1)].provider.pause()).await;
         }
-        let result = rate(&ai, &job, app_language).await;
-        with_db(state, |c| usage::add_calls(c, &key, 1))?;
-        match result {
-            Ok(reading) => {
-                with_db(state, |c| store(c, job.id, &reading))?;
-                report.rated += 1;
+        let mut last_error = AppError::Limit("daily limit of AI calls".into());
+        loop {
+            while at < cfgs.len() && with_db(state, |c| used_up(c, &cfgs[at]))?.is_some() {
+                at += 1;
             }
-            // A broken answer: this offer is skipped, the next one is tried.
-            Err(AppError::Net(msg)) if msg.contains("JSON") => {
-                with_db(state, |c| mark_failed(c, job.id, &msg))?;
-                report.failed += 1;
+            if at >= cfgs.len() {
+                report.error = Some((&last_error).into());
+                break 'offers;
             }
-            // No key, limit, no connection: stop - the next run tries again.
-            Err(e) => {
-                report.error = Some((&e).into());
-                break;
+            let cfg = &cfgs[at];
+            if ais[at].is_none() {
+                match connect(cfg) {
+                    Ok(ai) => ais[at] = Some(ai),
+                    // No key: the next provider is asked.
+                    Err(e) => {
+                        last_error = e;
+                        at += 1;
+                        continue;
+                    }
+                }
+            }
+            let ai = ais[at].as_ref().expect("connected above");
+            let result = rate(ai, &job, app_language).await;
+            with_db(state, |c| usage::add_calls(c, &cfg.provider.usage_key(), 1))?;
+            match result {
+                Ok(reading) => {
+                    with_db(state, |c| store(c, job.id, &reading))?;
+                    report.rated += 1;
+                    break;
+                }
+                // A broken answer: this offer is skipped, the next one is tried.
+                Err(AppError::Net(msg)) if msg.contains("JSON") => {
+                    with_db(state, |c| mark_failed(c, job.id, &msg))?;
+                    report.failed += 1;
+                    break;
+                }
+                // The provider's own limit: it rests until tomorrow, the same offer goes to the next one.
+                Err(e @ AppError::Limit(_)) => {
+                    with_db(state, |c| usage::add_calls(c, &limit_key(cfg.provider), 1))?;
+                    last_error = e;
+                    at += 1;
+                }
+                // No connection, wrong key: stop - the next run tries again.
+                Err(e) => {
+                    report.error = Some((&e).into());
+                    break 'offers;
+                }
             }
         }
     }
@@ -592,15 +672,24 @@ pub enum Assist {
     Gaps,
 }
 
+/// The first provider turned on that may be asked today (limit not used, key present).
 async fn ai_from_settings(state: &AppState) -> AppResult<(Ai, String)> {
     let s = with_db(state, |c| settings::all(c))?;
-    let cfg = config(&s).ok_or_else(|| AppError::Missing("ai provider".into()))?;
-    let key = cfg.provider.usage_key();
-    let used = with_db(state, |c| usage::calls_today(c, &key))?;
-    if used >= cfg.daily_limit {
-        return Err(AppError::Limit("daily limit of AI calls".into()));
+    let cfgs = configs(&s);
+    if cfgs.is_empty() {
+        return Err(AppError::Missing("ai provider".into()));
     }
-    Ok((connect(&cfg)?, key))
+    let mut last = AppError::Limit("daily limit of AI calls".into());
+    for cfg in &cfgs {
+        if with_db(state, |c| used_up(c, cfg))?.is_some() {
+            continue;
+        }
+        match connect(cfg) {
+            Ok(ai) => return Ok((ai, cfg.provider.usage_key())),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }
 
 pub async fn assist(state: &AppState, offer_id: i64, kind: Assist) -> AppResult<String> {
@@ -764,13 +853,24 @@ The text may contain menus and other parts of the page - ignore them.",
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AiStatus {
+pub struct AiProviderStatus {
     pub provider: String,
+    pub enabled: bool,
+    /// Key present (always for Ollama).
+    pub ready: bool,
     pub model: String,
     pub default_model: String,
-    pub ready: bool,
     pub calls_today: i64,
     pub calls_month: i64,
+    /// Not asked today: "app" (the daily cap) or "provider" (its own limit).
+    pub used_up: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiStatus {
+    /// Every provider, in the order they are asked.
+    pub providers: Vec<AiProviderStatus>,
     pub daily_limit: i64,
     pub waiting: i64,
     pub rated: i64,
@@ -784,30 +884,22 @@ pub fn status(conn: &Connection, key_present: impl Fn(Provider) -> bool) -> AppR
         |r| r.get(0),
     )?;
     let rated: i64 = conn.query_row("SELECT count(*) FROM offers WHERE ai_status = 'done'", [], |r| r.get(0))?;
-    Ok(match config(&s) {
-        Some(c) => AiStatus {
-            provider: c.provider.as_str().into(),
-            default_model: c.provider.default_model().into(),
-            ready: c.provider.key_name().is_none() || key_present(c.provider),
-            calls_today: usage::calls_today(conn, &c.provider.usage_key())?,
-            calls_month: usage::calls_month(conn, &c.provider.usage_key())?,
-            daily_limit: c.daily_limit,
+    let on: Vec<Provider> = configs(&s).iter().map(|c| c.provider).collect();
+    let mut providers = Vec::new();
+    for p in ORDER {
+        let c = one_config(&s, p);
+        providers.push(AiProviderStatus {
+            provider: p.as_str().into(),
+            enabled: on.contains(&p),
+            ready: p.key_name().is_none() || key_present(p),
+            default_model: p.default_model().into(),
+            calls_today: usage::calls_today(conn, &p.usage_key())?,
+            calls_month: usage::calls_month(conn, &p.usage_key())?,
+            used_up: used_up(conn, &c)?,
             model: c.model,
-            waiting,
-            rated,
-        },
-        None => AiStatus {
-            provider: "none".into(),
-            model: String::new(),
-            default_model: String::new(),
-            ready: false,
-            calls_today: 0,
-            calls_month: 0,
-            daily_limit: 0,
-            waiting,
-            rated,
-        },
-    })
+        });
+    }
+    Ok(AiStatus { providers, daily_limit: one_config(&s, Provider::Gemini).daily_limit, waiting, rated })
 }
 
 #[cfg(test)]
@@ -817,6 +909,36 @@ mod tests {
     use serde_json::json;
 
     const OFFER: &str = "Title: Frontend Developer\nDescription:\nPraca w 100% zdalna. Budujemy system rezerwacji dla klinik. Wynagrodzenie 12 000 - 16 000 zł netto na B2B.";
+
+    #[test]
+    fn providers_are_asked_in_the_order_of_the_list() {
+        let mut s = BTreeMap::new();
+        s.insert("ai_providers".to_string(), "openai,groq".to_string());
+        s.insert("ai_model_groq".to_string(), "my-model".to_string());
+        let c = configs(&s);
+        assert_eq!(c.iter().map(|c| c.provider).collect::<Vec<_>>(), vec![Provider::Groq, Provider::OpenAi]);
+        assert_eq!(c[0].model, "my-model");
+        assert_eq!(c[1].model, Provider::OpenAi.default_model());
+        assert!(configs(&BTreeMap::new()).is_empty());
+    }
+
+    #[test]
+    fn a_provider_rests_after_its_own_limit_or_the_daily_cap() {
+        let conn = test_db();
+        let mut s = BTreeMap::new();
+        s.insert("ai_daily_limit".to_string(), "2".to_string());
+        let groq = one_config(&s, Provider::Groq);
+        assert_eq!(used_up(&conn, &groq).unwrap(), None);
+        usage::add_calls(&conn, &limit_key(Provider::Groq), 1).unwrap();
+        assert_eq!(used_up(&conn, &groq).unwrap(), Some("provider"));
+        let gemini = one_config(&s, Provider::Gemini);
+        usage::add_calls(&conn, &Provider::Gemini.usage_key(), 2).unwrap();
+        assert_eq!(used_up(&conn, &gemini).unwrap(), Some("app"));
+        // AI on its own: due at first, not right after a run.
+        assert!(auto_due(&conn).unwrap());
+        auto_ran(&conn).unwrap();
+        assert!(!auto_due(&conn).unwrap());
+    }
 
     #[test]
     fn translation_only_for_an_offer_in_another_language() {

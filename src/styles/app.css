@@ -2162,18 +2162,25 @@ fieldset.plain {
 
 /* ---------- settings: sections and offer sources ---------- */
 
-/* The sections stay pinned to the top edge of the window while a long section scrolls; the
-   full-width paper under them hides the text going by (also between the buttons). */
-.settings-nav {
+/* Title, "X" and the sections stay pinned to the top edge of the window while a long section
+   scrolls; the full-width paper under them hides the text going by (also between the buttons). */
+.settings-top {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: -1.1rem -1.3rem 0;
+  padding: 1.1rem 1.3rem 0;
+  background: var(--paper);
+}
+
+.settings-nav {
+  display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin: -0.5rem -1.3rem 0;
-  padding: 0.5rem 1.3rem 0.7rem;
-  background: var(--paper);
+  padding-bottom: 0.7rem;
   border-bottom: 2px dashed var(--perf);
 }
 
@@ -3083,6 +3090,19 @@ fieldset.plain {
     text-decoration-thickness: 2px;
     text-underline-offset: 4px;
   }
+}
+
+/* "Show settings" next to the name - says what a click on the name does. */
+.source-unfold-hint {
+  margin-left: 0.4rem;
+  font-family: var(--font-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: var(--paper-dim);
 }
 
 .source-short {

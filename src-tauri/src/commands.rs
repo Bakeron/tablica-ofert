@@ -317,7 +317,7 @@ pub async fn ai_tidy(state: State<'_, AppState>, text: String) -> AppResult<Stri
 #[tauri::command]
 pub async fn fill_offer(state: State<'_, AppState>, text: String, title: Option<String>) -> AppResult<crate::extract::Draft> {
     let text = crate::text::cut(&text, 100_000);
-    let ai_set = with_db(&state, |c| Ok(settings::get(c, "ai_provider")? != "none"))?;
+    let ai_set = with_db(&state, |c| Ok(!settings::get(c, "ai_providers")?.is_empty()))?;
     if ai_set {
         if let Ok(draft) = ai::extract(&state, &text, title.as_deref()).await {
             return Ok(draft);

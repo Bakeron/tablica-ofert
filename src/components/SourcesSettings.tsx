@@ -208,7 +208,7 @@ export function SourcesSettings({
 }
 
 /**
- * One source: the name (a click unfolds the rest), the on / off switch and one short line are
+ * One source: the name with "Show settings" (a click unfolds the rest), the on / off switch and one short line are
  * always visible; the long description, keys and the last run show after unfolding. A
  * problem (missing key, last error) shows folded too - it is never hidden.
  */
@@ -219,7 +219,8 @@ export function SourceBox({
   on,
   onToggle,
   state,
-  lang,
+  lang = "pl",
+  alert,
   children,
 }: {
   id: string;
@@ -227,8 +228,10 @@ export function SourceBox({
   short: string;
   on: boolean;
   onToggle: (on: boolean) => void;
-  state: SourceStatus | undefined;
-  lang: "pl" | "en";
+  state?: SourceStatus;
+  lang?: "pl" | "en";
+  /** A problem shown folded and unfolded (for boxes without `state`). */
+  alert?: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -240,6 +243,7 @@ export function SourceBox({
           <button type="button" className="source-unfold" aria-expanded={open} aria-controls={`${id}-more`} onClick={() => setOpen(!open)}>
             <IconArrowRight />
             {name}
+            <span className="source-unfold-hint">{open ? t("src.hide") : t("src.show")}</span>
           </button>
         </h3>
         <label className="chip">
@@ -248,6 +252,7 @@ export function SourceBox({
         </label>
       </div>
       <p className="source-short">{short}</p>
+      {alert}
       {!open && state && <SourceState s={state} lang={lang} onlyProblems />}
       <Reveal show={open}>
         <div id={`${id}-more`} className="source-more" role="region" aria-label={t("src.more", { name })}>

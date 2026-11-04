@@ -27,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/011_translation.sql"),
     include_str!("migrations/012_content_removed.sql"),
     include_str!("migrations/013_himalayas_checked.sql"),
+    include_str!("migrations/014_ai_providers.sql"),
 ];
 
 /// Schema version this app writes (copies from newer versions are refused).

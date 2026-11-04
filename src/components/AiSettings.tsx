@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Api } from "../api";
-import { AI_PROVIDERS, type AiProvider, type AiStatus, type Machine, type SecretHints, type SecretName, type Settings } from "../api/types";
+import { AI_PROVIDERS, type AiProvider, type AiProviderStatus, type AiStatus, type Machine, type SecretHints, type SecretName, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
 import { SecretField } from "./SecretField";
+import { SourceBox } from "./SourcesSettings";
 import { TextSetting } from "./TextSetting";
 
 /** Where to get a key - each provider's own page. */
@@ -18,7 +19,10 @@ const KEY_PAGES: Partial<Record<AiProvider, string>> = {
 
 const FREE: AiProvider[] = ["gemini", "groq", "openrouter", "ollama"];
 
-/** Settings → "AI": provider, key, model, daily limit, usage, "Check my computer". */
+const EVERY: Settings["ai_every"][] = ["30", "60", "180", "1440"];
+
+/** Settings → "AI": every provider folded like the offer sources (on / off, key, model), asked in
+ *  turn; the daily limit, AI on its own and how often, usage, "Check my computer". */
 export function AiSettings({
   api,
   settings,
@@ -53,10 +57,16 @@ export function AiSettings({
 
   useEffect(() => {
     load();
-  }, [load, settings.ai_provider, settings.ai_model, settings.ai_daily_limit]);
+  }, [load, settings]);
 
-  const provider = settings.ai_provider;
-  const keyName = provider !== "none" && provider !== "ollama" ? (`ai-key-${provider}` as SecretName) : null;
+  const turnedOn = settings.ai_providers.split(",").filter(Boolean);
+  // The list keeps the order of AI_PROVIDERS - the order AI asks them in.
+  const toggle = (p: AiProvider, on: boolean) =>
+    onChange("ai_providers", AI_PROVIDERS.filter((x) => (x === p ? on : turnedOn.includes(x))).join(","));
+  const of = (p: AiProvider) => status?.providers.find((x) => x.provider === p);
+  const enabled = status?.providers.filter((x) => x.enabled) ?? [];
+  const usedUp = enabled.filter((x) => x.usedUp);
+  const canRate = enabled.some((x) => x.ready && !x.usedUp);
 
   async function saveSecret(name: SecretName, value: string) {
     // An error is shown by the field itself, under the input (the app's error bar is behind this window).
@@ -102,81 +112,97 @@ export function AiSettings({
     <div className="settings-part">
       <p>{t("ai.intro")}</p>
 
-      <fieldset className="choice ai-providers">
-        <legend>{t("ai.provider")}</legend>
-        {AI_PROVIDERS.map((p) => (
-          <label key={p} className="choice-item ai-provider">
-            <input type="radio" name="ai_provider" value={p} checked={provider === p} onChange={() => onChange("ai_provider", p)} />
-            <span>
-              <strong>{t(`ai.p.${p}` as TextKey)}</strong>
-              {p !== "none" && <span className={FREE.includes(p) ? "price price-free" : "price"}>{FREE.includes(p) ? t("ai.free") : t("ai.paid")}</span>}
-              <span className="hint">{t(`ai.p.${p}.hint` as TextKey)}</span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      <p className="hint">{t("ai.queue")}</p>
 
-      {provider !== "none" && (
-        <section className="source" aria-label={t(`ai.p.${provider}` as TextKey)}>
-          {KEY_PAGES[provider] && (
-            <div>
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[provider]!)}>
-                {provider === "ollama" ? t("ai.getOllama") : t("ai.getKey")} <IconArrowOut />
-              </button>
-            </div>
-          )}
-          {keyName && (
-            <SecretField name={keyName} label={t("ai.key")} hint={hints[keyName]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
-          )}
-          {provider === "ollama" && (
-            <>
-              <TextSetting label={t("ai.ollamaUrl")} value={settings.ollama_url} onSave={(v) => onChange("ollama_url", v)} />
-              <div className="machine">
-                <button type="button" className="btn btn-ghost btn-small" onClick={check} disabled={checking} aria-busy={checking}>
-                  {checking ? t("ai.checking") : t("ai.check")}
+      {AI_PROVIDERS.map((p) => {
+        const st = of(p);
+        const keyName = p !== "ollama" ? (`ai-key-${p}` as SecretName) : null;
+        return (
+          <SourceBox
+            key={p}
+            id={`ai-${p}`}
+            name={t(`ai.p.${p}` as TextKey)}
+            short={`${FREE.includes(p) ? t("ai.free") : t("ai.paid")} - ${t(`ai.p.${p}.hint` as TextKey)}`}
+            on={turnedOn.includes(p)}
+            onToggle={(on) => toggle(p, on)}
+            alert={st && <ProviderAlert st={st} limit={status?.dailyLimit ?? 0} />}
+          >
+            {KEY_PAGES[p] && (
+              <div>
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[p]!)}>
+                  {p === "ollama" ? t("ai.getOllama") : t("ai.getKey")} <IconArrowOut />
                 </button>
-                {machine && <MachineView m={machine} />}
               </div>
-            </>
-          )}
-          <div className="mail-grid">
+            )}
+            {keyName && (
+              <SecretField name={keyName} label={t("ai.key")} hint={hints[keyName]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
+            )}
+            {p === "ollama" && (
+              <>
+                <TextSetting label={t("ai.ollamaUrl")} value={settings.ollama_url} onSave={(v) => onChange("ollama_url", v)} />
+                <div className="machine">
+                  <button type="button" className="btn btn-ghost btn-small" onClick={check} disabled={checking} aria-busy={checking}>
+                    {checking ? t("ai.checking") : t("ai.check")}
+                  </button>
+                  {machine && <MachineView m={machine} />}
+                </div>
+              </>
+            )}
             <TextSetting
               label={t("ai.model")}
-              hint={status?.defaultModel ? t("ai.modelHint", { model: status.defaultModel }) : undefined}
-              value={settings.ai_model}
-              placeholder={status?.defaultModel}
-              onSave={(v) => onChange("ai_model", v)}
+              hint={st ? t("ai.modelHint", { model: st.defaultModel }) : undefined}
+              value={settings[`ai_model_${p}`]}
+              placeholder={st?.defaultModel}
+              onSave={(v) => onChange(`ai_model_${p}`, v)}
             />
-            <TextSetting
-              label={t("ai.limit")}
-              hint={t("ai.limitHint")}
-              value={settings.ai_daily_limit}
-              inputMode="numeric"
-              onSave={(v) => onChange("ai_daily_limit", v)}
-            />
-          </div>
-          {status && !status.ready && (
-            <p className="source-warn">
-              <IconWarning /> {t("ai.noKey")}
-            </p>
-          )}
-          {status && (
-            <p className="source-state">
-              {t("ai.usage", { today: status.callsToday, limit: status.dailyLimit, month: status.callsMonth })}{" "}
-              {t("ai.counts", { rated: status.rated, waiting: status.waiting })}
-            </p>
-          )}
-          <div className="source-row">
-            <label className="choice-item">
-              <input type="checkbox" checked={settings.ai_auto === "on"} onChange={(e) => onChange("ai_auto", e.target.checked ? "on" : "off")} />
-              <span>{t("ai.auto")}</span>
-            </label>
-            <button type="button" className="btn btn-ghost btn-small" onClick={rateNow} disabled={rating || !status?.ready} aria-busy={rating}>
-              {rating ? t("ai.rating") : t("ai.rateNow")}
-            </button>
-          </div>
-        </section>
-      )}
+            {st && (
+              <p className="source-state">{t("ai.usage", { today: st.callsToday, limit: status?.dailyLimit ?? 0, month: st.callsMonth })}</p>
+            )}
+          </SourceBox>
+        );
+      })}
+
+      <fieldset className="crit-group ai-common">
+        <TextSetting
+          label={t("ai.limit")}
+          hint={t("ai.limitHint")}
+          value={settings.ai_daily_limit}
+          inputMode="numeric"
+          onSave={(v) => onChange("ai_daily_limit", v)}
+        />
+        <label className="choice-item">
+          <input type="checkbox" checked={settings.ai_auto === "on"} onChange={(e) => onChange("ai_auto", e.target.checked ? "on" : "off")} />
+          <span>{t("ai.auto")}</span>
+        </label>
+        {settings.ai_auto === "on" && (
+          <label className="field field-inline">
+            <span>{t("ai.every")}</span>
+            <select value={settings.ai_every} onChange={(e) => onChange("ai_every", e.target.value as Settings["ai_every"])}>
+              {EVERY.map((v) => (
+                <option key={v} value={v}>
+                  {t(`ai.every.${v}` as TextKey)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <p className="hint">{t(settings.ai_auto === "on" ? "ai.autoOnHint" : "ai.autoOffHint")}</p>
+        {usedUp.length > 0 && (
+          <p className="source-warn">
+            <IconWarning />{" "}
+            {t("ai.limitNow", {
+              list: usedUp.map((x) => `${t(`ai.p.${x.provider}` as TextKey)} (${t(x.usedUp === "app" ? "ai.limitApp" : "ai.limitProvider")})`).join(", "),
+            })}{" "}
+            {t(usedUp.length === enabled.length ? "ai.limitAll" : "ai.limitNext")}
+          </p>
+        )}
+        {status && <p className="source-state">{t("ai.counts", { rated: status.rated, waiting: status.waiting })}</p>}
+        <div>
+          <button type="button" className="btn btn-ghost btn-small" onClick={rateNow} disabled={rating || !canRate} aria-busy={rating}>
+            {rating ? t("ai.rating") : t("ai.rateNow")}
+          </button>
+        </div>
+      </fieldset>
 
       <label className="field field-inline">
         <span>{t("ai.hideBelow")}</span>
@@ -199,6 +225,25 @@ export function AiSettings({
         </p>
       </div>
     </div>
+  );
+}
+
+/** A provider that is on but cannot be asked now: no key, or its daily limit is used. */
+function ProviderAlert({ st, limit }: { st: AiProviderStatus; limit: number }) {
+  const { t } = useI18n();
+  if (!st.enabled) return null;
+  if (!st.ready) {
+    return (
+      <p className="source-warn">
+        <IconWarning /> {t("ai.noKey")}
+      </p>
+    );
+  }
+  if (!st.usedUp) return null;
+  return (
+    <p className="source-warn">
+      <IconWarning /> {st.usedUp === "app" ? t("ai.usedUpApp", { limit }) : t("ai.usedUpProvider", { name: t(`ai.p.${st.provider}` as TextKey) })}
+    </p>
   );
 }
 

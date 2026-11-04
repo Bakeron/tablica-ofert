@@ -4,7 +4,7 @@
 // `?firstrun` in the address starts without profiles, with "First steps".
 
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
-import type { AiStatus, Criteria, OfferAi, WorkProgress } from "./types";
+import { AI_PROVIDERS, type AiProvider, type AiStatus, type Criteria, type OfferAi, type WorkProgress } from "./types";
 import { bestResult, viewFor } from "../lib/profile";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
@@ -415,26 +415,30 @@ export function createMockApi(): Api {
       return () => {};
     },
     async aiStatus(): Promise<AiStatus> {
-      const provider = settings.ai_provider;
-      const needsKey = provider !== "none" && provider !== "ollama";
-      const defaults: Record<string, string> = {
-        none: "", gemini: "gemini-2.5-flash", groq: "openai/gpt-oss-120b", openrouter: "openai/gpt-oss-20b:free",
+      const defaults: Record<AiProvider, string> = {
+        gemini: "gemini-2.5-flash", groq: "openai/gpt-oss-120b", openrouter: "openai/gpt-oss-20b:free",
         ollama: "llama3.1:8b", anthropic: "claude-opus-5-5", openai: "gpt-5-mini",
       };
+      const on = settings.ai_providers.split(",");
       return {
-        provider,
-        model: settings.ai_model || defaults[provider],
-        defaultModel: defaults[provider],
-        ready: provider !== "none" && (!needsKey || Boolean(secrets[`ai-key-${provider}` as keyof typeof secrets])),
-        callsToday: aiCalls,
-        callsMonth: aiCalls + 41,
+        providers: AI_PROVIDERS.map((provider) => ({
+          provider,
+          enabled: on.includes(provider),
+          ready: provider === "ollama" || Boolean(secrets[`ai-key-${provider}` as keyof typeof secrets]),
+          model: settings[`ai_model_${provider}`] || defaults[provider],
+          defaultModel: defaults[provider],
+          callsToday: provider === "groq" ? aiCalls : 0,
+          callsMonth: provider === "groq" ? aiCalls + 41 : 0,
+          // Made up: Groq "said" its limit is used, to show the warning.
+          usedUp: provider === "groq" && on.includes("groq") ? ("provider" as const) : null,
+        })),
         dailyLimit: Number(settings.ai_daily_limit),
         waiting: [...offers.values()].filter((o) => o.ai.status === null && !o.deletedAt).length,
         rated: [...offers.values()].filter((o) => o.ai.status === "done").length,
       };
     },
     async aiRateNow() {
-      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 900));
       let rated = 0;
       for (const o of offers.values()) {
@@ -448,7 +452,7 @@ export function createMockApi(): Api {
     },
     async aiRateOffer(id) {
       const o = find(id);
-      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       o.ai = { ...o.ai, status: "done", summary: o.ai.summary ?? "Przykładowe streszczenie z podglądu - tu pisze AI." };
       aiCalls++;
@@ -456,7 +460,7 @@ export function createMockApi(): Api {
     },
     async aiAssist(id, kind) {
       const o = find(id);
-      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       if (kind === "message") {
@@ -468,7 +472,7 @@ export function createMockApi(): Api {
       return "- Testy end-to-end: oferta wymienia Playwright - warto zrobić mały projekt próbny.\n\n(Przykład z podglądu - tu pisze AI.)";
     },
     async aiSuggestCriteria(description): Promise<Criteria> {
-      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       const base: Criteria = {
@@ -488,7 +492,7 @@ export function createMockApi(): Api {
       };
     },
     async aiTidy(text) {
-      if (settings.ai_provider === "none") throw { code: "missing", detail: "ai provider" };
+      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       return text
@@ -514,7 +518,7 @@ export function createMockApi(): Api {
       const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
       const money = lines.find((l) => /\d/.test(l) && /(zł|pln|eur)/i.test(l));
       const nums = money?.replace(/(\d)\s(\d{3})/g, "$1$2").match(/\d+/g)?.map(Number) ?? [];
-      const ai = settings.ai_provider !== "none";
+      const ai = settings.ai_providers !== "";
       return {
         title: title || lines[0] || null,
         company: ai ? (lines[1] ?? null) : null,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Api } from "./api";
 import {
   DEFAULT_SETTINGS,
+  aiOn,
   TEXT_SIZES,
   describeError,
   type AppStatus,
@@ -766,7 +767,7 @@ export default function App() {
                 action: () => run(() => api!.purgeOffers(selectedId), () => setToast({ text: t("trash.purged") })),
               })
             }
-            aiOn={settings.ai_provider !== "none"}
+            aiOn={aiOn(settings)}
             onFullText={() => detail && startFullText(detail)}
             agenda={{
               addEvent: (event) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addEvent(selectedId, event))),
@@ -794,7 +795,7 @@ export default function App() {
         <AddOfferDialog
           open={adding}
           shared={shared}
-          aiOn={settings.ai_provider !== "none"}
+          aiOn={aiOn(settings)}
           onClose={() => {
             setAdding(false);
             api?.closePreview().catch(() => {});
@@ -809,7 +810,7 @@ export default function App() {
           profile={editing?.profile ?? null}
           experience={experience}
           experiencePrev={experiencePrev}
-          aiOn={settings.ai_provider !== "none"}
+          aiOn={aiOn(settings)}
           onSuggest={suggestCriteria}
           onTidy={tidyText}
           onClose={() => setEditing(null)}

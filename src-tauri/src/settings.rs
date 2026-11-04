@@ -60,11 +60,20 @@ const ALLOWED: &[(&str, Rule)] = &[
     // Words for alerts on the portals and for the Adzuna / Jooble searches, comma separated;
     // empty = the keywords of the profiles.
     ("search_words", Rule::Text { max: 254, default: "", check: is_search_words }),
-    // AI: provider, model (empty = the provider's default), daily cap of calls.
-    ("ai_provider", Rule::One(&["none", "gemini", "groq", "openrouter", "ollama", "anthropic", "openai"])),
-    ("ai_model", Rule::Text { max: 120, default: "", check: is_model }),
+    // AI: the providers turned on (asked in the order of the list in the settings), a model
+    // per provider (empty = its default), the daily cap of calls per provider, reading new
+    // offers by itself (off unless turned on) and how often.
+    ("ai_providers", Rule::Text { max: 80, default: "", check: is_provider_list }),
+    ("ai_model_gemini", Rule::Text { max: 120, default: "", check: is_model }),
+    ("ai_model_groq", Rule::Text { max: 120, default: "", check: is_model }),
+    ("ai_model_openrouter", Rule::Text { max: 120, default: "", check: is_model }),
+    ("ai_model_ollama", Rule::Text { max: 120, default: "", check: is_model }),
+    ("ai_model_anthropic", Rule::Text { max: 120, default: "", check: is_model }),
+    ("ai_model_openai", Rule::Text { max: 120, default: "", check: is_model }),
     ("ai_daily_limit", Rule::Text { max: 5, default: "200", check: is_limit }),
-    ("ai_auto", Rule::One(&["on", "off"])),
+    ("ai_auto", Rule::One(&["off", "on"])),
+    // Minutes between the AI runs on its own.
+    ("ai_every", Rule::One(&["30", "60", "180", "1440"])),
     ("ollama_url", Rule::Text { max: 200, default: "http://localhost:11434", check: is_base_url }),
     // Board: hide offers scored below this (offers you acted on stay).
     ("hide_below", Rule::One(&["off", "30", "40", "50", "60", "70"])),
@@ -76,6 +85,13 @@ fn is_client_id(v: &str) -> bool {
 
 fn is_model(v: &str) -> bool {
     v.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:/@".contains(c))
+}
+
+/// Known AI providers, comma separated, each once.
+fn is_provider_list(v: &str) -> bool {
+    let words: Vec<&str> = v.split(',').filter(|w| !w.is_empty()).collect();
+    words.iter().all(|w| crate::ai::client::Provider::parse(w).is_some())
+        && words.iter().enumerate().all(|(i, w)| !words[..i].contains(w))
 }
 
 fn is_limit(v: &str) -> bool {

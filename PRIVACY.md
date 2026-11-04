@@ -21,7 +21,7 @@ Tylko z tym, co włączysz w ustawieniach:
 - **Jooble** (agregator ofert) - wysyłane są słowo kluczowe i miasto z profilu oraz Twój klucz Jooble.
 - **Himalayas** (praca zdalna) - wysyłane są słowa kluczowe z profilu i kraj („PL”). Raz dziennie aplikacja pyta Himalayas o każdą pobraną od nich ofertę, czy jest jeszcze otwarta (to warunek Himalayas: zamknięte oferty trzeba usuwać).
 - **Twoja skrzynka z alertami** (IMAP) - aplikacja tylko czyta maile; niczego nie usuwa, nie oznacza jako przeczytane i nie wysyła.
-- **Wybrany dostawca AI** (Gemini, Groq, OpenRouter, Claude, OpenAI) - wysyłana jest treść oferty, opisy profili, oczekiwania finansowe i doświadczenie. Nigdy klucze, hasła ani notatki. Przy Ollamie AI działa na Twoim komputerze i nic nie wychodzi na zewnątrz. Dane w usłudze AI podlegają polityce prywatności tej usługi.
+- **Włączeni dostawcy AI** (Gemini, Groq, OpenRouter, Claude, OpenAI) - AI pyta ich po kolei (po dziennym limicie jednego - następnego), więc dane jednej oferty mogą trafić do każdego z włączonych; wysyłana jest treść oferty, opisy profili, oczekiwania finansowe i doświadczenie. Nigdy klucze, hasła ani notatki. Przy Ollamie AI działa na Twoim komputerze i nic nie wychodzi na zewnątrz. Dane w usłudze AI podlegają polityce prywatności tej usługi.
 - **Strony ofert otwarte przez Ciebie** w oknie podglądu.
 - **Google Dysk** (gdy włączysz synchronizację z telefonem) - aplikacja widzi tylko swój ukryty folder na Twoim Dysku i zapisuje tam jeden plik z danymi, zaszyfrowany kluczem synchronizacji, którego Google nie zna. Token dostępu do Dysku leży w sejfie systemu.
 - **Kalendarz Google** (gdy klikniesz „Dodaj do kalendarza”) - w Twojej przeglądarce otwiera się Kalendarz z wypełnionym terminem: stanowisko, firma, notatka terminu i link do oferty.
@@ -55,7 +55,7 @@ Only what you turn on in the settings:
 - **Jooble** (job aggregator) - a profile keyword and city, and your Jooble key.
 - **Himalayas** (remote jobs) - profile keywords and the country ("PL"). Once a day the app asks Himalayas whether each offer it got from them is still open (a Himalayas condition: closed jobs must be removed).
 - **Your alert mailbox** (IMAP) - read only; nothing is deleted, marked as read or sent.
-- **The AI provider you choose** (Gemini, Groq, OpenRouter, Claude, OpenAI) - the offer text, profile descriptions, salary expectations and experience. Never keys, passwords or notes. With Ollama, AI runs on your computer and nothing leaves it. Data at an AI service is covered by that service's privacy policy.
+- **The AI providers you turn on** (Gemini, Groq, OpenRouter, Claude, OpenAI) - AI asks them in turn (after the daily limit of one - the next), so the data of one offer may reach any of them; sent are the offer text, profile descriptions, salary expectations and experience. Never keys, passwords or notes. With Ollama, AI runs on your computer and nothing leaves it. Data at an AI service is covered by that service's privacy policy.
 - **Offer pages you open yourself** in the preview window.
 - **Google Drive** (when you turn on sync with your phone) - the app sees only its own hidden folder in your Drive and keeps one data file there, encrypted with the sync key, which Google does not know. The Drive access token is kept in the system vault.
 - **Google Calendar** (when you click "Add to calendar") - Calendar opens in your browser with the event filled in: job title, company, the event note and the offer link.

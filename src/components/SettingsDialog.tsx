@@ -113,17 +113,20 @@ function SettingsBody({
   return (
     <ConfirmContext.Provider value={onConfirm}>
     <div className="sheet">
-      <header className="sheet-head">
-        <h2 id="settings-title">{t("settings.title")}</h2>
-        <CloseButton onClick={onClose} label={closeLabel} />
-      </header>
-      <nav className="settings-nav" aria-label={t("settings.section")}>
-        {SECTIONS.map((s) => (
-          <button key={s} type="button" className="seg" aria-pressed={section === s} onClick={() => setSection(s)}>
-            {t(`settings.s.${s}` as TextKey)}
-          </button>
-        ))}
-      </nav>
+      {/* Title, "X" and the sections stay at the top while a long section scrolls. */}
+      <div className="settings-top">
+        <header className="sheet-head">
+          <h2 id="settings-title">{t("settings.title")}</h2>
+          <CloseButton onClick={onClose} label={closeLabel} />
+        </header>
+        <nav className="settings-nav" aria-label={t("settings.section")}>
+          {SECTIONS.map((s) => (
+            <button key={s} type="button" className="seg" aria-pressed={section === s} onClick={() => setSection(s)}>
+              {t(`settings.s.${s}` as TextKey)}
+            </button>
+          ))}
+        </nav>
+      </div>
 
       {section === "look" &&
         OPTIONS.map((option) => (

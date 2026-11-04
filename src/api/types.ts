@@ -235,22 +235,34 @@ export interface OfferAi {
   offerLanguage: OfferLanguage | null;
 }
 
-export type AiProvider = "none" | "gemini" | "groq" | "openrouter" | "ollama" | "anthropic" | "openai";
-export const AI_PROVIDERS: AiProvider[] = ["none", "gemini", "groq", "openrouter", "ollama", "anthropic", "openai"];
+export type AiProvider = "gemini" | "groq" | "openrouter" | "ollama" | "anthropic" | "openai";
+/** In the order AI is asked (the same as `ai::ORDER` in Rust). */
+export const AI_PROVIDERS: AiProvider[] = ["gemini", "groq", "openrouter", "ollama", "anthropic", "openai"];
 
-export interface AiStatus {
+export interface AiProviderStatus {
   provider: AiProvider;
-  model: string;
-  defaultModel: string;
+  enabled: boolean;
   /** Key present (always true for Ollama). */
   ready: boolean;
+  model: string;
+  defaultModel: string;
   callsToday: number;
   callsMonth: number;
+  /** Not asked today: "app" = the daily cap is used, "provider" = the provider's own limit. */
+  usedUp: "app" | "provider" | null;
+}
+
+export interface AiStatus {
+  /** Every provider, in the order they are asked. */
+  providers: AiProviderStatus[];
   dailyLimit: number;
   /** Offers waiting for AI. */
   waiting: number;
   rated: number;
 }
+
+/** AI is set up: at least one provider turned on. */
+export const aiOn = (s: Settings) => s.ai_providers !== "";
 
 export interface RateReport {
   rated: number;
@@ -342,12 +354,21 @@ export interface Settings {
   mail_user: string;
   /** Words for alerts on the portals and the Adzuna / Jooble searches, comma separated; empty = profile keywords. */
   search_words: string;
-  ai_provider: AiProvider;
-  /** Empty = the provider's default model. */
-  ai_model: string;
+  /** Providers turned on, comma separated (asked in the order of `AI_PROVIDERS`); empty = AI off. */
+  ai_providers: string;
+  /** Model per provider; empty = the provider's default. */
+  ai_model_gemini: string;
+  ai_model_groq: string;
+  ai_model_openrouter: string;
+  ai_model_ollama: string;
+  ai_model_anthropic: string;
+  ai_model_openai: string;
+  /** Daily cap of calls, for each provider. */
   ai_daily_limit: string;
-  /** AI reads new offers by itself. */
-  ai_auto: "on" | "off";
+  /** AI reads new offers by itself (off unless turned on). */
+  ai_auto: "off" | "on";
+  /** Minutes between the runs of AI on its own. */
+  ai_every: "30" | "60" | "180" | "1440";
   ollama_url: string;
   hide_below: "off" | "30" | "40" | "50" | "60" | "70";
 }
@@ -383,10 +404,16 @@ export const DEFAULT_SETTINGS: Settings = {
   mail_port: "993",
   mail_user: "",
   search_words: "",
-  ai_provider: "none",
-  ai_model: "",
+  ai_providers: "",
+  ai_model_gemini: "",
+  ai_model_groq: "",
+  ai_model_openrouter: "",
+  ai_model_ollama: "",
+  ai_model_anthropic: "",
+  ai_model_openai: "",
   ai_daily_limit: "200",
-  ai_auto: "on",
+  ai_auto: "off",
+  ai_every: "30",
   ollama_url: "http://localhost:11434",
   hide_below: "off",
 };
