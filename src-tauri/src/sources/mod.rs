@@ -25,7 +25,7 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::commands::{AppState, with_db};
 use crate::error::{AppError, AppResult};
-use crate::model::{AddOutcome, OfferInput, Profile, Remote};
+use crate::model::{AddOutcome, OfferInput, OnProgress, Profile, Progress, Remote};
 use crate::{clock, net, offers, profiles, settings, usage};
 
 /// One search for one keyword of a profile.
@@ -334,12 +334,14 @@ impl Drop for Running<'_> {
 }
 
 /// Collects offers from every enabled source that is due. `force` = "Fetch now" from the UI
-/// (shorter waits, daily limits still apply).
-pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
+/// (shorter waits, daily limits still apply). `progress` hears every request before it goes
+/// (the caller says when it is over).
+pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> AppResult<FetchReport> {
     if state.fetching.swap(true, Ordering::SeqCst) {
         return Err(AppError::Busy);
     }
     let _running = Running(state);
+    let say = |step: &str, done: usize, total: usize| progress(Some(Progress::new(step, None, done, total)));
     let snap = with_db(state, |c| snapshot(c))?;
     let now = OffsetDateTime::now_utc();
     let mut report = FetchReport::default();
@@ -374,8 +376,11 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             // Searches whose first page was full - their second page goes after every first page.
             let mut more = Vec::new();
             let mut calls: usize = 0;
-            for q in for_this_run(&queries, budget, turn(now, budget, snap.adzuna_calls)) {
+            let first = for_this_run(&queries, budget, turn(now, budget, snap.adzuna_calls));
+            let first_total = first.len();
+            for q in first {
                 calls += 1;
+                say(adzuna::SOURCE, calls, first_total);
                 match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 1).await {
                     Ok(mut page) => {
                         found.append(&mut page.offers);
@@ -390,8 +395,11 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
                 }
             }
             if run.error.is_none() {
-                for q in more.into_iter().take(budget.saturating_sub(calls)) {
+                let more: Vec<_> = more.into_iter().take(budget.saturating_sub(calls)).collect();
+                let total = calls + more.len();
+                for q in more {
                     calls += 1;
+                    say(adzuna::SOURCE, calls, total);
                     match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 2).await {
                         Ok(mut page) => found.append(&mut page.offers),
                         Err(e) => {
@@ -432,11 +440,15 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             let mut found = Vec::new();
             let mut calls = 0;
             let count = limits.calls_a_run.min(left);
-            for (i, word) in for_this_run_words(&words, count, turn(now, count, snap.remotive_calls)).into_iter().enumerate() {
+            let list = for_this_run_words(&words, count, turn(now, count, snap.remotive_calls));
+            let total = list.len();
+            for (i, word) in list.into_iter().enumerate() {
                 if i > 0 {
+                    progress(Some(Progress::new("wait", Some(remotive::SOURCE), i + 1, total)));
                     tokio::time::sleep(std::time::Duration::from_secs(REMOTIVE_PAUSE_SECS)).await;
                 }
                 calls += 1;
+                say(remotive::SOURCE, i + 1, total);
                 match remotive::search(&client, word).await {
                     Ok(mut list) => found.append(&mut list),
                     Err(e) => {
@@ -476,8 +488,11 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             let mut calls = 0;
             let count = limits.calls_a_run.min(left);
             let country = snap.settings.get("adzuna_country").cloned().unwrap_or_else(|| "pl".into());
-            for word in for_this_run_words(&words, count, turn(now, count, snap.himalayas_calls)) {
+            let list = for_this_run_words(&words, count, turn(now, count, snap.himalayas_calls));
+            let total = list.len();
+            for word in list {
                 calls += 1;
+                say(himalayas::SOURCE, calls as usize, total);
                 match himalayas::search(&client, word, &country).await {
                     Ok(list) => found.extend(list.into_iter().filter(|o| {
                         crate::filter::mentions_any(&o.title, o.description.as_deref().unwrap_or(""), std::slice::from_ref(word))
@@ -526,6 +541,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         } else if left <= 0 {
             run.skipped = Some("limit");
         } else {
+            say(source, 1, 1);
             let answer = if source == weworkremotely::SOURCE {
                 weworkremotely::fetch(&client, &words).await
             } else {
@@ -570,6 +586,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             let mut found = Vec::new();
             let mut sent = false;
             if let Some(q) = for_this_run(&queries, limits.calls_a_run, snap.jooble_total).first() {
+                say(jooble::SOURCE, 1, 1);
                 match jooble::search(&client, &key, q, &mut sent).await {
                     Ok(mut list) => found.append(&mut list),
                     Err(e) => run.error = Some((&e).into()),
@@ -602,6 +619,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         } else {
             let config = config.expect("checked above");
             let position = with_db(state, |c| mail::position(c))?;
+            say(mail::SOURCE, 1, 1);
             // IMAP is blocking - it runs on a worker thread, not on the async runtime.
             let result = tauri::async_runtime::spawn_blocking(move || mail::fetch(&config, &position))
                 .await
@@ -631,7 +649,11 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
     let to_check = with_db(state, |c| himalayas::to_check(c, &today))?;
     if !to_check.is_empty() {
         let pause = std::time::Duration::from_millis(himalayas::CHECK_PAUSE_MS);
+        let total = to_check.len();
+        let mut done = 0;
         let round = himalayas::check_round(&to_check, pause, |link| {
+            done += 1;
+            progress(Some(Progress::new("check", Some(himalayas::SOURCE), done, total)));
             let client = client.clone();
             async move { himalayas::job_state(&client, &link).await }
         })

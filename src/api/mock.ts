@@ -4,10 +4,14 @@
 // `?firstrun` in the address starts without profiles, with "First steps".
 
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
-import type { AiStatus, Criteria, OfferAi } from "./types";
+import type { AiStatus, Criteria, OfferAi, WorkProgress } from "./types";
 import { bestResult, viewFor } from "../lib/profile";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
+
+/** Listeners of the line at the bottom ("work-progress"). */
+const progressListeners = new Set<(step: WorkProgress | null) => void>();
+const tellProgress = (step: WorkProgress | null) => progressListeners.forEach((l) => l(step));
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -374,7 +378,17 @@ export function createMockApi(): Api {
       return 42;
     },
     async fetchOffers() {
-      await new Promise((r) => setTimeout(r, 1200));
+      // A few made-up steps, slow enough to see the line at the bottom.
+      const steps: WorkProgress[] = [
+        { step: "remotive", source: null, done: 1, total: 2 },
+        { step: "wait", source: "remotive", done: 2, total: 2 },
+        { step: "check", source: "himalayas", done: 3, total: 12 },
+      ];
+      for (const step of steps) {
+        tellProgress(step);
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      tellProgress(null);
       const runs = [];
       let added = 0;
       if (settings.source_remotive === "on") {
@@ -490,6 +504,10 @@ export function createMockApi(): Api {
     },
     async onRated() {
       return () => {};
+    },
+    async onProgress(listener) {
+      progressListeners.add(listener);
+      return () => progressListeners.delete(listener);
     },
     async fillOffer(text, title) {
       await new Promise((r) => setTimeout(r, 500));

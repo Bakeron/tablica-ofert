@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Api } from "../api";
 import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type TaskStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate } from "../lib/format";
-import { IconArrowOut, IconWarning } from "./Icons";
+import { IconArrowOut, IconArrowRight, IconWarning } from "./Icons";
+import { Reveal } from "./Reveal";
 import { MailSettings } from "./MailSettings";
 import { SecretField } from "./SecretField";
 
@@ -131,8 +132,7 @@ export function SourcesSettings({
         </label>
       </fieldset>
 
-      <section className="source" aria-labelledby="src-adzuna">
-        <SourceHead id="src-adzuna" name="Adzuna" on={settings.source_adzuna === "on"} onToggle={(on) => onChange("source_adzuna", on ? "on" : "off")} />
+      <SourceBox id="src-adzuna" name="Adzuna" short={t("src.adzuna.short")} on={settings.source_adzuna === "on"} onToggle={(on) => onChange("source_adzuna", on ? "on" : "off")} state={adzuna} lang={lang}>
         <p>{t("src.adzuna.text")}</p>
         <div className="source-row">
           <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(ADZUNA_SIGNUP)}>
@@ -154,40 +154,33 @@ export function SourcesSettings({
           <SecretField name="adzuna-app-key" label={t("src.adzuna.appKey")} hint={hints["adzuna-app-key"]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
         </div>
         <p className="hint">{t("secret.hint")}</p>
-        {adzuna && <SourceState s={adzuna} lang={lang} />}
-      </section>
+      </SourceBox>
 
-      <section className="source" aria-labelledby="src-remotive">
-        <SourceHead id="src-remotive" name="Remotive" on={settings.source_remotive === "on"} onToggle={(on) => onChange("source_remotive", on ? "on" : "off")} />
+      <SourceBox id="src-remotive" name="Remotive" short={t("src.remotive.short")} on={settings.source_remotive === "on"} onToggle={(on) => onChange("source_remotive", on ? "on" : "off")} state={remotive} lang={lang}>
         <p>{t("src.remotive.text")}</p>
-        {remotive && <SourceState s={remotive} lang={lang} />}
-      </section>
+      </SourceBox>
 
-      <section className="source" aria-labelledby="src-himalayas">
-        <SourceHead id="src-himalayas" name="Himalayas" on={settings.source_himalayas === "on"} onToggle={(on) => onChange("source_himalayas", on ? "on" : "off")} />
+      <SourceBox id="src-himalayas" name="Himalayas" short={t("src.himalayas.short")} on={settings.source_himalayas === "on"} onToggle={(on) => onChange("source_himalayas", on ? "on" : "off")} state={himalayas} lang={lang}>
         <p>{t("src.himalayas.text")}</p>
-        {himalayas && <SourceState s={himalayas} lang={lang} />}
-      </section>
+      </SourceBox>
 
-      <section className="source" aria-labelledby="src-wwr">
-        <SourceHead
-          id="src-wwr"
-          name="We Work Remotely"
-          on={settings.source_weworkremotely === "on"}
-          onToggle={(on) => onChange("source_weworkremotely", on ? "on" : "off")}
-        />
+      <SourceBox
+        id="src-wwr"
+        name="We Work Remotely"
+        short={t("src.wwr.short")}
+        on={settings.source_weworkremotely === "on"}
+        onToggle={(on) => onChange("source_weworkremotely", on ? "on" : "off")}
+        state={wwr}
+        lang={lang}
+      >
         <p>{t("src.wwr.text")}</p>
-        {wwr && <SourceState s={wwr} lang={lang} />}
-      </section>
+      </SourceBox>
 
-      <section className="source" aria-labelledby="src-remoteok">
-        <SourceHead id="src-remoteok" name="Remote OK" on={settings.source_remoteok === "on"} onToggle={(on) => onChange("source_remoteok", on ? "on" : "off")} />
+      <SourceBox id="src-remoteok" name="Remote OK" short={t("src.remoteok.short")} on={settings.source_remoteok === "on"} onToggle={(on) => onChange("source_remoteok", on ? "on" : "off")} state={remoteok} lang={lang}>
         <p>{t("src.remoteok.text")}</p>
-        {remoteok && <SourceState s={remoteok} lang={lang} />}
-      </section>
+      </SourceBox>
 
-      <section className="source" aria-labelledby="src-jooble">
-        <SourceHead id="src-jooble" name="Jooble" on={settings.source_jooble === "on"} onToggle={(on) => onChange("source_jooble", on ? "on" : "off")} />
+      <SourceBox id="src-jooble" name="Jooble" short={t("src.jooble.short")} on={settings.source_jooble === "on"} onToggle={(on) => onChange("source_jooble", on ? "on" : "off")} state={jooble} lang={lang}>
         <p>{t("src.jooble.text")}</p>
         <div className="source-row">
           <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(JOOBLE_SIGNUP)}>
@@ -196,8 +189,7 @@ export function SourcesSettings({
         </div>
         <SecretField name="jooble-key" label={t("src.jooble.key")} hint={hints["jooble-key"]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
         <p className="hint">{t("secret.hint")}</p>
-        {jooble && <SourceState s={jooble} lang={lang} />}
-      </section>
+      </SourceBox>
 
       <MailSettings
         api={api}
@@ -215,39 +207,82 @@ export function SourcesSettings({
   );
 }
 
-export function SourceHead({ id, name, on, onToggle }: { id: string; name: string; on: boolean; onToggle: (on: boolean) => void }) {
+/**
+ * One source: the name (a click unfolds the rest), the on / off switch and one short line are
+ * always visible; the long description, keys and the last run show after unfolding. A
+ * problem (missing key, last error) shows folded too - it is never hidden.
+ */
+export function SourceBox({
+  id,
+  name,
+  short,
+  on,
+  onToggle,
+  state,
+  lang,
+  children,
+}: {
+  id: string;
+  name: string;
+  short: string;
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  state: SourceStatus | undefined;
+  lang: "pl" | "en";
+  children: ReactNode;
+}) {
   const { t } = useI18n();
+  const [open, setOpen] = useState(false);
   return (
-    <div className="source-head">
-      <h3 id={id}>{name}</h3>
-      <label className="chip">
-        <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} aria-label={`${name}: ${t("src.on")}`} />
-        <span>{on ? t("src.on") : t("src.off")}</span>
-      </label>
-    </div>
+    <section className="source" aria-labelledby={id} data-open={open || undefined}>
+      <div className="source-head">
+        <h3 id={id}>
+          <button type="button" className="source-unfold" aria-expanded={open} aria-controls={`${id}-more`} onClick={() => setOpen(!open)}>
+            <IconArrowRight />
+            {name}
+          </button>
+        </h3>
+        <label className="chip">
+          <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} aria-label={`${name}: ${t("src.on")}`} />
+          <span>{on ? t("src.on") : t("src.off")}</span>
+        </label>
+      </div>
+      <p className="source-short">{short}</p>
+      {!open && state && <SourceState s={state} lang={lang} onlyProblems />}
+      <Reveal show={open}>
+        <div id={`${id}-more`} className="source-more" role="region" aria-label={t("src.more", { name })}>
+          {children}
+          {state && <SourceState s={state} lang={lang} />}
+        </div>
+      </Reveal>
+    </section>
   );
 }
 
 /** Last run, calls today and the last error of a source - in words, not only colour. */
-export function SourceState({ s, lang }: { s: SourceStatus; lang: "pl" | "en" }) {
+export function SourceState({ s, lang, onlyProblems = false }: { s: SourceStatus; lang: "pl" | "en"; onlyProblems?: boolean }) {
   const { t } = useI18n();
   // A successful run clears the error; the Himalayas check of closed jobs can set it after one.
   const failed = s.lastError && s.lastTry;
+  const noKey = !s.ready && s.enabled;
+  if (onlyProblems && !failed && !noKey) return null;
   return (
     <div className="source-state">
       {/* A missing key is a problem only for a source that is on - "not set" under the field says the rest. */}
-      {!s.ready && s.enabled && (
+      {noKey && (
         <p className="source-warn">
           <IconWarning /> {t(s.source === "mail" ? "src.status.noMail" : "src.status.noKey")}
         </p>
       )}
-      <p>
-        {s.lastOk
-          ? t("src.status.last", { when: fullDate(s.lastOk, lang), added: s.added, merged: s.merged })
-          : t("src.status.never")}{" "}
-        {s.callsADay > 0 && t("src.status.calls", { count: s.callsToday, max: s.callsADay })}{" "}
-        {s.callsLeft !== null && t("src.status.callsLeft", { count: s.callsLeft })}
-      </p>
+      {!onlyProblems && (
+        <p>
+          {s.lastOk
+            ? t("src.status.last", { when: fullDate(s.lastOk, lang), added: s.added, merged: s.merged })
+            : t("src.status.never")}{" "}
+          {s.callsADay > 0 && t("src.status.calls", { count: s.callsToday, max: s.callsADay })}{" "}
+          {s.callsLeft !== null && t("src.status.callsLeft", { count: s.callsLeft })}
+        </p>
+      )}
       {failed && (
         <p className="source-warn">
           <IconWarning /> {t("src.status.error", { when: fullDate(s.lastTry!, lang), detail: s.lastError! })}

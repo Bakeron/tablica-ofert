@@ -92,7 +92,8 @@ pub fn spawn_ai(app: tauri::AppHandle) {
         if !on {
             return;
         }
-        match ai::process(&state, None).await {
+        let say = progress_of(&app);
+        match until_done(ai::process(&state, None, &say).await, &say) {
             Ok(report) if report.rated > 0 || report.error.is_some() => {
                 let _ = app.emit("offers-rated", &report);
             }
@@ -100,6 +101,24 @@ pub fn spawn_ai(app: tauri::AppHandle) {
             Err(e) => eprintln!("AI run failed: {e}"),
         }
     });
+}
+
+/// Every step of the work in the background goes to the open window ("work-progress"),
+/// `None` = the line at the bottom goes away.
+pub fn progress_of(app: &tauri::AppHandle) -> impl Fn(Option<Progress>) + Sync + '_ {
+    use tauri::Emitter;
+    move |step| {
+        let _ = app.emit("work-progress", step);
+    }
+}
+
+/// The work is over - unless it never started because the same work was already running
+/// (its line stays until that one is over).
+pub fn until_done<T>(result: AppResult<T>, progress: OnProgress<'_>) -> AppResult<T> {
+    if !matches!(result, Err(AppError::Busy)) {
+        progress(None);
+    }
+    result
 }
 
 #[tauri::command]
@@ -235,9 +254,10 @@ pub async fn mail_test(state: State<'_, AppState>) -> AppResult<u32> {
 /// "Fetch now": every enabled source that may run (daily limits still apply).
 #[tauri::command]
 pub async fn fetch_offers(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<FetchReport> {
-    let report = sources::fetch(&state, true).await?;
+    let say = progress_of(&app);
+    let report = until_done(sources::fetch(&state, true, &say).await, &say)?;
     if report.added > 0 {
-        spawn_ai(app);
+        spawn_ai(app.clone());
     }
     Ok(report)
 }
@@ -262,15 +282,17 @@ pub async fn ai_status(state: State<'_, AppState>) -> AppResult<AiStatus> {
 
 /// AI reads waiting offers now (the same as after every fetch).
 #[tauri::command]
-pub async fn ai_rate_now(state: State<'_, AppState>) -> AppResult<RateReport> {
-    ai::process(&state, None).await
+pub async fn ai_rate_now(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<RateReport> {
+    let say = progress_of(&app);
+    until_done(ai::process(&state, None, &say).await, &say)
 }
 
 /// "Rate again" on the offer card.
 #[tauri::command]
 pub async fn ai_rate_offer(state: State<'_, AppState>, id: i64) -> AppResult<RateReport> {
     with_db(&state, |c| ai::reset(c, id))?;
-    ai::process(&state, Some(id)).await
+    // One offer - the message "AI is working" is enough, no line at the bottom.
+    ai::process(&state, Some(id), &|_| {}).await
 }
 
 #[tauri::command]

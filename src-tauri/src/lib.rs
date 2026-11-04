@@ -230,8 +230,9 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
     let state = handle.state::<AppState>();
     let on = |key: &str| commands::with_db(&state, |c| settings::is_on(c, key)).unwrap_or(false);
     let mut new_on_board = 0;
+    let say = commands::progress_of(handle);
     if background || on("fetch_auto") {
-        match sources::fetch(&state, false).await {
+        match commands::until_done(sources::fetch(&state, false, &say).await, &say) {
             Ok(report) => {
                 new_on_board = report.new_on_board;
                 if !report.runs.is_empty() || report.closed > 0 {
@@ -243,7 +244,7 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
         }
     }
     if on("ai_auto") {
-        match ai::process(&state, None).await {
+        match commands::until_done(ai::process(&state, None, &say).await, &say) {
             Ok(report) if report.rated > 0 => {
                 let _ = handle.emit("offers-rated", &report);
             }

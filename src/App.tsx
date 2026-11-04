@@ -21,13 +21,14 @@ import {
   type Stage,
   type View,
   type ViewCounts,
+  type WorkProgress,
 } from "./api/types";
 import { AddOfferDialog } from "./components/AddOfferDialog";
 import { AssistDialog } from "./components/AiDialogs";
 import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
-import { ErrorContext, ToastContext, ToastView, type Toast } from "./components/Toast";
+import { ErrorContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
 import { IconBriefcase, IconDownload, IconGear, IconPlus, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
@@ -71,6 +72,8 @@ export default function App() {
   /** Offer to select once the list of a newly opened tab has loaded. */
   const [pendingSelect, setPendingSelect] = useState<number | null>(null);
   const [fetching, setFetching] = useState(false);
+  /** What fetching or AI is doing now - the line at the bottom. */
+  const [work, setWork] = useState<WorkProgress | null>(null);
   /** Show offers hidden by "hide offers scored below X" (until the app is closed). */
   const [showLow, setShowLow] = useState(false);
   const [experiencePrev, setExperiencePrev] = useState<string | null>(null);
@@ -268,8 +271,11 @@ export default function App() {
         if (report.error) setToast({ text: rateSummary(report, t) });
       })
       .then((unlisten) => (alive ? (stopRated = unlisten) : unlisten()));
+    let stopProgress: (() => void) | undefined;
+    api.onProgress(setWork).then((unlisten) => (alive ? (stopProgress = unlisten) : unlisten()));
     return () => {
       alive = false;
+      stopProgress?.();
       stop?.();
       stopRated?.();
       stopReminder?.();
@@ -598,6 +604,7 @@ export default function App() {
     <I18nContext.Provider value={i18n}>
       <ToastContext.Provider value={toastValue}>
       <ErrorContext.Provider value={errorValue}>
+      <WorkContext.Provider value={work}>
       <div className="app">
         <header className="topbar" ref={topbarRef}>
           <div className="brand">
@@ -844,6 +851,7 @@ export default function App() {
           onClose={() => setConfirm(null)}
         />
       </div>
+      </WorkContext.Provider>
       </ErrorContext.Provider>
       </ToastContext.Provider>
     </I18nContext.Provider>

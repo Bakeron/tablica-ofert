@@ -6,7 +6,7 @@ import { IconArrowOut, IconHome, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
-import { SourceHead, SourceState } from "./SourcesSettings";
+import { SourceBox } from "./SourcesSettings";
 
 /** Portals that send alerts by e-mail - where to set them up (always by a person, once).
  *  `search` builds a ready search for one keyword in the whole country (checked 3.11.2026);
@@ -98,8 +98,15 @@ export function MailSettings({
   }
 
   return (
-    <section className="source" aria-labelledby="src-mail">
-      <SourceHead id="src-mail" name={t("mail.title")} on={settings.source_mail === "on"} onToggle={(on) => onChange("source_mail", on ? "on" : "off")} />
+    <SourceBox
+      id="src-mail"
+      name={t("mail.title")}
+      short={t("mail.short")}
+      on={settings.source_mail === "on"}
+      onToggle={(on) => onChange("source_mail", on ? "on" : "off")}
+      state={status}
+      lang={lang}
+    >
       <p>{t("mail.text")}</p>
 
       <div className="warn-box" role="note">
@@ -160,8 +167,6 @@ export function MailSettings({
             ))}
         </Reveal>
       </div>
-      {status && <SourceState s={status} lang={lang} />}
-
       <TextSetting
         label={t("mail.searchWords")}
         hint={t("mail.searchWordsHint")}
@@ -212,7 +217,7 @@ export function MailSettings({
         </ul>
         <p className="hint">{t("mail.forward")}</p>
       </details>
-    </section>
+    </SourceBox>
   );
 
   /** Ready-to-copy data for the alert form, from the profiles. */

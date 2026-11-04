@@ -17,6 +17,7 @@ import type {
   SyncStatus,
   Upcoming,
   FetchReport,
+  WorkProgress,
   SecretHints,
   SecretName,
   SourceStatus,
@@ -138,6 +139,8 @@ export interface Api {
   updateDescription(id: number, text: string): Promise<boolean>;
   /** AI finished reading offers in the background. */
   onRated(listener: (report: RateReport) => void): Promise<() => void>;
+  /** Every step of fetching and of AI reading offers; null = the work is over. */
+  onProgress(listener: (step: WorkProgress | null) => void): Promise<() => void>;
 }
 
 function insideTauri(): boolean {
@@ -221,6 +224,10 @@ async function tauriApi(): Promise<Api> {
     onRated: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");
       return listen<RateReport>("offers-rated", (e) => listener(e.payload));
+    },
+    onProgress: async (listener) => {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<WorkProgress | null>("work-progress", (e) => listener(e.payload));
     },
   };
 }

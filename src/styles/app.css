@@ -2162,11 +2162,18 @@ fieldset.plain {
 
 /* ---------- settings: sections and offer sources ---------- */
 
+/* The sections stay pinned to the top edge of the window while a long section scrolls; the
+   full-width paper under them hides the text going by (also between the buttons). */
 .settings-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  padding-bottom: 0.7rem;
+  margin: -0.5rem -1.3rem 0;
+  padding: 0.5rem 1.3rem 0.7rem;
+  background: var(--paper);
   border-bottom: 2px dashed var(--perf);
 }
 
@@ -3000,4 +3007,91 @@ fieldset.plain {
 .portal-links .btn:not(.btn-icon-only) svg {
   width: 1.05em;
   height: 1.05em;
+}
+
+/* ---------- "Now: ..." while offers are fetched or read by AI ---------- */
+
+/* A strip of the departure board: a yellow sign "Now", white letters, a thin bar of the steps
+   (the numbers are in the text too - the bar only repeats them). */
+.work-line {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  max-width: min(40rem, calc(100vw - 2rem));
+  background: #0b0c0d;
+  color: #f2f0e8;
+  font-family: var(--font-board);
+  font-size: 1.05rem;
+  letter-spacing: 0.03em;
+}
+
+.work-now {
+  display: flex;
+  align-items: center;
+  padding: 0.35rem 0.6rem;
+  background: var(--signal);
+  color: #0b0c0d;
+  font-weight: 700;
+}
+
+.work-text {
+  padding: 0.35rem 0.8rem;
+}
+
+.work-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(to right, var(--signal) calc(var(--share) * 100%), transparent 0);
+}
+
+/* ---------- a folded source: name, switch, one line; the rest after a click ---------- */
+
+/* The name is the button - the arrow turns down when the source is unfolded. */
+.source-unfold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.3rem 0.1rem 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.source-unfold svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  transition: rotate var(--t-reveal) ease-out;
+}
+
+.source-unfold[aria-expanded="true"] svg {
+  rotate: 90deg;
+}
+
+@media (hover: hover) {
+  .source-unfold:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+}
+
+.source-short {
+  color: var(--paper-dim);
+}
+
+.source-more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.2rem;
 }

@@ -316,3 +316,25 @@ pub enum AddOutcome {
     /// The user deleted this offer before - it does not come back.
     Blocked,
 }
+
+/// What the work in the background is doing now - the line at the bottom of the window.
+/// `step` = a source ("adzuna", "himalayas" ...), "wait" (a pause the source asks for),
+/// "check" (are Himalayas offers still open) or "ai" (AI reads offers).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub step: String,
+    /// The source the step belongs to (for "wait" and "check").
+    pub source: Option<String>,
+    pub done: usize,
+    pub total: usize,
+}
+
+impl Progress {
+    pub fn new(step: &str, source: Option<&str>, done: usize, total: usize) -> Self {
+        Self { step: step.into(), source: source.map(Into::into), done, total }
+    }
+}
+
+/// Called with every new step, and with `None` when the work is over.
+pub type OnProgress<'a> = &'a (dyn Fn(Option<Progress>) + Sync);

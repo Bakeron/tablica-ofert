@@ -456,6 +456,16 @@ export interface FetchReport {
   closed: number;
 }
 
+/** What the work in the background is doing now - the line at the bottom (`Progress` in Rust). */
+export interface WorkProgress {
+  /** A source ("adzuna", "himalayas" ...), "wait" (a pause the source asks for), "check" (are Himalayas offers still open) or "ai". */
+  step: string;
+  /** The source of a "wait" or "check" step. */
+  source: string | null;
+  done: number;
+  total: number;
+}
+
 /** Error shape sent by the Rust side (`AppError`). */
 export interface AppError {
   code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy";

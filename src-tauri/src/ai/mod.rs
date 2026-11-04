@@ -446,8 +446,9 @@ async fn rate(ai: &Ai, job: &Job, app_language: &str) -> AppResult<Reading> {
 }
 
 /// Reads offers waiting for AI (newest first, at most `PER_RUN`), within the daily limit.
-/// `only` = just this offer (button "Rate again").
-pub async fn process(state: &AppState, only: Option<i64>) -> AppResult<RateReport> {
+/// `only` = just this offer (button "Rate again"). `progress` hears every offer before AI
+/// reads it (the caller says when it is over).
+pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'_>) -> AppResult<RateReport> {
     if state.rating.swap(true, Ordering::SeqCst) {
         return Err(AppError::Busy);
     }
@@ -470,6 +471,7 @@ pub async fn process(state: &AppState, only: Option<i64>) -> AppResult<RateRepor
             break;
         }
         let Some(job) = with_db(state, |c| load_job(c, *id))? else { continue };
+        progress(Some(Progress::new("ai", None, i + 1, ids.len())));
         if i > 0 {
             tokio::time::sleep(cfg.provider.pause()).await;
         }
