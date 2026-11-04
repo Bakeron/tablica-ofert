@@ -3084,11 +3084,29 @@ fieldset.plain {
   rotate: 90deg;
 }
 
+/* The underline is always there, only see-through - so on hover it fades in (a plain
+   "none" -> "underline" would jump). */
+.source-unfold {
+  text-decoration: underline transparent;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.source-unfold-hint {
+  transition:
+    color 150ms ease-out,
+    text-decoration-thickness 150ms ease-out;
+}
+
 @media (hover: hover) {
   .source-unfold:hover {
-    text-decoration: underline;
+    text-decoration-color: currentColor;
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .source-unfold:hover .source-unfold-hint {
+    color: var(--paper-ink);
     text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
   }
 }
 
