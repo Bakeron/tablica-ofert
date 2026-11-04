@@ -167,7 +167,9 @@ export default function App() {
         fail(e);
       }
     },
-    [api, status, view, profileId, showLow, fail],
+    // `hide_below` is read by Rust - a new threshold must reload the board at once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, status, view, profileId, showLow, fail, settings.hide_below],
   );
 
   useEffect(() => {
