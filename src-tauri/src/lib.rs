@@ -137,6 +137,8 @@ pub fn run() {
             commands::delete_secret,
             commands::source_status,
             commands::fetch_offers,
+            commands::ollama_models,
+            commands::ollama_pull,
             commands::mail_test,
             commands::ai_status,
             commands::ai_rate_now,

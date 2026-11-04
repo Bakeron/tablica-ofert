@@ -67,6 +67,8 @@ function workText(p: WorkProgress, t: (key: TextKey, params?: Record<string, str
       return t("work.ai", count);
     case "mail":
       return t("work.mail");
+    case "pull":
+      return t("work.pull", { model: p.source ?? "", done: p.done });
     default:
       return p.total > 1 ? t("work.sourceOf", { source: name(p.step), ...count }) : t("work.source", { source: name(p.step) });
   }

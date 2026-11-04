@@ -3133,3 +3133,18 @@ fieldset.plain {
   gap: 0.6rem;
   padding-top: 0.2rem;
 }
+
+/* Ollama: the steps and what it has. */
+.ollama-steps {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ollama-models {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}

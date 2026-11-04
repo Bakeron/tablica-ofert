@@ -11,6 +11,8 @@ import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, typ
 
 /** Listeners of the line at the bottom ("work-progress"). */
 const progressListeners = new Set<(step: WorkProgress | null) => void>();
+/** Made-up models "in Ollama". */
+const ollamaModels = ["llama3.2:3b"];
 const tellProgress = (step: WorkProgress | null) => progressListeners.forEach((l) => l(step));
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -501,6 +503,18 @@ export function createMockApi(): Api {
         .filter(Boolean)
         .map((s) => `- ${s[0].toUpperCase()}${s.slice(1)}`)
         .join("\n");
+    },
+    async ollamaModels() {
+      await new Promise((r) => setTimeout(r, 300));
+      return [...ollamaModels];
+    },
+    async ollamaPull(model) {
+      for (let done = 0; done <= 100; done += 20) {
+        tellProgress({ step: "pull", source: model, done, total: 100 });
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      tellProgress(null);
+      ollamaModels.push(model);
     },
     async checkHardware() {
       await new Promise((r) => setTimeout(r, 600));

@@ -262,6 +262,23 @@ pub async fn fetch_offers(state: State<'_, AppState>, app: tauri::AppHandle) -> 
     Ok(report)
 }
 
+/// Models already in Ollama (an error = Ollama not installed or not running).
+#[tauri::command]
+pub async fn ollama_models(state: State<'_, AppState>) -> AppResult<Vec<String>> {
+    let base = with_db(&state, |c| settings::get(c, "ollama_url"))?;
+    ai::ollama::models(&base).await
+}
+
+/// Downloads a model into Ollama; progress in the line at the bottom.
+#[tauri::command]
+pub async fn ollama_pull(state: State<'_, AppState>, app: tauri::AppHandle, model: String) -> AppResult<()> {
+    let base = with_db(&state, |c| settings::get(c, "ollama_url"))?;
+    let say = progress_of(&app);
+    let result = ai::ollama::pull(&base, &model, &say).await;
+    say(None);
+    result
+}
+
 /// "Check my computer" next to Ollama.
 #[tauri::command]
 pub async fn check_hardware() -> AppResult<crate::hardware::Machine> {

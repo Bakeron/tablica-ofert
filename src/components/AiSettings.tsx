@@ -139,6 +139,11 @@ export function AiSettings({
             )}
             {p === "ollama" && (
               <>
+                <ol className="ollama-steps">
+                  <li>{t("ai.ollamaStep1")}</li>
+                  <li>{t("ai.ollamaStep2")}</li>
+                  <li>{t("ai.ollamaStep3")}</li>
+                </ol>
                 <TextSetting label={t("ai.ollamaUrl")} value={settings.ollama_url} onSave={(v) => onChange("ollama_url", v)} />
                 <div className="machine">
                   <button type="button" className="btn btn-ghost btn-small" onClick={check} disabled={checking} aria-busy={checking}>
@@ -146,6 +151,17 @@ export function AiSettings({
                   </button>
                   {machine && <MachineView m={machine} />}
                 </div>
+                <OllamaModels
+                  api={api}
+                  want={machine?.model ?? settings.ai_model_ollama ?? ""}
+                  url={settings.ollama_url}
+                  onReady={(model) => {
+                    onChange("ai_model_ollama", model);
+                    if (!turnedOn.includes("ollama")) toggle("ollama", true);
+                    onToast(t("ai.ollamaPulled", { model }));
+                  }}
+                  onError={onError}
+                />
               </>
             )}
             <TextSetting
@@ -223,6 +239,70 @@ export function AiSettings({
           <strong>{t("mail.warnTitle")}: </strong>
           {t("ai.noPersonal")}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What Ollama has (checked on unfolding and with a button) and "Download model X" for the
+ * suggested or entered model that is not there yet; after the download it is set and turned on.
+ */
+function OllamaModels({
+  api,
+  want,
+  url,
+  onReady,
+  onError,
+}: {
+  api: Api;
+  want: string;
+  url: string;
+  onReady: (model: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const { t } = useI18n();
+  // null = not checked yet, "off" = Ollama does not answer.
+  const [models, setModels] = useState<string[] | "off" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const look = useCallback(async () => {
+    setModels(await api.ollamaModels().catch(() => "off" as const));
+  }, [api]);
+  useEffect(() => {
+    look();
+  }, [look, url]);
+  const has = (m: string) => Array.isArray(models) && models.some((x) => x === m || x === `${m}:latest`);
+
+  async function pull() {
+    setBusy(true);
+    try {
+      await api.ollamaPull(want);
+      await look();
+      onReady(want);
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="ollama-models" aria-live="polite">
+      {models === "off" && (
+        <p className="source-warn">
+          <IconWarning /> {t("ai.ollamaOff")}
+        </p>
+      )}
+      {Array.isArray(models) && <p className="source-state">{models.length > 0 ? t("ai.ollamaHas", { list: models.join(", ") }) : t("ai.ollamaEmpty")}</p>}
+      <div className="source-row">
+        <button type="button" className="btn btn-ghost btn-small" onClick={look} disabled={busy}>
+          {t("ai.ollamaLook")}
+        </button>
+        {Array.isArray(models) && want && !has(want) && (
+          <button type="button" className="btn btn-sign btn-small" onClick={pull} disabled={busy} aria-busy={busy}>
+            {busy ? t("ai.ollamaPulling") : t("ai.ollamaPull", { model: want })}
+          </button>
+        )}
       </div>
     </div>
   );

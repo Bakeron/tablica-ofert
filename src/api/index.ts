@@ -84,6 +84,10 @@ export interface Api {
   /** A clearer version of the user's own text. */
   aiTidy(text: string): Promise<string>;
   checkHardware(): Promise<Machine>;
+  /** Models already in Ollama; rejects when Ollama does not answer. */
+  ollamaModels(): Promise<string[]>;
+  /** Downloads a model into Ollama (progress in "work-progress"). */
+  ollamaPull(model: string): Promise<void>;
   /** Fields from a pasted text or a page: AI when set up, plain code otherwise. */
   fillOffer(text: string, title: string | null): Promise<Draft>;
   /** Opens the offer page in the preview window. */
@@ -188,6 +192,8 @@ async function tauriApi(): Promise<Api> {
     aiSuggestCriteria: (description) => invoke("ai_suggest_criteria", { description }),
     aiTidy: (text) => invoke("ai_tidy", { text }),
     checkHardware: () => invoke("check_hardware"),
+    ollamaModels: () => invoke("ollama_models"),
+    ollamaPull: (model) => invoke("ollama_pull", { model }),
     fillOffer: (text, title) => invoke("fill_offer", { text, title }),
     openPreview: (url) => invoke("open_preview", { url }),
     capturePreview: () => invoke("capture_preview"),

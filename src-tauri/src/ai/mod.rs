@@ -6,6 +6,7 @@
 //! is kept only when it really appears in the offer.
 
 pub mod client;
+pub mod ollama;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
