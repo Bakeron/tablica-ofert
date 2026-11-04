@@ -28,10 +28,10 @@ time = { version = "0.3.55", features = ["formatting", "parsing", "macros", "ser
 # Secrets live in the OS credential store (Windows Credential Manager), never in files
 keyring-core = "1.0.1"
 getrandom = "0.4.3"
-reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "json", "gzip", "charset", "http2", "query", "form"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "gzip", "charset", "http2", "query", "form"] }
 tokio = { version = "1.54.1", features = ["time", "macros"] }
-imap = { version = "3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
-native-tls = "0.2.18"
+# TLS for IMAP comes from below (native-tls on the PC, rustls on Android) - imap gets a ready stream
+imap = { version = "3.0.0-alpha.15", default-features = false }
 mail-parser = "1.0.1"
 tauri-plugin-notification = "2"
 sys-locale = "0.3.2"
@@ -49,8 +49,18 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Secur
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-window-state = "2.5.0"
 
+# TLS on the PC: the system's own (Schannel on Windows)
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls"] }
+native-tls = "0.2.18"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android-native-keyring-store = "1.0.0"
+# TLS on Android: rustls with the ring provider and Mozilla's root list (tls.rs) - the bundled
+# OpenSSL stays only for the SQLCipher database, never for the network
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "1"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"

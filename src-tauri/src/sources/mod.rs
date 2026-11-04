@@ -1,5 +1,5 @@
 //! Collecting offers from the legal sources (zalozenia.md §3): aggregators with an official
-//! API (Adzuna, Remotive, Jooble), public feeds that allow reuse (We Work Remotely, Remote OK)
+//! API (Adzuna, Remotive, Himalayas, Jooble), public feeds that allow reuse (We Work Remotely, Remote OK)
 //! and e-mail alerts. Plain code, no AI and no tokens.
 //!
 //! Every source has its own limits: how often it may run and how many calls a day it may
@@ -8,6 +8,7 @@
 
 pub mod adzuna;
 pub mod alerts;
+pub mod himalayas;
 pub mod jooble;
 pub mod mail;
 pub mod remoteok;
@@ -63,6 +64,9 @@ fn adzuna_limits(every_hours: i64) -> Limits {
 /// Jooble: 500 calls for the whole life of a key - one a day lasts about a year and a half.
 const JOOBLE_LIMITS: Limits = Limits { every_hours: 20, forced_hours: 0, calls_a_day: 1, calls_a_run: 1 };
 
+/// Himalayas refreshes its data once a day; the keyless limit is shared by everyone, so few searches.
+const HIMALAYAS_LIMITS: Limits = Limits { every_hours: 24, forced_hours: 6, calls_a_day: 8, calls_a_run: 4 };
+
 /// Remotive asks for at most 2 calls a minute.
 const REMOTIVE_PAUSE_SECS: u64 = 31;
 
@@ -84,7 +88,7 @@ impl From<&AppError> for ErrorInfo {
 #[serde(rename_all = "camelCase")]
 pub struct SourceRun {
     pub source: String,
-    /// Why it did not run: `off`, `missing_key`, `no_profiles`, `no_keywords`, `not_due`, `limit`,
+    /// Why it did not run: `missing_key`, `no_profiles`, `no_keywords`, `not_due`, `limit`,
     /// `used_up` (no calls left on the key).
     pub skipped: Option<&'static str>,
     pub added: i64,
@@ -107,6 +111,9 @@ pub struct FetchReport {
     pub new_review: i64,
     /// New offers in "Rejected by filter".
     pub new_rejected: i64,
+    /// Offers closed on Himalayas (deleted or stripped of their text) or past their expiry date -
+    /// the board must reload.
+    pub closed: i64,
 }
 
 /// State of a source for the settings.
@@ -175,6 +182,21 @@ fn for_this_run(queries: &[Query], count: usize, calls_today: i64) -> Vec<&Query
     }
     let start = calls_today.max(0) as usize % queries.len();
     queries.iter().cycle().skip(start).take(count.min(queries.len())).collect()
+}
+
+/// Where today's turn starts: one day further for every day, plus the calls made today - so the
+/// first run of a day does not always begin with the same keywords.
+fn turn(now: OffsetDateTime, per_run: usize, calls_today: i64) -> i64 {
+    (now.unix_timestamp() / 86_400) * per_run as i64 + calls_today.max(0)
+}
+
+/// Like `for_this_run`, for a plain list of words.
+fn for_this_run_words(words: &[String], count: usize, calls_today: i64) -> Vec<&String> {
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let start = calls_today.max(0) as usize % words.len();
+    words.iter().cycle().skip(start).take(count.min(words.len())).collect()
 }
 
 /// Keywords for Remotive (remote only): the first keyword of every profile, then the rest.
@@ -279,6 +301,7 @@ struct Snapshot {
     runs: BTreeMap<String, LastRun>,
     adzuna_calls: i64,
     remotive_calls: i64,
+    himalayas_calls: i64,
     feed_calls: BTreeMap<&'static str, i64>,
     jooble_calls: i64,
     jooble_total: i64,
@@ -292,6 +315,7 @@ fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
 
         adzuna_calls: usage::calls_today(conn, adzuna::SOURCE)?,
         remotive_calls: usage::calls_today(conn, remotive::SOURCE)?,
+        himalayas_calls: usage::calls_today(conn, himalayas::SOURCE)?,
         feed_calls: FEEDS.iter().map(|s| Ok((*s, usage::calls_today(conn, s)?))).collect::<AppResult<_>>()?,
         jooble_calls: usage::calls_today(conn, jooble::SOURCE)?,
         jooble_total: usage::calls_total(conn, jooble::SOURCE)?,
@@ -350,7 +374,7 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
             // Searches whose first page was full - their second page goes after every first page.
             let mut more = Vec::new();
             let mut calls: usize = 0;
-            for q in for_this_run(&queries, budget, snap.adzuna_calls) {
+            for q in for_this_run(&queries, budget, turn(now, budget, snap.adzuna_calls)) {
                 calls += 1;
                 match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 1).await {
                     Ok(mut page) => {
@@ -407,7 +431,8 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         } else {
             let mut found = Vec::new();
             let mut calls = 0;
-            for (i, word) in words.iter().take(limits.calls_a_run.min(left)).enumerate() {
+            let count = limits.calls_a_run.min(left);
+            for (i, word) in for_this_run_words(&words, count, turn(now, count, snap.remotive_calls)).into_iter().enumerate() {
                 if i > 0 {
                     tokio::time::sleep(std::time::Duration::from_secs(REMOTIVE_PAUSE_SECS)).await;
                 }
@@ -430,6 +455,56 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         report.added += run.added;
         report.runs.push(run);
     }
+
+    // Himalayas - a few keyword searches a day, then the check of closed jobs (their terms).
+    if on("source_himalayas") {
+        let limits = HIMALAYAS_LIMITS;
+        let last = snap.runs.get(himalayas::SOURCE).cloned().unwrap_or_default();
+        let mut run = SourceRun { source: himalayas::SOURCE.into(), ..Default::default() };
+        let words = remote_keywords(&snap.profiles);
+        let left = (limits.calls_a_day - snap.himalayas_calls).max(0) as usize;
+        if snap.profiles.is_empty() {
+            run.skipped = Some("no_profiles");
+        } else if words.is_empty() {
+            run.skipped = Some("no_keywords");
+        } else if !due(&last, &limits, force, now) {
+            run.skipped = Some("not_due");
+        } else if left == 0 {
+            run.skipped = Some("limit");
+        } else {
+            let mut found = Vec::new();
+            let mut calls = 0;
+            let count = limits.calls_a_run.min(left);
+            let country = snap.settings.get("adzuna_country").cloned().unwrap_or_else(|| "pl".into());
+            for word in for_this_run_words(&words, count, turn(now, count, snap.himalayas_calls)) {
+                calls += 1;
+                match himalayas::search(&client, word, &country).await {
+                    Ok(list) => found.extend(list.into_iter().filter(|o| {
+                        crate::filter::mentions_any(&o.title, o.description.as_deref().unwrap_or(""), std::slice::from_ref(word))
+                    })),
+                    Err(e) => {
+                        run.error = Some((&e).into());
+                        break;
+                    }
+                }
+            }
+            let stamp = clock::now();
+            with_db(state, |c| {
+                usage::add_calls(c, himalayas::SOURCE, calls)?;
+                save(c, found, &mut run, &mut report)?;
+                record(c, &run, &stamp)
+            })?;
+        }
+        report.added += run.added;
+        report.runs.push(run);
+    }
+    // Closed Himalayas jobs past their expiry date - at every run, also when the source was
+    // turned off since (the single-job checks come last, after every other source).
+    let stamp = clock::now();
+    let expired = with_db(state, |c| himalayas::close_expired(c, &stamp))?;
+    report.closed += (expired.deleted + expired.kept) as i64;
+    // Every other source: past the expiry date = "expired" on the board.
+    report.closed += with_db(state, |c| offers::mark_expired(c, &stamp))? as i64;
 
     // We Work Remotely, Remote OK - the whole feed once a day; only offers with the keywords
     // of profiles that accept remote work are kept.
@@ -493,15 +568,16 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         } else {
             let key = key.expect("checked above");
             let mut found = Vec::new();
+            let mut sent = false;
             if let Some(q) = for_this_run(&queries, limits.calls_a_run, snap.jooble_total).first() {
-                match jooble::search(&client, &key, q).await {
+                match jooble::search(&client, &key, q, &mut sent).await {
                     Ok(mut list) => found.append(&mut list),
                     Err(e) => run.error = Some((&e).into()),
                 }
             }
             let stamp = clock::now();
             with_db(state, |c| {
-                usage::add_calls(c, jooble::SOURCE, 1)?;
+                usage::add_calls(c, jooble::SOURCE, sent as i64)?;
                 save(c, found, &mut run, &mut report)?;
                 record(c, &run, &stamp)
             })?;
@@ -549,6 +625,46 @@ pub async fn fetch(state: &AppState, force: bool) -> AppResult<FetchReport> {
         report.runs.push(run);
     }
 
+    // Closed Himalayas jobs (their terms) - every offer checked once a day, last, so the other
+    // sources never wait for it. A stopped round goes on at the next run.
+    let today = clock::now().get(..10).unwrap_or_default().to_string();
+    let to_check = with_db(state, |c| himalayas::to_check(c, &today))?;
+    if !to_check.is_empty() {
+        let pause = std::time::Duration::from_millis(himalayas::CHECK_PAUSE_MS);
+        let round = himalayas::check_round(&to_check, pause, |link| {
+            let client = client.clone();
+            async move { himalayas::job_state(&client, &link).await }
+        })
+        .await;
+        let gone = with_db(state, |c| {
+            usage::add_calls(c, himalayas::CHECK_KEY, round.checked.len() as i64)?;
+            himalayas::finish_round(c, &round, &today)
+        })?;
+        report.closed += (gone.deleted + gone.kept) as i64;
+        if himalayas::suspicious(&round) {
+            let error = AppError::Net(format!(
+                "Himalayas reported {} of {} checked offers closed at once - none deleted, kept without the Himalayas text",
+                round.closed.len(),
+                round.answered
+            ));
+            with_db(state, |c| {
+                c.execute(
+                    "UPDATE source_runs SET last_error = ?1 WHERE source = ?2",
+                    params![error.to_string(), himalayas::SOURCE],
+                )?;
+                Ok(())
+            })?;
+            match report.runs.iter_mut().find(|r| r.source == himalayas::SOURCE) {
+                Some(run) => run.error = Some((&error).into()),
+                None => report.runs.push(SourceRun {
+                    source: himalayas::SOURCE.into(),
+                    error: Some((&error).into()),
+                    ..Default::default()
+                }),
+            }
+        }
+    }
+
     Ok(report)
 }
 
@@ -582,6 +698,7 @@ pub fn status(conn: &Connection, adzuna_ready: bool, jooble_ready: bool, mail_re
     Ok(vec![
         one(adzuna::SOURCE, adzuna_ready, adzuna_limits(6).calls_a_day)?,
         one(remotive::SOURCE, true, REMOTIVE_LIMITS.calls_a_day)?,
+        one(himalayas::SOURCE, true, HIMALAYAS_LIMITS.calls_a_day)?,
         one(weworkremotely::SOURCE, true, FEED_LIMITS.calls_a_day)?,
         one(remoteok::SOURCE, true, FEED_LIMITS.calls_a_day)?,
         SourceStatus {
@@ -645,6 +762,18 @@ mod tests {
         let short = plan(&[profile(&["x", "y"], vec![], None)], &[]);
         assert_eq!(for_this_run(&short, 6, 5).len(), 2);
         assert!(for_this_run(&[], 6, 0).is_empty());
+    }
+
+    #[test]
+    fn first_run_of_every_day_starts_further_on() {
+        let words: Vec<String> = ["a", "b", "c", "d", "e"].iter().map(|w| w.to_string()).collect();
+        let day = |d: i64| OffsetDateTime::from_unix_timestamp(d * 86_400 + 3_600).unwrap();
+        let first = |d: i64| for_this_run_words(&words, 2, turn(day(d), 2, 0)).into_iter().cloned().collect::<Vec<_>>();
+        // Over a few days every word gets searched, not only the first two.
+        let seen: std::collections::BTreeSet<String> = (0..3).flat_map(first).collect();
+        assert_eq!(seen.len(), 5);
+        // Later runs of the same day go on from where the day began.
+        assert_ne!(for_this_run_words(&words, 2, turn(day(0), 2, 2)), for_this_run_words(&words, 2, turn(day(0), 2, 0)));
     }
 
     #[test]

@@ -205,8 +205,8 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                       {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}
                     </span>
                   ) : (
-                    // Adzuna's terms: their offers carry their name also in the list (the logo is on the card).
-                    o.sources[0] === "adzuna" && (
+                    // Adzuna's and Himalayas' terms: their offers carry their name also in the list (the credit link is on the card).
+                    (o.sources[0] === "adzuna" || o.sources[0] === "himalayas") && (
                       <span className="offer-sources">{t("sources.one", { list: sourceNames[0] })}</span>
                     )
                   )}

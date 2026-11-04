@@ -14,7 +14,7 @@ const OFFER_COLS: &[&str] = &[
     "fingerprint", "title", "company", "url", "city", "remote", "salary_min", "salary_max", "salary_currency",
     "salary_period", "contract", "level", "language", "requirements", "description", "notes", "interest", "favorite",
     "stage", "stage_changed_at", "expires_at", "expired", "added_at", "updated_at", "deleted_at", "ai_status", "ai_at",
-    "ai_summary", "ai_flags", "ai_remote_quote", "ai_tr_lang", "ai_title_tr", "ai_description_tr",
+    "ai_summary", "ai_flags", "ai_remote_quote", "ai_tr_lang", "ai_title_tr", "ai_description_tr", "content_removed",
 ];
 const PROFILE_COLS: &[&str] = &["name", "position", "description", "criteria", "description_prev", "created_at", "updated_at"];
 const EVENT_COLS: &[&str] = &["kind", "at", "minutes", "note", "created_at"];
@@ -213,6 +213,10 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
     }
 
     for r in table("offers") {
+        // The same field rules as data from outside; a bad row is skipped, the local copy stays.
+        if crate::offers::check_synced(&r.data).is_err() {
+            continue;
+        }
         let fingerprint = r.data.get("fingerprint").and_then(Value::as_str).unwrap_or_default();
         let blocked: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM removed_offers WHERE fingerprint = ?1)", [fingerprint], |x| x.get(0))?;
         if blocked {
@@ -242,6 +246,12 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
                 params![id, to_sql(s.get("source")), to_sql(s.get("url")), to_sql(s.get("first_seen"))],
             )?;
         }
+        // A source whose job closed (its terms): its link goes on this device too.
+        tx.execute(
+            "UPDATE offer_sources SET url = NULL WHERE offer_id = ?1
+             AND source = (SELECT content_removed FROM offers WHERE id = ?1)",
+            [id],
+        )?;
         let history: Vec<&Value> = r.data.get("history").and_then(Value::as_array).into_iter().flatten().collect();
         if !history.is_empty() {
             tx.execute("DELETE FROM stage_history WHERE offer_id = ?1", [id])?;
@@ -392,6 +402,42 @@ mod tests {
         let uid = |c: &Connection| -> Vec<String> { c.prepare("SELECT uid FROM offers").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect() };
         assert_eq!(uid(&pc).len(), 1);
         assert_eq!(uid(&pc), uid(&phone));
+    }
+
+    #[test]
+    fn bad_offer_rows_from_the_sync_file_are_skipped() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        add(&mut phone, "Frontend Developer");
+        let good = export(&phone, "phone", NOW).unwrap().tables["offers"][0].clone();
+        let bad = |uid: &str, change: &dyn Fn(&mut Map<String, Value>)| {
+            let mut row = good.clone();
+            row.uid = uid.into();
+            let data = row.data.as_object_mut().unwrap();
+            data.insert("fingerprint".into(), Value::String(format!("fp-{uid}")));
+            change(data);
+            row
+        };
+        let mut snapshot = export(&phone, "phone", NOW).unwrap();
+        let offers = snapshot.tables.get_mut("offers").unwrap();
+        offers.push(bad("u-js", &|d| {
+            d.insert("url".into(), json!("javascript:alert(1)"));
+        }));
+        offers.push(bad("u-long", &|d| {
+            d.insert("title".into(), json!("x".repeat(1_000_000)));
+        }));
+        offers.push(bad("u-stage", &|d| {
+            d.insert("stage".into(), json!("xyz"));
+        }));
+        offers.push(bad("u-source", &|d| {
+            d.insert("sources".into(), json!([{ "source": "mail", "url": "file:///C:/x", "first_seen": NOW }]));
+        }));
+        offers.push(bad("u-type", &|d| {
+            d.insert("salary_min".into(), json!("dużo"));
+        }));
+        apply(&mut pc, &snapshot, NOW).unwrap();
+        assert_eq!(titles(&pc), vec!["Frontend Developer"]);
+        let count: i64 = pc.query_row("SELECT count(*) FROM offers", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]

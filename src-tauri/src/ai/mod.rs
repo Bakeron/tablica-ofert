@@ -402,10 +402,11 @@ fn load_job(conn: &Connection, id: i64) -> AppResult<Option<Job>> {
 }
 
 fn pending_ids(conn: &Connection, limit: usize) -> AppResult<Vec<i64>> {
-    // Offers the user already acted on go first, then the newest.
+    // Offers the user already acted on go first, then the newest; "Not for me" ones wait
+    // ("Rate again" still rates any offer).
     let mut stmt = conn.prepare(
         "SELECT o.id FROM offers o
-         WHERE o.ai_status IS NULL AND o.deleted_at IS NULL AND o.filter_result != 'fail'
+         WHERE o.ai_status IS NULL AND o.deleted_at IS NULL AND o.filter_result != 'fail' AND COALESCE(o.interest, '') != 'no'
          ORDER BY (o.stage != 'new' OR o.favorite = 1 OR COALESCE(o.interest, '') IN ('high', 'maybe')) DESC,
                   o.added_at DESC, o.id DESC
          LIMIT ?1",
@@ -493,7 +494,7 @@ pub async fn process(state: &AppState, only: Option<i64>) -> AppResult<RateRepor
     }
     report.waiting = with_db(state, |c| {
         Ok(c.query_row(
-            "SELECT count(*) FROM offers WHERE ai_status IS NULL AND deleted_at IS NULL AND filter_result != 'fail'",
+            "SELECT count(*) FROM offers WHERE ai_status IS NULL AND deleted_at IS NULL AND filter_result != 'fail' AND COALESCE(interest, '') != 'no'",
             [],
             |r| r.get(0),
         )?)
@@ -776,7 +777,7 @@ pub struct AiStatus {
 pub fn status(conn: &Connection, key_present: impl Fn(Provider) -> bool) -> AppResult<AiStatus> {
     let s = settings::all(conn)?;
     let waiting: i64 = conn.query_row(
-        "SELECT count(*) FROM offers WHERE ai_status IS NULL AND deleted_at IS NULL AND filter_result != 'fail'",
+        "SELECT count(*) FROM offers WHERE ai_status IS NULL AND deleted_at IS NULL AND filter_result != 'fail' AND COALESCE(interest, '') != 'no'",
         [],
         |r| r.get(0),
     )?;

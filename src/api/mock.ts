@@ -108,6 +108,7 @@ export function createMockApi(): Api {
       notes: demo.notes ?? "",
       expiresAt: null,
       deletedAt: null,
+      contentRemoved: null,
       links: [input.source, ...(demo.extraSources ?? [])].map((source) => ({
         source,
         url: input.url ?? null,
@@ -234,6 +235,7 @@ export function createMockApi(): Api {
         notes: "",
         expiresAt: null,
         deletedAt: null,
+        contentRemoved: null,
         links: [{ source: input.source, url: input.url ?? null, firstSeen: at }],
         history: [{ stage: "new", at }],
         filters: [],
@@ -359,6 +361,7 @@ export function createMockApi(): Api {
       return [
         one("adzuna", Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]), 25),
         one("remotive", true, 4),
+        one("himalayas", true, 8),
         one("weworkremotely", true, 4),
         one("remoteok", true, 4),
         one("jooble", Boolean(secrets["jooble-key"]), 1, 500),
@@ -392,7 +395,7 @@ export function createMockApi(): Api {
         const ready = Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]);
         runs.push({ source: "adzuna" as const, skipped: ready ? null : ("missing_key" as const), added: 0, merged: 0, blocked: 0, invalid: 0, error: null });
       }
-      return { runs, added, newOnBoard: added, newReview: 0, newRejected: 0 };
+      return { runs, added, newOnBoard: added, newReview: 0, newRejected: 0, closed: 0 };
     },
     async onFetched() {
       return () => {};

@@ -8,14 +8,16 @@ use std::io::Write;
 use std::path::Path;
 
 pub const FILE: &str = "zdarzenia.log";
-/// Above this size the log starts again (the previous one is kept as `zdarzenia.old.log`).
+/// The previous log, kept when the log starts again.
+pub const OLD_FILE: &str = "zdarzenia.old.log";
+/// Above this size the log starts again (the previous one is kept as `OLD_FILE`).
 const MAX_BYTES: u64 = 256 * 1024;
 
 /// Appends one line; failures are ignored - the log must never stop the app.
 pub fn log(data_dir: &Path, line: &str) {
     let file = data_dir.join(FILE);
     if fs::metadata(&file).map(|m| m.len() > MAX_BYTES).unwrap_or(false) {
-        let _ = fs::rename(&file, data_dir.join("zdarzenia.old.log"));
+        let _ = fs::rename(&file, data_dir.join(OLD_FILE));
     }
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let stamp = now

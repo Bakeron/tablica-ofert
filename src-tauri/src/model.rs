@@ -270,6 +270,8 @@ pub struct OfferDetail {
     pub notes: String,
     pub expires_at: Option<String>,
     pub deleted_at: Option<String>,
+    /// The source whose text was removed when its job closed (its terms), e.g. "himalayas".
+    pub content_removed: Option<String>,
     pub links: Vec<SourceLink>,
     pub history: Vec<StageEvent>,
     /// Hard filter result for every profile.

@@ -63,7 +63,7 @@ export function SourcesSettings({
 
   useEffect(() => {
     load();
-  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_weworkremotely, settings.source_remoteok, settings.source_jooble, settings.source_mail, settings.mail_user, settings.mail_host]);
+  }, [load, settings.source_adzuna, settings.source_remotive, settings.source_himalayas, settings.source_weworkremotely, settings.source_remoteok, settings.source_jooble, settings.source_mail, settings.mail_user, settings.mail_host]);
 
   async function saveSecret(name: SecretName, value: string) {
     // An error is shown by the field itself, under the input (the app's error bar is behind this window).
@@ -84,6 +84,7 @@ export function SourcesSettings({
   const of = (source: SourceStatus["source"]) => status.find((s) => s.source === source);
   const adzuna = of("adzuna");
   const remotive = of("remotive");
+  const himalayas = of("himalayas");
   const wwr = of("weworkremotely");
   const remoteok = of("remoteok");
   const jooble = of("jooble");
@@ -162,6 +163,12 @@ export function SourcesSettings({
         {remotive && <SourceState s={remotive} lang={lang} />}
       </section>
 
+      <section className="source" aria-labelledby="src-himalayas">
+        <SourceHead id="src-himalayas" name="Himalayas" on={settings.source_himalayas === "on"} onToggle={(on) => onChange("source_himalayas", on ? "on" : "off")} />
+        <p>{t("src.himalayas.text")}</p>
+        {himalayas && <SourceState s={himalayas} lang={lang} />}
+      </section>
+
       <section className="source" aria-labelledby="src-wwr">
         <SourceHead
           id="src-wwr"
@@ -224,7 +231,8 @@ export function SourceHead({ id, name, on, onToggle }: { id: string; name: strin
 /** Last run, calls today and the last error of a source - in words, not only colour. */
 export function SourceState({ s, lang }: { s: SourceStatus; lang: "pl" | "en" }) {
   const { t } = useI18n();
-  const failed = s.lastError && s.lastTry && s.lastTry !== s.lastOk;
+  // A successful run clears the error; the Himalayas check of closed jobs can set it after one.
+  const failed = s.lastError && s.lastTry;
   return (
     <div className="source-state">
       {/* A missing key is a problem only for a source that is on - "not set" under the field says the rest. */}

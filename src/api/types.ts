@@ -197,6 +197,8 @@ export interface OfferDetail extends OfferRow {
   notes: string;
   expiresAt: string | null;
   deletedAt: string | null;
+  /** Source whose text was removed when its job closed (its terms), e.g. "himalayas". */
+  contentRemoved: string | null;
   links: SourceLink[];
   history: StageEvent[];
   /** Hard filter result for every profile. */
@@ -329,6 +331,7 @@ export interface Settings {
   google_client_id: string;
   source_adzuna: "off" | "on";
   source_remotive: "off" | "on";
+  source_himalayas: "off" | "on";
   source_weworkremotely: "off" | "on";
   source_remoteok: "off" | "on";
   source_jooble: "off" | "on";
@@ -349,7 +352,8 @@ export interface Settings {
   hide_below: "off" | "30" | "40" | "50" | "60" | "70";
 }
 
-/** Defaults - the same as the first value of every rule in settings.rs. */
+/** Defaults - the same as the first value of every rule in settings.rs, except `onboarding`:
+ * "done" before the settings load, so "First steps" do not flash on every start. */
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   language: "system",
@@ -369,6 +373,7 @@ export const DEFAULT_SETTINGS: Settings = {
   google_client_id: "",
   source_adzuna: "off",
   source_remotive: "off",
+  source_himalayas: "off",
   source_weworkremotely: "off",
   source_remoteok: "off",
   source_jooble: "off",
@@ -408,7 +413,7 @@ export type SecretName =
 /** Set secrets: name -> last 4 characters ("••••1234"). */
 export type SecretHints = Partial<Record<SecretName, string>>;
 
-export type SourceName = "adzuna" | "remotive" | "weworkremotely" | "remoteok" | "jooble" | "mail";
+export type SourceName = "adzuna" | "remotive" | "himalayas" | "weworkremotely" | "remoteok" | "jooble" | "mail";
 
 export interface SourceStatus {
   source: SourceName;
@@ -426,7 +431,7 @@ export interface SourceStatus {
   callsLeft: number | null;
 }
 
-export type SkipReason = "off" | "missing_key" | "no_profiles" | "no_keywords" | "not_due" | "limit" | "used_up";
+export type SkipReason = "missing_key" | "no_profiles" | "no_keywords" | "not_due" | "limit" | "used_up";
 
 export interface SourceRun {
   source: SourceName;
@@ -447,6 +452,8 @@ export interface FetchReport {
   newReview: number;
   /** New offers in "Rejected by filter". */
   newRejected: number;
+  /** Offers closed on Himalayas (deleted or stripped of their text) or past their expiry date - the board must reload. */
+  closed: number;
 }
 
 /** Error shape sent by the Rust side (`AppError`). */

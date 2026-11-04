@@ -248,8 +248,8 @@ export default function App() {
     let alive = true;
     api
       .onFetched((report) => {
+        if (report.added > 0 || report.closed > 0) reloadRef.current();
         if (report.added > 0) {
-          reloadRef.current();
           setToast({ text: fetchSummary(report, t) });
           if (soundRef.current) playClack();
         }
@@ -763,13 +763,16 @@ export default function App() {
             onFullText={() => detail && startFullText(detail)}
             agenda={{
               addEvent: (event) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addEvent(selectedId, event))),
-              deleteEvent: (id) => run(() => api!.deleteEvent(id)),
+              deleteEvent: (id) =>
+                setConfirm({ message: t("agenda.deleteEventConfirm"), label: t("agenda.delete"), action: () => run(() => api!.deleteEvent(id)) }),
               google: (id) => run(() => api!.calendarGoogle(id)),
               ics: (id) => api!.calendarIcs(id).then((path) => setToast({ text: t("agenda.icsSaved", { path }) }), fail),
               saveContact: (contact) => (selectedId === null ? Promise.resolve(false) : act(() => api!.saveContact(selectedId, contact))),
-              deleteContact: (id) => run(() => api!.deleteContact(id)),
+              deleteContact: (id) =>
+                setConfirm({ message: t("agenda.deleteContactConfirm"), label: t("agenda.delete"), action: () => run(() => api!.deleteContact(id)) }),
               addLog: (entry) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addLog(selectedId, entry))),
-              deleteLog: (id) => run(() => api!.deleteLog(id)),
+              deleteLog: (id) =>
+                setConfirm({ message: t("agenda.deleteLogConfirm"), label: t("agenda.delete"), action: () => run(() => api!.deleteLog(id)) }),
               openLink,
             }}
             showDates={settings.feature_dates === "on"}

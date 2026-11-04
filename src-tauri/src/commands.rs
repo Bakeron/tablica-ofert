@@ -476,6 +476,12 @@ pub async fn export_csv(state: State<'_, AppState>, app: tauri::AppHandle) -> Ap
 #[tauri::command]
 pub async fn wipe_all(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<()> {
     let dir = crate::data_dir(&app)?;
+    // With Google Drive connected, the latest changes go there first - otherwise they would be
+    // lost with this device. A failed sync stops the deleting (disconnect Drive to skip it).
+    let sync = with_db(&state, |c| crate::sync::status(c))?;
+    if sync.connected && sync.has_key {
+        crate::sync::run(&state, true).await?;
+    }
     {
         let mut guard = state.db.lock().map_err(|_| AppError::Locked("internal state is broken".into()))?;
         // Closed before its file is removed; nothing can be written any more.
@@ -488,11 +494,11 @@ pub async fn wipe_all(state: State<'_, AppState>, app: tauri::AppHandle) -> AppR
             std::fs::remove_file(&path)?;
         }
     }
-    let copies = dir.join("kopie");
+    let copies = dir.join(crate::db::BACKUP_DIR);
     if copies.exists() {
         std::fs::remove_dir_all(&copies)?;
     }
-    for file in [crate::keycopy::path(&dir), dir.join(crate::diag::FILE), dir.join("zdarzenia.old.log")] {
+    for file in [crate::keycopy::path(&dir), dir.join(crate::diag::FILE), dir.join(crate::diag::OLD_FILE)] {
         if file.exists() {
             std::fs::remove_file(&file)?;
         }

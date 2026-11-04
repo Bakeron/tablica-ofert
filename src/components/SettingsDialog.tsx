@@ -8,6 +8,7 @@ import { AiSettings } from "./AiSettings";
 import { DataSettings } from "./DataSettings";
 import { SourcesSettings } from "./SourcesSettings";
 import { SyncSettings } from "./SyncSettings";
+import { ConfirmContext } from "./SecretField";
 import { isPhone } from "../lib/platform";
 
 const OPTIONS: { key: "language" | "theme" | "motion" | "text_size"; label: TextKey; values: readonly string[]; hint?: TextKey }[] = [
@@ -110,6 +111,7 @@ function SettingsBody({
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   return (
+    <ConfirmContext.Provider value={onConfirm}>
     <div className="sheet">
       <header className="sheet-head">
         <h2 id="settings-title">{t("settings.title")}</h2>
@@ -197,5 +199,6 @@ function SettingsBody({
         </button>
       </footer>
     </div>
+    </ConfirmContext.Provider>
   );
 }

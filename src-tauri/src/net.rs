@@ -11,7 +11,11 @@ use crate::error::{AppError, AppResult};
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 
 pub fn client() -> AppResult<Client> {
-    Client::builder()
+    let builder = Client::builder();
+    // Android: rustls (tls.rs) instead of the bundled OpenSSL.
+    #[cfg(target_os = "android")]
+    let builder = builder.tls_backend_preconfigured(crate::tls::http_config()?);
+    builder
         .user_agent(concat!("TablicaOfert/", env!("CARGO_PKG_VERSION"), " (personal job search app)"))
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(90))

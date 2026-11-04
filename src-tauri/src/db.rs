@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 use crate::{diag, keycopy, secrets};
 
 pub const DB_FILE: &str = "tablica.db";
-const BACKUP_DIR: &str = "kopie";
+pub const BACKUP_DIR: &str = "kopie";
 const BACKUPS_KEPT: usize = 5;
 
 /// Schema changes, in order. A database at `user_version = n` has the first `n` applied.
@@ -25,6 +25,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/009_api_totals.sql"),
     include_str!("migrations/010_filter_rules.sql"),
     include_str!("migrations/011_translation.sql"),
+    include_str!("migrations/012_content_removed.sql"),
+    include_str!("migrations/013_himalayas_checked.sql"),
 ];
 
 /// Schema version this app writes (copies from newer versions are refused).
@@ -114,10 +116,32 @@ fn list_backups(dir: &Path) -> AppResult<Vec<PathBuf>> {
 /// `backup` = false for the hourly background run - otherwise five hourly copies would push
 /// out the older, possibly still good ones.
 pub fn open_app_database(data_dir: &Path, backup: bool) -> AppResult<Connection> {
+    open_with_vault(data_dir, backup, &SystemVault)
+}
+
+/// Where the database key lives - the system's credential store in the app, memory in tests.
+pub trait KeyVault {
+    fn get(&self) -> AppResult<Option<String>>;
+    fn set(&self, key: &str) -> AppResult<()>;
+}
+
+/// Windows Credential Manager / Android Keystore (`secrets`).
+pub struct SystemVault;
+
+impl KeyVault for SystemVault {
+    fn get(&self) -> AppResult<Option<String>> {
+        secrets::get(secrets::DB_KEY)
+    }
+    fn set(&self, key: &str) -> AppResult<()> {
+        secrets::set(secrets::DB_KEY, key)
+    }
+}
+
+fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppResult<Connection> {
     fs::create_dir_all(data_dir)?;
     let path = data_dir.join(DB_FILE);
     let exists = path.exists();
-    let in_vault = secrets::get(secrets::DB_KEY)?;
+    let in_vault = vault.get()?;
     let yes = |b: bool| if b { "yes" } else { "no" };
     diag::log(
         data_dir,
@@ -149,14 +173,14 @@ pub fn open_app_database(data_dir: &Path, backup: bool) -> AppResult<Connection>
         },
         None => {
             let key = secrets::random_hex(32)?;
-            secrets::set(secrets::DB_KEY, &key)?;
+            vault.set(&key)?;
             (key, false)
         }
     };
     // A wrong key fails here, so nothing below ever saves or restores a key that does not open the data.
     let mut conn = open(&path, &key)?;
     if restored {
-        secrets::set(secrets::DB_KEY, &key)?;
+        vault.set(&key)?;
         diag::log(data_dir, "WARNING key was missing from Credential Manager - restored from the copy");
     }
     // Keep the copy in step with the key (not fatal - the next start tries again).
@@ -190,7 +214,29 @@ pub mod tests {
 
     pub const TEST_KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 
+    /// Once per test run: removes test folders older than an hour left by earlier runs.
+    fn clean_old_test_dirs() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let Ok(entries) = fs::read_dir(std::env::temp_dir()) else { return };
+            let hour = std::time::Duration::from_secs(3600);
+            for entry in entries.flatten() {
+                let old = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.elapsed().ok())
+                    .is_some_and(|age| age > hour);
+                let ours = entry.file_name().to_str().is_some_and(|n| n.starts_with("tablica-test-"));
+                if ours && old && entry.path().is_dir() {
+                    let _ = fs::remove_dir_all(entry.path());
+                }
+            }
+        });
+    }
+
     pub fn temp_dir(name: &str) -> PathBuf {
+        clean_old_test_dirs();
         let dir = std::env::temp_dir().join(format!(
             "tablica-test-{name}-{}",
             secrets::random_hex(6).unwrap()
@@ -236,6 +282,120 @@ pub mod tests {
         migrate(&mut conn).unwrap();
         conn.pragma_update(None, "user_version", 99).unwrap();
         assert!(matches!(migrate(&mut conn), Err(AppError::Locked(_))));
+    }
+
+    #[test]
+    fn upgrade_keeps_data_of_an_older_database() {
+        let mut conn = open(&temp_dir("upgrade").join(DB_FILE), TEST_KEY).unwrap();
+        for (index, sql) in MIGRATIONS.iter().enumerate().take(11) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO offers (uid, fingerprint, title, company, description, notes,
+                stage_changed_at, added_at, updated_at)
+             VALUES ('u-1', 'fp-1', 'Tester', 'Firma PrzykĹ‚adowa', 'Opis oferty', 'Moja notatka',
+                '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO events (uid, offer_id, kind, at, created_at)
+             VALUES ('e-1', ?1, 'interview', '2026-02-01T10:00:00Z', '2026-01-01T00:00:00Z')",
+            [id],
+        )
+        .unwrap();
+
+        migrate(&mut conn).unwrap();
+
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, latest_version());
+        let detail = crate::offers::detail(&conn, id).unwrap();
+        assert_eq!(detail.description.as_deref(), Some("Opis oferty"));
+        assert_eq!(detail.notes, "Moja notatka");
+        assert_eq!(detail.content_removed, None);
+        let events: i64 = conn
+            .query_row("SELECT count(*) FROM events WHERE offer_id = ?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(events, 1);
+    }
+
+    /// Fails when an existing migration is edited - a schema change must be a new file.
+    #[test]
+    fn existing_migrations_are_frozen() {
+        // FNV-1a over migrations 001-013, line endings normalized (Git may check out CRLF).
+        const EXISTING: usize = 13;
+        const HASH: u64 = 2_580_925_480_483_856_098;
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for sql in &MIGRATIONS[..EXISTING] {
+            for b in sql.bytes().filter(|&b| b != b'\r').chain([0u8]) {
+                hash ^= b as u64;
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        assert_eq!(hash, HASH, "an existing migration changed - add a new file instead");
+    }
+
+    /// The credential store in memory - tests never touch the real one.
+    #[derive(Default)]
+    struct MemVault(std::cell::RefCell<Option<String>>);
+
+    impl KeyVault for MemVault {
+        fn get(&self) -> AppResult<Option<String>> {
+            Ok(self.0.borrow().clone())
+        }
+        fn set(&self, key: &str) -> AppResult<()> {
+            *self.0.borrow_mut() = Some(key.to_string());
+            Ok(())
+        }
+    }
+
+    /// The case from 3.11.2026: the key disappeared from the credential store.
+    #[cfg(windows)]
+    #[test]
+    fn lost_key_comes_back_from_the_copy() {
+        let dir = temp_dir("vault");
+        let vault = MemVault::default();
+        {
+            // First start: a new key in the vault, its DPAPI copy next to the database.
+            let conn = open_with_vault(&dir, false, &vault).unwrap();
+            conn.execute("INSERT INTO settings (key, value) VALUES ('probe', 'zostaje')", []).unwrap();
+        }
+        let key = vault.get().unwrap().expect("key saved");
+        assert_eq!(keycopy::read(&dir).unwrap().as_deref(), Some(key.as_str()));
+
+        // Gone from the vault: the copy opens the data and the key goes back.
+        let empty = MemVault::default();
+        let conn = open_with_vault(&dir, false, &empty).unwrap();
+        let value: String = conn.query_row("SELECT value FROM settings WHERE key = 'probe'", [], |r| r.get(0)).unwrap();
+        assert_eq!(value, "zostaje");
+        assert_eq!(empty.get().unwrap(), Some(key));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn no_key_and_no_copy_blocks_instead_of_starting_empty() {
+        let dir = temp_dir("nokey");
+        open_with_vault(&dir, false, &MemVault::default()).unwrap();
+        fs::remove_file(keycopy::path(&dir)).unwrap();
+        let result = open_with_vault(&dir, false, &MemVault::default());
+        assert!(matches!(result, Err(AppError::Locked(_))));
+        // The database is still there, untouched.
+        assert!(dir.join(DB_FILE).exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_wrong_key_in_the_vault_never_replaces_the_copy() {
+        let dir = temp_dir("wrongkey");
+        let vault = MemVault::default();
+        open_with_vault(&dir, false, &vault).unwrap();
+        let good = vault.get().unwrap().unwrap();
+        let wrong = MemVault::default();
+        wrong.set(&"ab".repeat(32)).unwrap();
+        assert!(matches!(open_with_vault(&dir, false, &wrong), Err(AppError::Locked(_))));
+        assert_eq!(keycopy::read(&dir).unwrap(), Some(good));
     }
 
     #[test]

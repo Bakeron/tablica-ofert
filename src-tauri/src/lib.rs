@@ -25,6 +25,8 @@ mod sources;
 mod sync;
 mod synonyms;
 mod text;
+#[cfg(target_os = "android")]
+mod tls;
 mod usage;
 mod net;
 
@@ -232,7 +234,7 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
         match sources::fetch(&state, false).await {
             Ok(report) => {
                 new_on_board = report.new_on_board;
-                if !report.runs.is_empty() {
+                if !report.runs.is_empty() || report.closed > 0 {
                     let _ = handle.emit("offers-fetched", &report);
                 }
             }

@@ -76,11 +76,13 @@ pub fn mentions_any(title: &str, description: &str, words: &[String]) -> bool {
 }
 
 impl Evaluation {
-    /// Rejects an off-topic offer for this profile; replaces the profile's own keyword reasons.
-    pub fn reject_off_topic(&mut self) {
+    /// Sends an off-topic offer to "Do sprawdzenia" for this profile (the keywords may be in the
+    /// part of the text the source does not give); replaces the profile's own keyword reasons.
+    /// Other fails (level, salary, contract) still reject it.
+    pub fn mark_off_topic(&mut self) {
         self.reasons.retain(|r| !r.code.starts_with("keyword_"));
-        self.reasons.push(Reason { kind: ReasonKind::Fail, code: "keyword_none".into(), value: None });
-        self.result = FilterResult::Fail;
+        self.reasons.push(Reason { kind: ReasonKind::Unsure, code: "keyword_none".into(), value: None });
+        self.result = result_of(&self.reasons);
     }
 
     /// Adds one more reason and updates the result (a fail still wins over "unsure").
@@ -1224,9 +1226,17 @@ mod tests {
         let mut c = Criteria { keywords: vec!["PHP".into()], ..Default::default() };
         c.hard.keywords = true;
         let mut e = evaluate(&f, &c);
-        e.reject_off_topic();
-        assert_eq!(e.result, FilterResult::Fail);
+        e.mark_off_topic();
+        // The keywords may be in the part of the text the source does not give - "Do sprawdzenia".
+        assert_eq!(e.result, FilterResult::Unsure);
         assert_eq!(e.reasons.iter().filter(|r| r.code.starts_with("keyword_")).map(|r| r.code.as_str()).collect::<Vec<_>>(), vec!["keyword_none"]);
+
+        // Other reasons still reject it.
+        c.hard.companies = true;
+        c.skip_companies = vec!["Firma Testowa".into()];
+        let mut e = evaluate(&f, &c);
+        e.mark_off_topic();
+        assert_eq!(e.result, FilterResult::Fail);
     }
 
     #[test]

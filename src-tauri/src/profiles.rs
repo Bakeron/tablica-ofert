@@ -255,7 +255,7 @@ fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -
     for p in profiles {
         let mut e = filter::evaluate_profile(facts, p);
         if off_topic {
-            e.reject_off_topic();
+            e.mark_off_topic();
         }
         let score = crate::score::keyword_score(facts, p);
         if let Some(s) = score.filter(|s| *s < LOW_KEYWORD_SCORE) {
@@ -476,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn off_topic_adzuna_offers_go_to_rejected_until_another_source_brings_them() {
+    fn off_topic_adzuna_offers_go_to_review_until_another_source_brings_them() {
         let mut conn = test_db();
         let criteria = Criteria { keywords: vec!["WordPress".into(), "PHP".into()], ..Default::default() };
         save(&mut conn, plan("Plan A", criteria)).unwrap();
@@ -489,13 +489,21 @@ mod tests {
         };
         offers::add(&mut conn, from("Zwrotniczy (K/M)", "adzuna")).unwrap();
         offers::add(&mut conn, from("Programista PHP", "adzuna")).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Rejected, None, false).unwrap()), vec!["Zwrotniczy (K/M)"]);
-        let rejected = offers::list(&conn, View::Rejected, None, false).unwrap();
-        assert_eq!(rejected[0].filter_reasons[0].code, "keyword_none");
+        // Adzuna gives only the start of the description - the keywords may be further on.
+        assert!(offers::list(&conn, View::Rejected, None, false).unwrap().is_empty());
+        let off_topic = |conn: &Connection| -> Vec<String> {
+            offers::list(conn, View::Review, None, false)
+                .unwrap()
+                .into_iter()
+                .filter(|o| o.filter_reasons.iter().any(|r| r.code == "keyword_none"))
+                .map(|o| o.title)
+                .collect()
+        };
+        assert_eq!(off_topic(&conn), vec!["Zwrotniczy (K/M)"]);
 
         // The same offer from the user's own alerts is not off topic any more.
         offers::add(&mut conn, from("Zwrotniczy (K/M)", "mail")).unwrap();
-        assert!(offers::list(&conn, View::Rejected, None, false).unwrap().is_empty());
+        assert!(off_topic(&conn).is_empty());
     }
 
     #[test]

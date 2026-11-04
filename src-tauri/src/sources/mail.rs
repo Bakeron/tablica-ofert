@@ -75,7 +75,10 @@ fn account_of(c: &Config) -> String {
     format!("{}@{}:{}", c.user, c.host, c.port)
 }
 
+#[cfg(not(target_os = "android"))]
 type Session = imap::Session<native_tls::TlsStream<TcpStream>>;
+#[cfg(target_os = "android")]
+type Session = imap::Session<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
 
 fn mail_error(e: imap::error::Error) -> AppError {
     match e {
@@ -95,8 +98,13 @@ fn connect(c: &Config) -> AppResult<Session> {
     let tcp = TcpStream::connect_timeout(&addr, TIMEOUT).map_err(|e| AppError::Net(e.to_string()))?;
     tcp.set_read_timeout(Some(TIMEOUT)).map_err(|e| AppError::Net(e.to_string()))?;
     tcp.set_write_timeout(Some(TIMEOUT)).map_err(|e| AppError::Net(e.to_string()))?;
-    let tls = native_tls::TlsConnector::new().map_err(|e| AppError::Net(e.to_string()))?;
-    let stream = tls.connect(&c.host, tcp).map_err(|e| AppError::Net(e.to_string()))?;
+    #[cfg(not(target_os = "android"))]
+    let stream = native_tls::TlsConnector::new()
+        .map_err(|e| AppError::Net(e.to_string()))?
+        .connect(&c.host, tcp)
+        .map_err(|e| AppError::Net(e.to_string()))?;
+    #[cfg(target_os = "android")]
+    let stream = crate::tls::imap_stream(&c.host, tcp)?;
     let mut client = imap::Client::new(stream);
     client.read_greeting().map_err(mail_error)?;
     client.login(&c.user, &c.password).map_err(|(e, _)| mail_error(e))

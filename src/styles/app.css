@@ -2331,6 +2331,15 @@ fieldset.plain {
   outline: 2px solid transparent;
 }
 
+/* "Job from Himalayas" - their terms ask for a visible credit with a link; a plain link on its own line. */
+.himalayas-credit {
+  display: block;
+  width: fit-content;
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 @media (hover: hover) {
   .adzuna-credit:hover {
     background: none;
@@ -2846,6 +2855,25 @@ fieldset.plain {
 .about-list {
   margin: 0;
   padding-left: 1.1rem;
+}
+
+.about-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Full licence texts: a long plain-text list, scrolled inside its own box. */
+.notices {
+  max-height: 24rem;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--ink-dim);
+  border-radius: 4px;
+  font: 0.8rem/1.45 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- sync ---------- */

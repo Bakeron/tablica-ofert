@@ -116,6 +116,83 @@ fn clean(input: OfferInput) -> AppResult<OfferInput> {
     })
 }
 
+/// An offer row from the sync file (written by the other device) - checked with the same rules
+/// as data from outside before it is saved. A row that fails is skipped; the local copy stays.
+pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
+    use serde_json::Value;
+    fn word(v: &Value, key: &str) -> AppResult<Option<String>> {
+        match v.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(s)) => Ok(Some(s.clone())),
+            Some(_) => Err(AppError::Invalid(format!("{key} has a wrong type"))),
+        }
+    }
+    fn number(v: &Value, key: &str) -> AppResult<Option<i64>> {
+        match v.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(n) => n.as_i64().map(Some).ok_or_else(|| AppError::Invalid(format!("{key} has a wrong type"))),
+        }
+    }
+    fn one_of<T>(value: Option<String>, parse: fn(&str) -> Option<T>, key: &str) -> AppResult<()> {
+        match value {
+            Some(w) if parse(&w).is_none() => Err(AppError::Invalid(format!("{key} has an unknown value"))),
+            _ => Ok(()),
+        }
+    }
+    let d = data;
+    required(word(d, "title")?.unwrap_or_default(), MAX_SHORT, "title")?;
+    required(word(d, "company")?.unwrap_or_default(), MAX_SHORT, "company")?;
+    required(word(d, "fingerprint")?.unwrap_or_default(), MAX_SHORT * 2 + 16, "fingerprint")?;
+    safe_url(word(d, "url")?)?;
+    for key in ["city", "contract", "level"] {
+        text(word(d, key)?, MAX_SHORT, key)?;
+    }
+    text(word(d, "language")?, 16, "language")?;
+    for key in ["requirements", "description", "ai_summary", "ai_flags", "ai_remote_quote", "ai_title_tr", "ai_description_tr"] {
+        text(word(d, key)?, MAX_LONG, key)?;
+    }
+    text(word(d, "notes")?, MAX_NOTES, "notes")?;
+    for key in ["ai_status", "ai_tr_lang"] {
+        text(word(d, key)?, 32, key)?;
+    }
+    if let Some(source) = word(d, "content_removed")? {
+        source_name(&source)?;
+    }
+    salary(number(d, "salary_min")?)?;
+    salary(number(d, "salary_max")?)?;
+    currency(word(d, "salary_currency")?)?;
+    one_of(word(d, "salary_period")?, SalaryPeriod::parse, "salary_period")?;
+    one_of(word(d, "remote")?, Remote::parse, "remote")?;
+    one_of(word(d, "interest")?, Interest::parse, "interest")?;
+    Stage::parse(&word(d, "stage")?.unwrap_or_default()).ok_or_else(|| AppError::Invalid("stage has an unknown value".into()))?;
+    for key in ["favorite", "expired"] {
+        if !matches!(number(d, key)?, None | Some(0) | Some(1)) {
+            return Err(AppError::Invalid(format!("{key} must be 0 or 1")));
+        }
+    }
+    for key in ["stage_changed_at", "added_at", "updated_at", "expires_at", "deleted_at", "ai_at"] {
+        utc_time(word(d, key)?)?;
+    }
+    let list = |key: &str| d.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
+    for s in list("sources") {
+        source_name(&word(&s, "source")?.unwrap_or_default())?;
+        safe_url(word(&s, "url")?)?;
+        utc_time(word(&s, "first_seen")?)?;
+    }
+    for h in list("history") {
+        Stage::parse(&word(&h, "stage")?.unwrap_or_default()).ok_or_else(|| AppError::Invalid("stage has an unknown value".into()))?;
+        utc_time(word(&h, "at")?)?;
+    }
+    for sc in list("ai_scores") {
+        if !number(&sc, "score")?.is_some_and(|n| (0..=100).contains(&n)) {
+            return Err(AppError::Invalid("score is out of range".into()));
+        }
+        text(word(&sc, "why")?, MAX_LONG, "why")?;
+        text(word(&sc, "quote")?, MAX_LONG, "quote")?;
+    }
+    Ok(())
+}
+
 // ---------- adding ----------
 
 pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
@@ -149,7 +226,19 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
                 "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
                 params![id, input.source, input.url, now],
             )? > 0;
-            if !filled && !new_source {
+            // The source whose text was removed brings the job again (open once more): its link
+            // comes back and the offer is checked against that source's terms again.
+            let revived = tx.execute(
+                "UPDATE offers SET content_removed = NULL WHERE id = ?1 AND content_removed = ?2",
+                params![id, input.source],
+            )? > 0;
+            if revived {
+                tx.execute(
+                    "UPDATE offer_sources SET url = ?3 WHERE offer_id = ?1 AND source = ?2 AND url IS NULL",
+                    params![id, input.source, input.url],
+                )?;
+            }
+            if !filled && !new_source && !revived {
                 // Fetched again with nothing new: the row stays exactly as it was (no sync, no recheck).
                 tx.commit()?;
                 return Ok(AddOutcome::Unchanged { id });
@@ -241,6 +330,15 @@ fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput) -> AppRes
         ],
     )?;
     Ok(merged_columns(tx, id)? != before)
+}
+
+/// Offers past their expiry date are marked "expired" (greyed out on the board), from every
+/// source. Seen again in a source, an offer is open again (`merge_into`) until its date passes.
+pub fn mark_expired(conn: &Connection, now: &str) -> AppResult<usize> {
+    Ok(conn.execute(
+        "UPDATE offers SET expired = 1 WHERE expired = 0 AND expires_at IS NOT NULL AND expires_at < ?1",
+        [now],
+    )?)
 }
 
 // ---------- reading ----------
@@ -396,7 +494,7 @@ pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> 
 pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
     let sql = format!(
         "SELECT {}, o.url, o.contract, o.level, o.language, o.requirements, o.description,
-            o.notes, o.expires_at, o.deleted_at
+            o.notes, o.expires_at, o.deleted_at, o.content_removed
          FROM offers o WHERE o.id = ?1",
         columns(None)
     );
@@ -413,6 +511,7 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
                 notes: r.get(29)?,
                 expires_at: r.get(30)?,
                 deleted_at: r.get(31)?,
+                content_removed: r.get(32)?,
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),
@@ -569,6 +668,64 @@ mod tests {
             AddOutcome::Added { id } | AddOutcome::Merged { id } | AddOutcome::Unchanged { id } => id,
             AddOutcome::Blocked => panic!("unexpected Blocked"),
         }
+    }
+
+    #[test]
+    fn outside_data_over_the_limits_is_refused() {
+        let mut conn = test_db();
+        let with = |change: &dyn Fn(&mut OfferInput)| {
+            let mut o = offer("Tester", "Firma Testowa", "adzuna");
+            change(&mut o);
+            o
+        };
+        let refused = [
+            with(&|o| o.title = "x".repeat(MAX_SHORT + 1)),
+            with(&|o| o.company = "x".repeat(MAX_SHORT + 1)),
+            with(&|o| o.city = Some("x".repeat(MAX_SHORT + 1))),
+            with(&|o| o.description = Some("x".repeat(MAX_LONG + 1))),
+            with(&|o| o.requirements = Some("x".repeat(MAX_LONG + 1))),
+            with(&|o| o.url = Some(format!("https://example.com/{}", "x".repeat(MAX_URL)))),
+            with(&|o| o.url = Some("ftp://example.com/oferta".into())),
+            with(&|o| o.title = "Tester\u{0007}".into()),
+            with(&|o| o.description = Some("Opis\u{001b}[31m".into())),
+            with(&|o| o.salary_max = Some(MAX_SALARY + 1)),
+            with(&|o| {
+                o.salary_min = Some(5000);
+                o.salary_currency = Some("ZŁOTE".into());
+            }),
+            with(&|o| o.expires_at = Some("jutro".into())),
+            with(&|o| o.source = "Adzuna!".into()),
+        ];
+        for (i, o) in refused.into_iter().enumerate() {
+            assert!(matches!(add(&mut conn, o), Err(AppError::Invalid(_))), "case {i} was accepted");
+        }
+        // At the limit and with line breaks - still fine.
+        let ok = with(&|o| {
+            o.title = "x".repeat(MAX_SHORT);
+            o.description = Some("Pierwsza linia\nDruga\tlinia".into());
+        });
+        assert!(add(&mut conn, ok).is_ok());
+        let count: i64 = conn.query_row("SELECT count(*) FROM offers", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn offers_past_their_date_are_expired() {
+        let mut conn = test_db();
+        let mut old = offer("Tester", "Firma Testowa", "adzuna");
+        old.expires_at = Some("2026-11-01T00:00:00Z".into());
+        let old = id_of(add(&mut conn, old).unwrap());
+        let mut open = offer("Analityk", "Firma Testowa", "jooble");
+        open.expires_at = Some("2026-12-01T00:00:00Z".into());
+        let open = id_of(add(&mut conn, open).unwrap());
+        let none = id_of(add(&mut conn, offer("Programista", "Firma Testowa", "manual")).unwrap());
+
+        assert_eq!(mark_expired(&conn, "2026-11-04T12:00:00Z").unwrap(), 1);
+        assert!(detail(&conn, old).unwrap().row.expired);
+        assert!(!detail(&conn, open).unwrap().row.expired);
+        assert!(!detail(&conn, none).unwrap().row.expired);
+        // Nothing new the next time.
+        assert_eq!(mark_expired(&conn, "2026-11-04T13:00:00Z").unwrap(), 0);
     }
 
     #[test]

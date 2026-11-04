@@ -23,6 +23,7 @@ Set-Item "env:CFLAGS_$triple" "--target=${triple}24"
 # Gradle's own downloads (wrapper, Maven) trust the Windows certificate store, not only Java's.
 $env:JAVA_OPTS = "-Djavax.net.ssl.trustStoreType=Windows-ROOT"
 $env:GRADLE_OPTS = $env:JAVA_OPTS
+$root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 $log = npx tauri android build --debug --target $Target --apk 2>&1 | ForEach-Object { "$_" }
 $log

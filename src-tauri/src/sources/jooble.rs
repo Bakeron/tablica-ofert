@@ -80,12 +80,18 @@ fn request(q: &Query) -> Request {
 }
 
 /// One search (one API call).
-pub async fn search(client: &Client, key: &str, q: &Query) -> AppResult<Vec<OfferInput>> {
+/// `sent` becomes true once the request reached Jooble - only then does it use one of the key's
+/// 500 calls (no connection or a key with a wrong format costs nothing).
+pub async fn search(client: &Client, key: &str, q: &Query, sent: &mut bool) -> AppResult<Vec<OfferInput>> {
     if !valid_key(key) {
         return Err(AppError::Auth("the Jooble key has a wrong format".into()));
     }
     let url = format!("https://jooble.org/api/{key}");
-    let resp = client.post(url).json(&request(q)).send().await.map_err(net::net_error)?;
+    let resp = client.post(url).json(&request(q)).send().await.map_err(|e| {
+        *sent = !e.is_connect();
+        net::net_error(e)
+    })?;
+    *sent = true;
     let answer: Answer = net::json(resp).await?;
     Ok(answer.jobs.into_iter().filter_map(to_offer).collect())
 }

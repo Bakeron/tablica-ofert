@@ -13,6 +13,7 @@ import { StatusTag } from "./StatusTag";
 import adzunaLogo from "../assets/adzuna-logo.png";
 
 const ADZUNA_URL = "https://www.adzuna.pl/";
+const HIMALAYAS_URL = "https://himalayas.app/";
 
 interface Props {
   offer: OfferDetail | null;
@@ -251,6 +252,19 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
                   <img src={adzunaLogo} width={120} height={31} alt="Adzuna" />
                 </a>
               )}
+              {/* Himalayas' API terms: visible credit with a link to their site. */}
+              {offer.sources.includes("himalayas") && (
+                <a
+                  className="himalayas-credit"
+                  href={HIMALAYAS_URL}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenLink(HIMALAYAS_URL);
+                  }}
+                >
+                  {t("himalayas.credit")}
+                </a>
+              )}
             </dd>
           </div>
         </dl>
@@ -272,6 +286,13 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </label>
         )}
 
+        {/* The job closed on a source whose terms ask to drop it - only the user's own record is left. */}
+        {offer.contentRemoved === "himalayas" && (
+          <section className="pass-text">
+            <h3 className="pass-label">{t("card.description")}</h3>
+            <p>{t("card.contentRemoved.himalayas")}</p>
+          </section>
+        )}
         {offer.requirements && (
           <section className="pass-text">
             <h3 className="pass-label">{t("card.requirements")}</h3>

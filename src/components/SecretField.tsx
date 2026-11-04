@@ -1,8 +1,11 @@
-import { useId, useState, type FormEvent } from "react";
+import { createContext, useContext, useId, useState, type FormEvent } from "react";
 import { describeError, type SecretName } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
+
+/** The app's "Are you sure?" dialog, given by the settings window - deleting a key asks first. */
+export const ConfirmContext = createContext<((message: string, action: () => void, label?: string) => void) | null>(null);
 
 /** The small "Show password" / "Show key" link beside the label of every password or key field. */
 export function ShowToggle({
@@ -72,6 +75,18 @@ export function SecretField({
     }
   }
   const isPassword = name === "mail-password";
+  const confirm = useContext(ConfirmContext);
+
+  function remove() {
+    const run = async () => {
+      if ((await attempt(() => onDelete(name))) && revealed !== null) {
+        setValue("");
+        setRevealed(null);
+      }
+    };
+    if (confirm) confirm(t("secret.deleteConfirm", { label }), () => void run(), t("secret.delete"));
+    else void run();
+  }
   // Shown under the field - the app's error bar is behind the settings window.
   const [error, setError] = useState<string | null>(null);
 
@@ -127,12 +142,7 @@ export function SecretField({
             type="button"
             className="btn btn-ghost btn-small"
             disabled={busy}
-            onClick={async () => {
-              if ((await attempt(() => onDelete(name))) && revealed !== null) {
-                setValue("");
-                setRevealed(null);
-              }
-            }}
+            onClick={remove}
           >
             {t("secret.delete")}
           </button>
