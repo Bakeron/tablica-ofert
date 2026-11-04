@@ -490,7 +490,7 @@ export const en: Record<keyof typeof pl, string> = {
   "ai.ollamaUrl": "Ollama address",
   "ai.check": "Check my computer",
   "ai.ollamaStep1": "Click “Get Ollama” and install it like any program. In another folder: run the installer from the command line with the folder, e.g. OllamaSetup.exe /DIR=\"D:\\Programs\\Ollama\".",
-  "ai.ollamaStep2": "Models take a few GB each and go to drive C by default. Another place: in Windows add the user environment variable OLLAMA_MODELS with the folder (e.g. D:\\AI\\models) and restart Ollama (icon next to the clock).",
+  "ai.ollamaStep2": "Models take a few GB each and go to drive C by default. Another place: in Windows add the user environment variable OLLAMA_MODELS with the folder (e.g. D:\\AI\\models) and restart Ollama (icon next to the clock). An SSD is better: a model of about 5 GB loads from an SSD in a few seconds, from an HDD in up to a minute - at the first rating in a row (and after a few minutes of rest); after that AI answers just as fast.",
   "ai.ollamaStep3": "Click “Check my computer” and “Check Ollama”, then “Download model” - the app downloads the suggested model through Ollama, sets it and turns Ollama on.",
   "ai.ollamaOff": "Ollama does not answer at this address - install it or start it (icon next to the clock).",
   "ai.ollamaHas": "Downloaded models: {list}.",
