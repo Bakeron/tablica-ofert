@@ -11,6 +11,7 @@ import { SyncSettings } from "./SyncSettings";
 import { ConfirmContext } from "./SecretField";
 import { isPhone } from "../lib/platform";
 import { settingsMemory } from "../lib/settingsMemory";
+import { followHeight } from "../lib/smoothHeight";
 
 const OPTIONS: { key: "language" | "theme" | "motion" | "text_size"; label: TextKey; values: readonly string[]; hint?: TextKey }[] = [
   { key: "language", label: "settings.language", values: ["system", "pl", "en"] },
@@ -118,10 +119,22 @@ function SettingsBody({
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection ?? settingsMemory.section ?? FIRST_SECTION);
   const sheet = useRef<HTMLDivElement>(null);
+  const stopFollowing = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     settingsMemory.section = section;
   }, [section]);
+
+  useEffect(() => () => stopFollowing.current?.(), []);
+
+  function openSection(next: SettingsSection) {
+    const box = sheet.current?.closest("dialog");
+    if (sheet.current && box && next !== section) {
+      stopFollowing.current?.();
+      stopFollowing.current = followHeight(box, sheet.current);
+    }
+    setSection(next);
+  }
 
   // Layout effect: its clean-up runs while the window is still there, so closing is not read as scrolling.
   useLayoutEffect(() => {
@@ -164,7 +177,7 @@ function SettingsBody({
         </header>
         <nav className="settings-nav" aria-label={t("settings.section")}>
           {SECTIONS.map((s) => (
-            <button key={s} type="button" className="seg" aria-pressed={section === s} onClick={() => setSection(s)}>
+            <button key={s} type="button" className="seg" aria-pressed={section === s} onClick={() => openSection(s)}>
               {t(`settings.s.${s}` as TextKey)}
             </button>
           ))}

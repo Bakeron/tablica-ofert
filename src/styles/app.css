@@ -3119,9 +3119,12 @@ fieldset.plain {
 /* The name is the button - the arrow turns down when the source is unfolded. */
 .source-unfold {
   display: inline-flex;
-  align-items: center;
+  /* Baseline: the name and "Show settings" have other fonts, but their underlines meet. */
+  align-items: baseline;
   gap: 0.4rem;
-  padding: 0.1rem 0.3rem 0.1rem 0;
+  /* The negative margin keeps the arrow in line with the text below; the highlight goes around it. */
+  margin-left: -0.4rem;
+  padding: 0.1rem 0.4rem 0.3rem;
   border: 0;
   border-radius: 3px;
   background: none;
@@ -3135,6 +3138,7 @@ fieldset.plain {
 
 .source-unfold svg {
   flex: none;
+  align-self: center;
   width: 1rem;
   height: 1rem;
   transition: rotate var(--t-reveal) ease-out;
@@ -3149,7 +3153,7 @@ fieldset.plain {
 .source-unfold {
   text-decoration: underline transparent;
   text-decoration-thickness: 2px;
-  text-underline-offset: 4px;
+  text-underline-offset: 3px;
 }
 
 .source-unfold-hint {
