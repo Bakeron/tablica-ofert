@@ -6,7 +6,7 @@ import { useAppearOn } from "../lib/presence";
 import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
-import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
+import { IconArrowOut, IconArrowUp, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
 import { AgendaPart, type AgendaActions } from "./AgendaPart";
 import { Help } from "./Help";
 import { StatusTag } from "./StatusTag";
@@ -34,6 +34,8 @@ interface Props {
   onOpenAiSettings: () => void;
   /** Opens the offer page in the preview window to take its full text. */
   onFullText: () => void;
+  /** Narrow layout (card below the list): back to the selected row. */
+  onBackToList: () => void;
   agenda: AgendaActions;
   showDates: boolean;
   showContacts: boolean;
@@ -41,7 +43,7 @@ interface Props {
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, agenda, showDates, showContacts },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -74,6 +76,10 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
 
   return (
     <aside className="pass" aria-labelledby="pass-title" ref={passRef}>
+      {/* Only where the card is below the list (CSS shows it there). */}
+      <button type="button" className="btn btn-ghost btn-small pass-back" onClick={onBackToList}>
+        <IconArrowUp /> {t("card.backToList")}
+      </button>
       {/* Stub - the part you would tear off */}
       <section className="pass-stub">
         <div className="pass-field pass-field-wide">
@@ -92,7 +98,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             foreign &&
             !inTrash && (
               <p className="pass-meta pass-translation">
-                {t(!aiOn ? "card.translateNoAi" : offer.ai.status === "done" ? "card.translateAgain" : "card.translateWaiting", {
+                {t(!aiOn ? (isPhone() ? "card.translateNoAiPhone" : "card.translateNoAi") : offer.ai.status === "done" ? "card.translateAgain" : "card.translateWaiting", {
                   language: t(`language.${foreign}`),
                 })}
               </p>
@@ -151,7 +157,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               </label>
 
               <fieldset className="interest-set">
-                <legend className="pass-label">{t("interest.label")}</legend>
+                <legend className="pass-label">
+                  {t("interest.label")} {isPhone() && <Help text={t("interest.swipeHelp")} />}
+                </legend>
                 {(["high", "maybe", "no"] as Interest[]).map((value, i) => (
                   <button
                     key={value}
@@ -160,7 +168,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
                     aria-pressed={offer.interest === value}
                     onClick={() => onInterest(offer.interest === value ? null : value)}
                   >
-                    <kbd aria-hidden="true">{i + 1}</kbd> {t(`interest.${value}`)}
+                    {!isPhone() && <kbd aria-hidden="true">{i + 1}</kbd>} {t(`interest.${value}`)}
                   </button>
                 ))}
                 <button
@@ -185,7 +193,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               <button type="button" className="btn btn-ghost" onClick={onTrash}>
                 <IconTrash /> {t("card.trash")}
               </button>
-              {isWebUrl(offer.url) && (
+              {isWebUrl(offer.url) && !isPhone() && (
                 <button type="button" className="btn btn-ghost" onClick={onFullText} title={t("full.hint")}>
                   {t("full.button")}
                 </button>
@@ -384,7 +392,7 @@ function Stamp({ offer }: { offer: OfferDetail }) {
         <span className="stamp-label">{t("card.matchWords")}</span>
         <span className="stamp-score">{offer.score}</span>
         <span className="stamp-sub">
-          {t("card.matchOf100")} <Help text={t("card.matchWordsHelp")} />
+          {t("card.matchOf100")} <Help text={t(isPhone() ? "card.matchWordsHelpPhone" : "card.matchWordsHelp")} />
         </span>
       </div>
     );
@@ -423,7 +431,7 @@ function AiPart({
       <h3 id="ai-title" className="pass-label">
         {t("ai.cardTitle")}
       </h3>
-      {ai.status === null && <p className="pass-meta">{aiOn ? t("ai.waiting") : t("ai.off")}</p>}
+      {ai.status === null && <p className="pass-meta">{aiOn ? t("ai.waiting") : t(isPhone() ? "ai.offPhone" : "ai.off")}</p>}
       {ai.status === "failed" && (
         <p className="source-warn">
           <IconWarning /> {t("ai.failed")}

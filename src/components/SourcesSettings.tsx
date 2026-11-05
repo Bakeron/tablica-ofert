@@ -10,10 +10,8 @@ import { MailSettings } from "./MailSettings";
 import { SecretField } from "./SecretField";
 
 const ADZUNA_SIGNUP = "https://developer.adzuna.com/signup";
-/** Key form on the Polish Jooble site - the key decides the country of the offers. */
-const JOOBLE_SIGNUP = "https://pl.jooble.org/api/about";
 
-/** Settings → "Offer sources": automatic fetching, Adzuna and Jooble (with their keys), Remotive, e-mail alerts. */
+/** Settings → "Offer sources": automatic fetching, Adzuna (with its keys), Remotive, e-mail alerts (with Jooble among the portals). */
 export function SourcesSettings({
   api,
   settings,
@@ -89,7 +87,6 @@ export function SourcesSettings({
   const himalayas = of("himalayas");
   const wwr = of("weworkremotely");
   const remoteok = of("remoteok");
-  const jooble = of("jooble");
 
   return (
     <div className="settings-part">
@@ -181,21 +178,11 @@ export function SourcesSettings({
         <p>{t("src.remoteok.text")}</p>
       </SourceBox>
 
-      <SourceBox id="src-jooble" name="Jooble" short={t("src.jooble.short")} on={settings.source_jooble === "on"} onToggle={(on) => onChange("source_jooble", on ? "on" : "off")} state={jooble} lang={lang}>
-        <p>{t("src.jooble.text")}</p>
-        <div className="source-row">
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(JOOBLE_SIGNUP)}>
-            {t("src.jooble.signup")} <IconArrowOut />
-          </button>
-        </div>
-        <SecretField name="jooble-key" label={t("src.jooble.key")} hint={hints["jooble-key"]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
-        <p className="hint">{t("secret.hint")}</p>
-      </SourceBox>
-
       <MailSettings
         api={api}
         settings={settings}
         status={of("mail")}
+        jooble={of("jooble")}
         hints={hints}
         profiles={profiles}
         onChange={onChange}
@@ -269,19 +256,34 @@ export function SourceBox({
   );
 }
 
-/** Last run, calls today and the last error of a source - in words, not only colour. */
-export function SourceState({ s, lang, onlyProblems = false }: { s: SourceStatus; lang: "pl" | "en"; onlyProblems?: boolean }) {
+/** Last run, calls today and the last error of a source - in words, not only colour.
+ *  `name` starts the warnings when they stand outside the box of the source; `noProblems` leaves them to that place. */
+export function SourceState({
+  s,
+  lang,
+  onlyProblems = false,
+  noProblems = false,
+  name,
+}: {
+  s: SourceStatus;
+  lang: "pl" | "en";
+  onlyProblems?: boolean;
+  noProblems?: boolean;
+  name?: string;
+}) {
   const { t } = useI18n();
   // A successful run clears the error; the Himalayas check of closed jobs can set it after one.
-  const failed = s.lastError && s.lastTry;
-  const noKey = !s.ready && s.enabled;
+  const failed = !noProblems && s.lastError && s.lastTry;
+  const noKey = !noProblems && !s.ready && s.enabled;
+  const prefix = name ? `${name}: ` : "";
   if (onlyProblems && !failed && !noKey) return null;
   return (
     <div className="source-state">
       {/* A missing key is a problem only for a source that is on - "not set" under the field says the rest. */}
       {noKey && (
         <p className="source-warn">
-          <IconWarning /> {t(s.source === "mail" ? "src.status.noMail" : "src.status.noKey")}
+          <IconWarning /> {prefix}
+          {t(s.source === "mail" ? "src.status.noMail" : "src.status.noKey")}
         </p>
       )}
       {!onlyProblems && (
@@ -295,7 +297,8 @@ export function SourceState({ s, lang, onlyProblems = false }: { s: SourceStatus
       )}
       {failed && (
         <p className="source-warn">
-          <IconWarning /> {t("src.status.error", { when: fullDate(s.lastTry!, lang), detail: s.lastError! })}
+          <IconWarning /> {prefix}
+          {t("src.status.error", { when: fullDate(s.lastTry!, lang), detail: s.lastError! })}
         </p>
       )}
     </div>

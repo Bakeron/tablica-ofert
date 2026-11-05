@@ -38,10 +38,12 @@ import { Reveal } from "./components/Reveal";
 import { SettingsDialog, type SettingsSection } from "./components/SettingsDialog";
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
 import { playClack, playGong } from "./lib/sound";
-import { isPhone, scheduleReminders } from "./lib/platform";
+import { askNotifications, isPhone, scheduleReminders } from "./lib/platform";
+import { motionReduced } from "./lib/presence";
 import { isWebUrl } from "./lib/format";
 import { useFitLevels } from "./lib/fit";
 import { viewFor } from "./lib/profile";
+import { csvCells, csvName } from "./lib/csv";
 
 const VIEWS: View[] = ["board", "review", "rejected", "declined", "trash"];
 
@@ -85,6 +87,8 @@ export default function App() {
   const [capturing, setCapturing] = useState(false);
   /** "Share" from the phone's browser - opens "Add offer" with the shared text. */
   const [shared, setShared] = useState<{ id: number; text: string } | null>(null);
+  /** Goes up when the phone's notifications get allowed - the reminders are planned again. */
+  const [replan, setReplan] = useState(0);
 
   useEffect(() => {
     const onShare = (e: Event) => {
@@ -103,6 +107,11 @@ export default function App() {
   const topbarRef = useRef<HTMLElement>(null);
   // One line in the top bar: full size, a bit tighter, then the tabs in their own row.
   useFitLevels(topbarRef, TOPBAR_FIT);
+
+  // The tabs scroll sideways on a phone - the chosen one must not stay out of sight.
+  useEffect(() => {
+    topbarRef.current?.querySelector(".tab[aria-current]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [view]);
 
   // ----- language, theme, motion -----
   const lang = resolveLang(settings.language, navigator.language);
@@ -151,7 +160,8 @@ export default function App() {
       const [loaded, list] = await Promise.all([a.getSettings(), a.listProfiles()]);
       setSettings(loaded);
       setProfiles(list);
-      setFirstSteps(loaded.onboarding === "pending" && list.length === 0);
+      // The phone gets its profiles from the PC (sync), so no first steps there.
+      setFirstSteps(!isPhone() && loaded.onboarding === "pending" && list.length === 0);
     }, fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -205,7 +215,8 @@ export default function App() {
   const errorValue = useMemo(() => ({ error, close: () => setError(null) }), [error]);
   useEffect(() => {
     if (!toast || toastHeld) return;
-    const timer = window.setTimeout(() => setToast(null), 10_000);
+    // On a phone a screen reader moves its own focus, not the page's - give "Undo" more time.
+    const timer = window.setTimeout(() => setToast(null), toast.undo && isPhone() ? 20_000 : 10_000);
     return () => window.clearTimeout(timer);
   }, [toast, toastHeld]);
   useEffect(() => {
@@ -417,7 +428,7 @@ export default function App() {
         ),
       )
       .catch(() => {});
-  }, [api, rows, settings.notify_reminders, lang, t]);
+  }, [api, rows, settings.notify_reminders, replan, lang, t]);
 
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
 
@@ -428,6 +439,19 @@ export default function App() {
       await action();
       await reload();
       after?.();
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  /** "Export this list": exactly the rows the board shows (tab, profile, hidden ones, sorting), in that order. */
+  async function exportList() {
+    if (!api) return;
+    try {
+      const all = new Map((await api.exportRows(null)).map((r) => [r.id, r]));
+      const shown = sorted.flatMap((r) => all.get(r.id) ?? []);
+      const path = await api.saveCsv(csvName(view, lang), csvCells(shown, lang));
+      if (path) setToast({ text: t("data.csvSaved", { path }) });
     } catch (e) {
       fail(e);
     }
@@ -608,6 +632,16 @@ export default function App() {
   }
 
   const locked = status !== null && !status.ok;
+  // The filter's rejects stay on the PC, so on the phone this tab is empty - unless an offer added here landed there.
+  const shownViews = VIEWS.filter((v) => v !== "rejected" || !isPhone() || view === v || (counts?.rejected ?? 0) > 0);
+
+  /** Phone: the first date is when the question about notifications makes sense. */
+  async function addEvent(event: Parameters<Api["addEvent"]>[1]): Promise<boolean> {
+    if (selectedId === null) return false;
+    const added = await act(() => api!.addEvent(selectedId, event));
+    if (added && isPhone() && settings.notify_reminders === "on" && (await askNotifications())) setReplan((n) => n + 1);
+    return added;
+  }
 
   return (
     <I18nContext.Provider value={i18n}>
@@ -623,9 +657,10 @@ export default function App() {
             <h1>{t("app.name")}</h1>
           </div>
           <nav className="tabs" aria-label={t("tabs.label")} data-own-row>
-            {VIEWS.map((v) => (
+            {shownViews.map((v) => (
               <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
                 {t(`tabs.${v}`)}
+                {counts && v === "board" && <span className="tab-count tab-count-narrow">{view === "board" ? rows.length : counts.board}</span>}
                 {counts && (v === "review" || v === "rejected" || v === "declined") && counts[v] > 0 && (
                   <span className="tab-count">{counts[v]}</span>
                 )}
@@ -647,11 +682,13 @@ export default function App() {
                 {t("trash.empty")}
               </button>
             )}
-            <button type="button" className="btn btn-ghost btn-fetch" onClick={fetchNow} disabled={locked || fetching} aria-busy={fetching}>
-              <IconDownload /> {fetching ? t("fetch.busy") : t("fetch.button")}
-            </button>
-            <button type="button" className="btn btn-sign" onClick={() => setAdding(true)} disabled={locked}>
-              <IconPlus /> {t("add.button")}
+            {!isPhone() && (
+              <button type="button" className="btn btn-ghost btn-fetch" onClick={fetchNow} disabled={locked || fetching} aria-busy={fetching}>
+                <IconDownload /> {fetching ? t("fetch.busy") : t("fetch.button")}
+              </button>
+            )}
+            <button type="button" className="btn btn-sign btn-add" onClick={() => setAdding(true)} disabled={locked}>
+              <IconPlus /> <span className="btn-add-text">{t("add.button")}</span>
             </button>
             <button
               type="button"
@@ -734,7 +771,20 @@ export default function App() {
                 )}{" "}
                 <span className="count">· {t(plural(lang, "board.count", rows.length), { count: rows.length })}</span>
               </h2>
-              {settings.feature_keys === "on" && <p className="keys-hint">{t("board.keys")}</p>}
+              <div className="board-tools">
+                {settings.feature_keys === "on" && !isPhone() && <p className="keys-hint">{t("board.keys")}</p>}
+                {!isPhone() && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    title={t("board.exportHint")}
+                    disabled={sorted.length === 0}
+                    onClick={exportList}
+                  >
+                    <IconDownload /> {t("board.export")}
+                  </button>
+                )}
+              </div>
             </div>
             {view === "board" && counts && (counts.hidden > 0 || showLow) && (
               <p className="hidden-note">
@@ -778,8 +828,12 @@ export default function App() {
             aiOn={aiOn(settings)}
             onOpenAiSettings={() => openSettings("ai")}
             onFullText={() => detail && startFullText(detail)}
+            onBackToList={() => {
+              document.getElementById(`offer-${selectedId}`)?.scrollIntoView({ block: "center", behavior: motionReduced() ? "auto" : "smooth" });
+              document.querySelector<HTMLElement>("table.board")?.focus({ preventScroll: true });
+            }}
             agenda={{
-              addEvent: (event) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addEvent(selectedId, event))),
+              addEvent,
               deleteEvent: (id) =>
                 setConfirm({ message: t("agenda.deleteEventConfirm"), label: t("agenda.delete"), action: () => run(() => api!.deleteEvent(id)) }),
               google: (id) => run(() => api!.calendarGoogle(id)),
@@ -838,6 +892,7 @@ export default function App() {
           onOpenLink={openLink}
           onError={fail}
           onToast={(text) => setToast({ text })}
+          onNotificationsAllowed={() => setReplan((n) => n + 1)}
           version={status?.version ?? ""}
           onConfirm={(message, action, label) => setConfirm({ message, action, label })}
           onLoaded={async () => {

@@ -25,6 +25,7 @@ import type {
   OfferDetail,
   OfferInput,
   OfferRow,
+  ExportRow,
   Profile,
   ProfileInput,
   Settings,
@@ -120,8 +121,10 @@ export interface Api {
   saveCopy(password: string): Promise<string | null>;
   /** "Load a copy…" - replaces all data; returns the number of offers, null = cancelled. */
   loadCopy(password: string): Promise<number | null>;
-  /** "Export to Excel (CSV)"; returns the path, null = cancelled. */
-  exportCsv(): Promise<string | null>;
+  /** Offers for "Export to Excel (CSV)": one tab, or every offer (the trash too) for null. */
+  exportRows(view: View | null): Promise<ExportRow[]>;
+  /** Saves the CSV cells (words in the app language); `name` - the list, part of the file name. Returns the path, null = cancelled. */
+  saveCsv(name: string, cells: string[][]): Promise<string | null>;
   /** Deletes all data, keys and the scheduled task from this computer, then closes the app. */
   wipeAll(): Promise<void>;
   /** An interview starts in an hour (for the optional gong). */
@@ -219,7 +222,8 @@ async function tauriApi(): Promise<Api> {
     calendarIcs: (id) => invoke("calendar_ics", { id }),
     saveCopy: (password) => invoke("save_copy", { password }),
     loadCopy: (password) => invoke("load_copy", { password }),
-    exportCsv: () => invoke("export_csv"),
+    exportRows: (view) => invoke("export_rows", { view }),
+    saveCsv: (name, cells) => invoke("save_csv", { name, cells }),
     wipeAll: () => invoke("wipe_all"),
     syncStatus: () => invoke("sync_status"),
     syncLoginStart: () => invoke("sync_login_start"),

@@ -278,8 +278,8 @@ export function ProfileFields({
   const setSalary = (which: "uop" | "b2b", patch: Partial<SalaryForm>) =>
     setForm((f) => ({ ...f, [which]: { ...f[which], ...patch } }));
 
-  const hard = (key: keyof HardFlags, what: TextKey) => (
-    <HardSwitch value={form.hard[key]} label={t("profile.hardLabel", { what: t(what) })} onChange={(v) => setHard(key, v)} />
+  const hard = (key: keyof HardFlags, what: TextKey, help = true) => (
+    <HardSwitch value={form.hard[key]} label={t("profile.hardLabel", { what: t(what) })} help={help} onChange={(v) => setHard(key, v)} />
   );
 
   return (
@@ -473,8 +473,8 @@ export function ProfileFields({
 
       <Section
         title={t("profile.sectionSalary")}
-        help={t("profile.salaryHelp")}
-        side={hard("salary", "profile.sectionSalary")}
+        help={`${t("profile.salaryHelp")} ${t("profile.hardHelp")}`}
+        side={hard("salary", "profile.sectionSalary", false)}
       >
         <div className="salary-grid" role="group" aria-label={t("profile.sectionSalary")}>
           <span />
@@ -547,7 +547,7 @@ function Section({ title, help, side, children }: { title: string; help?: string
 }
 
 /** "Hard filter / only in AI score" for one criterion. */
-function HardSwitch({ value, label, onChange }: { value: boolean; label: string; onChange: (value: boolean) => void }) {
+function HardSwitch({ value, label, help, onChange }: { value: boolean; label: string; help: boolean; onChange: (value: boolean) => void }) {
   const { t } = useI18n();
   return (
     <span className="hard-switch" role="group" aria-label={label}>
@@ -557,7 +557,7 @@ function HardSwitch({ value, label, onChange }: { value: boolean; label: string;
       <button type="button" className="seg seg-small" aria-pressed={!value} onClick={() => onChange(false)}>
         {t("profile.soft")}
       </button>
-      <Help text={t("profile.hardHelp")} />
+      {help && <Help text={t("profile.hardHelp")} />}
     </span>
   );
 }

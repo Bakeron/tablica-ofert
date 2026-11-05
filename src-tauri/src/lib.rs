@@ -95,8 +95,8 @@ pub fn run() {
             if let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main") {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), config)?.build()?;
             }
-            // Installed app: Task Scheduler follows the setting (on by default).
-            if !cfg!(debug_assertions) {
+            // Installed app: Task Scheduler follows the setting (on by default). Windows only.
+            if !cfg!(debug_assertions) && cfg!(desktop) {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn_blocking(move || {
                     let state = handle.state::<AppState>();
@@ -167,7 +167,8 @@ pub fn run() {
             commands::calendar_ics,
             commands::save_copy,
             commands::load_copy,
-            commands::export_csv,
+            commands::export_rows,
+            commands::save_csv,
             commands::wipe_all,
             commands::sync_status,
             commands::sync_login_start,
@@ -195,7 +196,11 @@ fn start_auto_fetch(handle: tauri::AppHandle) {
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;
         }
     });
-    // Reminders need a finer clock than fetching ("an hour before").
+    // Reminders need a finer clock than fetching ("an hour before"). The phone plans them
+    // with the system's own notifications instead - here they would come twice.
+    if cfg!(mobile) {
+        return;
+    }
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5 * 60)).await;
@@ -236,7 +241,9 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
     let on = |key: &str| commands::with_db(&state, |c| settings::is_on(c, key)).unwrap_or(false);
     let mut new_on_board = 0;
     let say = commands::progress_of(handle);
-    if background || on("fetch_auto") {
+    // The phone is a helper (zalozenia.md §2): collecting offers and AI stay on the PC.
+    let collects = cfg!(desktop);
+    if collects && (background || on("fetch_auto")) {
         match commands::until_done(sources::fetch(&state, false, &say).await, &say) {
             Ok(report) => {
                 new_on_board = report.new_on_board;
@@ -249,7 +256,7 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
         }
     }
     // AI on its own only when turned on, and not more often than its "every" setting.
-    if on("ai_auto") && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false) {
+    if collects && on("ai_auto") && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false) {
         let _ = commands::with_db(&state, |c| ai::auto_ran(c));
         match commands::until_done(ai::process(&state, None, &say).await, &say) {
             Ok(report) if report.rated > 0 => {
@@ -269,7 +276,9 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
             Err(e) => eprintln!("sync failed: {e}"),
         }
     }
-    remind(handle);
+    if collects {
+        remind(handle);
+    }
     // A notification only when the board is not in front of the person anyway.
     let focused = handle.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
     if new_on_board > 0 && on("notify_new") && !focused {

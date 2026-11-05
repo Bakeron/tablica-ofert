@@ -1,5 +1,6 @@
 import { Fragment, useId, useMemo, useState } from "react";
 import { useI18n } from "../i18n";
+import { isPhone } from "../lib/platform";
 import { privacyBlocks, type Inline } from "../lib/privacy";
 import { IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
@@ -107,7 +108,7 @@ export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink
       <section className="source" aria-labelledby="privacy-title">
         <h3 id="privacy-title" className="source-title">{t("about.privacyTitle")}</h3>
         <ul className="about-list">
-          <li>{t("about.p1")}</li>
+          <li>{t(isPhone() ? "about.p1Phone" : "about.p1")}</li>
           <li>{t("about.p2")}</li>
           <li>{t("about.p3")}</li>
           <li>{t("about.p4")}</li>

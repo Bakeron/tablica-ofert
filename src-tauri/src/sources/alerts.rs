@@ -30,6 +30,8 @@ pub const PORTALS: &[Portal] = &[
     Portal { source: "bulldogjob", domains: &["bulldogjob.pl", "bulldogjob.com"], offer_paths: &["/companies/jobs/"] },
     Portal { source: "linkedin", domains: &["linkedin.com"], offer_paths: &["/jobs/view/"] },
     Portal { source: "indeed", domains: &["indeed.com", "indeed.pl"], offer_paths: &["/viewjob", "/rc/clk", "/pagead/clk"] },
+    // Mail comes from @jooble.com, the offers live on jooble.org (`pl.jooble.org/desc/…`).
+    Portal { source: super::jooble::SOURCE, domains: &["jooble.org", "jooble.com"], offer_paths: &["/desc/", "/jdp/", "/away/"] },
 ];
 
 /// Links and texts that are never offers (account, unsubscribe, apps, social media…).
@@ -663,6 +665,28 @@ mod tests {
         assert_eq!(offers[0].source, "nfj");
         assert_eq!(offers[0].url.as_deref(), Some("https://nofluffjobs.com/pl/job/backend-developer-firma-y-remote"));
         assert_eq!(offers[0].remote, Some(Remote::Yes));
+    }
+
+    // Made-up alert in the shape of a Jooble subscription (the real one: SPRAWY in robota.md).
+    #[test]
+    fn jooble_alert() {
+        let html = r#"<p><a href="https://pl.jooble.org/desc/-8124814081821320089?ckey=wordpress">Programista WordPress</a></p><p>Firma Testowa</p><p>Wrocław</p><p>9 000 - 12 000 PLN</p>
+            <p><a href="https://pl.jooble.org/jdp/6680513090389885291?ckey=wordpress">Tester aplikacji</a></p><p>Zmyślona Sp. z o.o.</p><p>Zdalnie</p>
+            <p><a href="https://pl.jooble.org/away/4415926535897932384?p=1&amp;pos=3">Analityk danych</a></p><p>Przykładowa Firma</p><p>Opole</p>
+            <p><a href="https://click.jooble.com/t/abc123">Księgowa</a></p><p>Biuro Testowe</p>
+            <p><a href="https://pl.jooble.org/unsubscribe?id=1">Wypisz się</a></p>"#;
+        let offers = offers_in_mail("Jooble <alerty@jooble.com>", Some(html), None);
+        assert_eq!(offers.iter().map(|o| o.title.as_str()).collect::<Vec<_>>(), ["Programista WordPress", "Tester aplikacji", "Analityk danych", "Księgowa"]);
+        assert!(offers.iter().all(|o| o.source == "jooble"));
+        assert_eq!(offers[0].company, "Firma Testowa");
+        assert_eq!(offers[0].city.as_deref(), Some("Wrocław"));
+        assert_eq!((offers[0].salary_min, offers[0].salary_max), (Some(9000), Some(12000)));
+        assert_eq!(offers[1].remote, Some(Remote::Yes));
+        assert_eq!(offers[2].url.as_deref(), Some("https://pl.jooble.org/away/4415926535897932384?p=1&pos=3"));
+
+        // A forwarded alert: the address alone says it is a Jooble offer.
+        let offers = offers_in_mail("ktos@example.com", Some(html), None);
+        assert_eq!(offers.len(), 3);
     }
 
     #[test]

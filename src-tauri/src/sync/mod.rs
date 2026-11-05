@@ -89,7 +89,14 @@ async fn token(state: &AppState) -> AppResult<(reqwest::Client, String)> {
     let oauth = with_db(state, |c| client(c))?.ok_or_else(|| AppError::Missing("google project".into()))?;
     let refresh = secrets::get(drive::REFRESH_SECRET)?.ok_or_else(|| AppError::Missing("google login".into()))?;
     let http = net::client()?;
-    let access = drive::access_token(&http, &oauth, &refresh).await?;
+    let access = match drive::access_token(&http, &oauth, &refresh).await {
+        // The old login is useless now - forget it, so the settings show "Connect" again.
+        Err(AppError::Missing(m)) if m == drive::LOGIN_EXPIRED => {
+            secrets::delete(drive::REFRESH_SECRET)?;
+            return Err(AppError::Missing(m));
+        }
+        other => other?,
+    };
     Ok((http, access))
 }
 

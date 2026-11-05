@@ -7,10 +7,15 @@ import { IconArrowOut, IconHome, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
-import { SourceBox } from "./SourcesSettings";
+import { SourceBox, SourceState } from "./SourcesSettings";
 
 /** Name of the "How to set up alerts" part in the memory of the Settings window. */
 const HOWTO = "mail-howto";
+/** Name of the Jooble API part in the same memory. */
+const JOOBLE_API = "mail-jooble-api";
+/** Key form on the Polish Jooble site - the key decides the country of the offers. */
+const JOOBLE_SIGNUP = "https://pl.jooble.org/api/about";
+const JOOBLE = "Jooble";
 
 /** Portals that send alerts by e-mail - where to set them up (always by a person, once).
  *  `search` builds a ready search for one keyword in the whole country (checked 3.11.2026);
@@ -25,7 +30,7 @@ const PORTALS: { name: string; url: string; search: (q: string) => string }[] = 
   // geoId = Poland; the name alone may be resolved by the visitor's country.
   { name: "LinkedIn", url: "https://www.linkedin.com/jobs", search: (q) => `https://www.linkedin.com/jobs/search/?keywords=${q}&location=Poland&geoId=105072130` },
   { name: "Indeed", url: "https://pl.indeed.com", search: (q) => `https://pl.indeed.com/jobs?q=${q}` },
-  { name: "Jooble", url: "https://pl.jooble.org", search: (q) => `https://pl.jooble.org/SearchResult?ukw=${q}` },
+  { name: JOOBLE, url: "https://pl.jooble.org", search: (q) => `https://pl.jooble.org/SearchResult?ukw=${q}` },
 ];
 
 /** At most this many search buttons per portal - one alert per keyword is the usual setup. */
@@ -57,6 +62,7 @@ export function MailSettings({
   api,
   settings,
   status,
+  jooble,
   hints,
   profiles,
   onChange,
@@ -68,6 +74,7 @@ export function MailSettings({
   api: Api;
   settings: Settings;
   status: SourceStatus | undefined;
+  jooble: SourceStatus | undefined;
   hints: SecretHints;
   profiles: Profile[];
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -78,6 +85,7 @@ export function MailSettings({
 }) {
   const { t, lang } = useI18n();
   const [testing, setTesting] = useState(false);
+  const [joobleOpen, setJoobleOpen] = useState(() => settingsMemory.unfolded.has(JOOBLE_API));
   // The result stays under the button - the app's error bar is behind this window.
   const howtoRef = useRef<HTMLDetailsElement>(null);
   const isGmail = settings.mail_host.trim().toLowerCase() === GMAIL_HOST;
@@ -111,6 +119,8 @@ export function MailSettings({
       onToggle={(on) => onChange("source_mail", on ? "on" : "off")}
       state={status}
       lang={lang}
+      // The Jooble API sits deep in this box - its problem must show with everything folded.
+      alert={jooble?.enabled ? <SourceState s={jooble} lang={lang} onlyProblems name={JOOBLE} /> : undefined}
     >
       <p>{t("mail.text")}</p>
 
@@ -192,7 +202,7 @@ export function MailSettings({
         {words.length > 0 && <p className="hint">{t("mail.searchHint")}</p>}
         <ul className={words.length > 0 ? "portal-list portal-list-search" : "portal-list"}>
           {PORTALS.map((p) => (
-            <li key={p.name}>
+            <li key={p.name} className={p.name === JOOBLE ? "portal-wide" : undefined}>
               <span>{p.name}</span>
               <div className="portal-links">
                 {words.length > 0 ? (
@@ -221,7 +231,44 @@ export function MailSettings({
                     {w} <IconArrowOut />
                   </button>
                 ))}
+                {p.name === JOOBLE && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    aria-expanded={joobleOpen}
+                    aria-controls="jooble-api"
+                    onClick={() => {
+                      rememberUnfolded(JOOBLE_API, !joobleOpen);
+                      setJoobleOpen(!joobleOpen);
+                    }}
+                  >
+                    {t("src.jooble.api")}
+                  </button>
+                )}
               </div>
+              {p.name === JOOBLE && (
+                <Reveal show={joobleOpen} className="portal-more">
+                  <div id="jooble-api" className="source-more" role="region" aria-label={t("src.more", { name: JOOBLE })}>
+                    <p>{t("src.jooble.text")}</p>
+                    <label className="choice-item">
+                      <input
+                        type="checkbox"
+                        checked={settings.source_jooble === "on"}
+                        onChange={(e) => onChange("source_jooble", e.target.checked ? "on" : "off")}
+                      />
+                      <span>{t("src.jooble.use")}</span>
+                    </label>
+                    <div className="source-row">
+                      <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(JOOBLE_SIGNUP)}>
+                        {t("src.jooble.signup")} <IconArrowOut />
+                      </button>
+                    </div>
+                    <SecretField name="jooble-key" label={t("src.jooble.key")} hint={hints["jooble-key"]} onSave={onSaveSecret} onDelete={onDeleteSecret} onReveal={api.revealSecret} />
+                    <p className="hint">{t("secret.hint")}</p>
+                    {jooble && <SourceState s={jooble} lang={lang} noProblems />}
+                  </div>
+                </Reveal>
+              )}
             </li>
           ))}
         </ul>

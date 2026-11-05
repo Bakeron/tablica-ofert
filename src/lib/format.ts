@@ -49,7 +49,8 @@ export function salaryFull(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salary
   if (min == null && max == null) return t("flag.noSalary");
   const nf = new Intl.NumberFormat(lang === "pl" ? "pl-PL" : "en-GB");
   const period = o.salaryPeriod === "hour" ? t("add.periodHour") : t("add.periodMonth");
-  return `${range(min, max, (v) => nf.format(v))} ${o.salaryCurrency ?? "PLN"} / ${period}`;
+  // No-break spaces: "PLN / miesiąc" stays together when the line wraps.
+  return `${range(min, max, (v) => nf.format(v))} ${o.salaryCurrency ?? "PLN"} / ${period}`;
 }
 
 function range(min: number | null, max: number | null, fmt: (v: number) => string): string {

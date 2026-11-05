@@ -457,6 +457,62 @@ pub fn list(conn: &Connection, view: View, profile: Option<i64>, show_low: bool)
     Ok(rows)
 }
 
+/// Offers for the CSV export: one tab as the board shows it for all profiles (`Some`), or every
+/// offer, the trash too (`None`). Newest first.
+pub fn export_rows(conn: &Connection, view: Option<View>) -> AppResult<Vec<ExportRow>> {
+    let (result, _) = filter_sql(None);
+    // The same order of checks as the tabs: trash, "not for me", then the filter result.
+    let list = format!(
+        "CASE WHEN {} THEN 'trash' WHEN {} THEN 'declined' WHEN {} THEN 'board' WHEN {} THEN 'review' ELSE 'rejected' END",
+        view_condition(View::Trash, result, None),
+        view_condition(View::Declined, result, None),
+        view_condition(View::Board, result, None),
+        view_condition(View::Review, result, None),
+    );
+    let filter = match view {
+        Some(View::Board) => view_condition(View::Board, result, hide_below(conn)?),
+        Some(v) => view_condition(v, result, None),
+        None => "1 = 1".into(),
+    };
+    let sql = format!(
+        "SELECT o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max, o.salary_currency, o.salary_period,
+                o.contract, o.level, o.stage, o.interest, o.favorite, o.score, o.score_source,
+                (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
+                o.url, o.added_at, o.notes, {list}
+         FROM offers o WHERE {filter} ORDER BY o.added_at DESC, o.id DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], |r| {
+            let sources: Option<String> = r.get(16)?;
+            Ok(ExportRow {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                company: r.get(2)?,
+                city: r.get(3)?,
+                remote: r.get(4)?,
+                salary_min: r.get(5)?,
+                salary_max: r.get(6)?,
+                salary_currency: r.get(7)?,
+                salary_period: r.get(8)?,
+                contract: r.get(9)?,
+                level: r.get(10)?,
+                stage: r.get(11)?,
+                interest: r.get(12)?,
+                favorite: r.get(13)?,
+                score: r.get(14)?,
+                score_source: r.get(15)?,
+                sources: sources.map(|s| s.split(',').map(str::to_string).collect()).unwrap_or_default(),
+                url: r.get(17)?,
+                added_at: r.get(18)?,
+                notes: r.get(19)?,
+                list: r.get(20)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Number of offers in every tab, for the tab labels.
 pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> {
     let (result, _) = filter_sql(profile);
@@ -839,6 +895,11 @@ mod tests {
         set_favorite(&conn, id, true).unwrap();
         assert_eq!(tabs(&conn), (0, 0, 0, 1, 0));
         assert_eq!(list(&conn, View::Declined, None, false).unwrap()[0].id, id);
+        // The export knows the tab of every offer and takes one tab as the board does.
+        let all = export_rows(&conn, None).unwrap();
+        assert!(all.iter().any(|r| r.id == id && r.list == View::Declined));
+        assert!(export_rows(&conn, Some(View::Declined)).unwrap().iter().all(|r| r.list == View::Declined));
+        assert!(export_rows(&conn, Some(View::Board)).unwrap().iter().all(|r| r.id != id));
 
         // Fetched again: merged into the same offer, which stays where the user put it.
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Merged { id });

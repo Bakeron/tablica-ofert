@@ -631,8 +631,36 @@ export function createMockApi(): Api {
     async loadCopy() {
       throw { code: "invalid", detail: "not available in the browser preview" };
     },
-    async exportCsv() {
-      return "C:\\Users\\Przyklad\\Documents\\tablica-ofert.csv";
+    async exportRows(view) {
+      return [...offers.values()]
+        .filter((o) => view === null || inView(row(o, null), view))
+        .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
+        .map((o) => ({
+          id: o.id,
+          title: o.title,
+          company: o.company,
+          city: o.city,
+          remote: o.remote,
+          salaryMin: o.salaryMin,
+          salaryMax: o.salaryMax,
+          salaryCurrency: o.salaryCurrency,
+          salaryPeriod: o.salaryPeriod,
+          contract: o.contract,
+          level: o.level,
+          stage: o.stage,
+          interest: o.interest,
+          favorite: o.favorite,
+          score: o.score,
+          scoreSource: o.scoreSource,
+          sources: o.sources,
+          url: o.url,
+          addedAt: o.addedAt,
+          notes: o.notes || null,
+          list: o.deletedAt ? ("trash" as const) : viewFor(row(o, null)),
+        }));
+    },
+    async saveCsv(name) {
+      return `C:\\Users\\Przyklad\\Documents\\tablica-${name}.csv`;
     },
     async wipeAll() {
       throw { code: "invalid", detail: "not available in the browser preview" };

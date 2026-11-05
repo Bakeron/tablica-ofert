@@ -94,6 +94,13 @@ export const IconArrowRight = () => (
   </Icon>
 );
 
+/** Wayfinding arrow pointing up - back to the board above. */
+export const IconArrowUp = () => (
+  <Icon>
+    <path d="M12 20V5M6 11l6-6 6 6" />
+  </Icon>
+);
+
 export const IconDownload = () => (
   <Icon>
     <path d="M12 3v12M7 10l5 5 5-5M4 20h16" />

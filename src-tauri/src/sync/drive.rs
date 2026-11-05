@@ -1,4 +1,6 @@
-//! Google Drive, hidden app folder only (`drive.appdata` - the app cannot see any other file).
+//! Google Drive, only the files this app made (`drive.file` - the app cannot see any other file).
+//! Not `drive.appdata` (the hidden app folder): Google's device login rejects it with
+//! "invalid_scope" (seen 5.11.2026), although its documentation lists it.
 //! Login with a code in the normal browser (google.com/device) - Google blocks logins inside
 //! an app's own window. The refresh token lives in the credential store.
 
@@ -8,9 +10,12 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 use crate::net;
 
-const SCOPE: &str = "https://www.googleapis.com/auth/drive.appdata";
+const SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const FILE_NAME: &str = "tablica-ofert.sync";
 pub const REFRESH_SECRET: &str = "google-refresh-token";
+/// The login has ended (taken back by the person, or 7 days passed in a project in testing mode).
+/// The interface looks for this text to ask for a new login instead of showing an error.
+pub const LOGIN_EXPIRED: &str = "google login expired";
 
 /// The Google project of the app (a "TVs and limited input devices" OAuth client).
 /// Built in from environment variables outside git, or typed in the settings.
@@ -107,8 +112,21 @@ pub async fn access_token(http: &Client, client: &OAuthClient, refresh: &str) ->
         .send()
         .await
         .map_err(net::net_error)?;
+    if resp.status() == reqwest::StatusCode::BAD_REQUEST {
+        let body = net::read_limited(resp, 64 * 1024).await?;
+        return Err(refresh_refused(&body));
+    }
     let token: Token = net::json(resp).await?;
     Ok(token.access_token)
+}
+
+/// Google refused the refresh token: `invalid_grant` = the login has ended, connect again.
+fn refresh_refused(body: &[u8]) -> AppError {
+    match serde_json::from_slice::<TokenError>(body) {
+        Ok(e) if e.error == "invalid_grant" => AppError::Missing(LOGIN_EXPIRED.into()),
+        Ok(e) => AppError::Net(e.error),
+        Err(_) => AppError::Net("unexpected answer from Google".into()),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,12 +140,17 @@ pub struct DriveFile {
     pub id: String,
 }
 
-/// The sync file in the app folder, if there is one.
+/// The sync file this app made, if there is one (the newest, should the user copy it).
 pub async fn find(http: &Client, token: &str) -> AppResult<Option<DriveFile>> {
     let resp = http
         .get("https://www.googleapis.com/drive/v3/files")
         .bearer_auth(token)
-        .query(&[("spaces", "appDataFolder"), ("q", &format!("name = '{FILE_NAME}' and trashed = false")), ("fields", "files(id)")])
+        .query(&[
+            ("spaces", "drive"),
+            ("q", &format!("name = '{FILE_NAME}' and trashed = false")),
+            ("orderBy", "modifiedTime desc"),
+            ("fields", "files(id)"),
+        ])
         .send()
         .await
         .map_err(net::net_error)?;
@@ -159,9 +182,9 @@ pub async fn upload(http: &Client, token: &str, existing: Option<&DriveFile>, by
             .await
             .map_err(net::net_error)?,
         None => {
-            // Multipart: metadata (name, hidden app folder) and the content.
+            // Multipart: metadata (name; the file lands in "My Drive") and the content.
             let boundary = format!("tablica{}", crate::secrets::random_hex(8)?);
-            let meta = serde_json::json!({ "name": FILE_NAME, "parents": ["appDataFolder"] }).to_string();
+            let meta = serde_json::json!({ "name": FILE_NAME }).to_string();
             let mut body = format!(
                 "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n--{boundary}\r\nContent-Type: application/octet-stream\r\n\r\n"
             )
@@ -197,6 +220,14 @@ pub async fn delete(http: &Client, token: &str, file: &DriveFile) -> AppResult<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ended_login_asks_to_connect_again() {
+        let ended = refresh_refused(br#"{"error": "invalid_grant", "error_description": "Token has been expired or revoked."}"#);
+        assert!(matches!(ended, AppError::Missing(m) if m == LOGIN_EXPIRED));
+        assert!(matches!(refresh_refused(br#"{"error": "invalid_client"}"#), AppError::Net(_)));
+        assert!(matches!(refresh_refused(b"<html>"), AppError::Net(_)));
+    }
 
     #[test]
     fn device_code_answer_is_read() {

@@ -141,6 +141,32 @@ export interface OfferRow {
   titleTranslated: string | null;
 }
 
+/** One offer for "Export to Excel (CSV)" - raw values (mirrors `model::ExportRow`). */
+export interface ExportRow {
+  id: number;
+  title: string;
+  company: string;
+  city: string | null;
+  remote: Remote;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  salaryPeriod: SalaryPeriod | null;
+  contract: string | null;
+  level: string | null;
+  stage: Stage;
+  interest: Interest | null;
+  favorite: boolean;
+  score: number | null;
+  scoreSource: "ai" | "keywords" | null;
+  sources: string[];
+  url: string | null;
+  addedAt: string;
+  notes: string | null;
+  /** The tab the offer is in (all profiles together). */
+  list: View;
+}
+
 export type EventKind = "interview" | "deadline" | "other";
 export type LogKind = "call" | "mail" | "meeting" | "message";
 

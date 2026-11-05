@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from "react";
 import type { Api } from "../api";
-import { useI18n } from "../i18n";
+import { useI18n, type TextKey } from "../i18n";
+import { CSV_LISTS, csvCells, csvName, type CsvList } from "../lib/csv";
 import { IconWarning } from "./Icons";
 import { ShowToggle } from "./SecretField";
 
@@ -20,13 +21,15 @@ export function DataSettings({
   /** A copy was loaded - every list must be read again. */
   onLoaded: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [savePass, setSavePass] = useState("");
   const [savePass2, setSavePass2] = useState("");
   const [loadPass, setLoadPass] = useState("");
   const id = useId();
   const [shown, setShown] = useState({ save: false, save2: false, load: false });
   const [busy, setBusy] = useState(false);
+  // "Oferty" first - the list that matters most.
+  const [csvList, setCsvList] = useState<CsvList>("board");
   const mismatch = savePass2 !== "" && savePass !== savePass2;
 
   async function save(e: FormEvent) {
@@ -70,7 +73,8 @@ export function DataSettings({
   async function csv() {
     setBusy(true);
     try {
-      const path = await api.exportCsv();
+      const rows = await api.exportRows(csvList === "all" ? null : csvList);
+      const path = await api.saveCsv(csvName(csvList, lang), csvCells(rows, lang));
       if (path) onToast(t("data.csvSaved", { path }));
     } catch (err) {
       onError(err);
@@ -129,7 +133,17 @@ export function DataSettings({
       <section className="source" aria-labelledby="csv-title">
         <h3 id="csv-title" className="source-title">{t("data.csvTitle")}</h3>
         <p>{t("data.csvText")}</p>
-        <div>
+        <div className="csv-row">
+          <label className="field field-inline">
+            <span>{t("data.csvWhat")}</span>
+            <select value={csvList} onChange={(e) => setCsvList(e.target.value as CsvList)}>
+              {CSV_LISTS.map((l) => (
+                <option key={l} value={l}>
+                  {t(l === "all" ? "data.csvAll" : (`tabs.${l}` as TextKey))}
+                </option>
+              ))}
+            </select>
+          </label>
           <button type="button" className="btn btn-ghost btn-small" onClick={csv} disabled={busy}>
             {t("data.csv")}
           </button>

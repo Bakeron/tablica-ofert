@@ -51,6 +51,7 @@ pub fn best(results: impl IntoIterator<Item = FilterResult>) -> FilterResult {
 
 /// Sources that search by keyword, but match words in the full text we never see (Adzuna and
 /// Jooble give only the start of the description) and sometimes return offers far from the search.
+/// Offers from Jooble's own e-mail alerts carry the same source and are treated the same way.
 const KEYWORD_SEARCH_SOURCES: &[&str] = &[crate::sources::adzuna::SOURCE, crate::sources::jooble::SOURCE];
 
 /// An offer only from a keyword search that mentions no keyword of any profile - off topic.

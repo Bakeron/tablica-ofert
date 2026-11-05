@@ -1,10 +1,13 @@
-import { Fragment, useRef } from "react";
-import type { KeyboardEvent } from "react";
+import { Fragment, useRef, useState } from "react";
+import type { KeyboardEvent, TouchEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { addedLabel, placeLabel, salaryShort, translatedTitle } from "../lib/format";
 import { isNarrowLayout } from "../lib/fit";
+import { isPhone } from "../lib/platform";
+import { motionReduced } from "../lib/presence";
 import { reasonText, sortedReasons } from "../lib/profile";
+import { SWIPE_AT, isSwipe, lockAxis, swipeOffset, type SwipeAxis } from "../lib/swipe";
 import { Flap } from "./Flap";
 import { IconStar } from "./Icons";
 import { StatusTag } from "./StatusTag";
@@ -72,7 +75,9 @@ interface Props {
 }
 
 export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash }: Props) {
-  const touch = useRef<{ id: number; x: number; y: number } | null>(null);
+  const touch = useRef<{ id: number; x: number; y: number; axis: SwipeAxis | null } | null>(null);
+  /** The row whose interest mark just came from a swipe - the mark flips in. */
+  const [flipped, setFlipped] = useState<number | null>(null);
   const { t, lang } = useI18n();
   const index = rows.findIndex((r) => r.id === selectedId);
   const firstClosed = rows.findIndex(isClosed);
@@ -97,10 +102,42 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
     e.preventDefault();
   }
 
+  /** The row follows the finger and uncovers what letting go will do. */
+  function followFinger(e: TouchEvent<HTMLTableRowElement>, o: OfferRow) {
+    const start = touch.current;
+    if (!start || start.id !== o.id) return;
+    const dx = e.touches[0].clientX - start.x;
+    start.axis ??= lockAxis(dx, e.touches[0].clientY - start.y);
+    if (start.axis !== "x" || motionReduced()) return;
+    const row = e.currentTarget;
+    const offset = swipeOffset(dx, row.clientWidth);
+    const value: Interest = dx > 0 ? "high" : "no";
+    row.dataset.swipe = dx > 0 ? "right" : "left";
+    row.dataset.swipeText = o.interest === value ? t("swipe.clear") : t(`interest.${value}`);
+    row.toggleAttribute("data-dragging", true);
+    row.toggleAttribute("data-armed", Math.abs(dx) > SWIPE_AT);
+    row.style.setProperty("--swipe", `${offset}px`);
+    row.style.setProperty("--swipe-width", `${Math.abs(offset)}px`);
+  }
+
+  /** The row glides back to its place; the marks go once it is there. */
+  function letGo(row: HTMLTableRowElement) {
+    if (!row.dataset.swipe) return;
+    row.removeAttribute("data-dragging");
+    row.style.setProperty("--swipe", "0px");
+    row.style.setProperty("--swipe-width", "0px");
+    window.setTimeout(() => {
+      if (row.hasAttribute("data-dragging")) return;
+      row.removeAttribute("data-swipe");
+      row.removeAttribute("data-swipe-text");
+      row.removeAttribute("data-armed");
+    }, 200);
+  }
+
   if (rows.length === 0) {
     return (
       <div className="board board-empty">
-        <p>{t(`board.empty.${view}`)}</p>
+        <p>{t(view === "board" && isPhone() ? "board.empty.phone" : `board.empty.${view}`)}</p>
       </div>
     );
   }
@@ -169,21 +206,29 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   if (isNarrowLayout()) onOpen();
                 }}
                 onDoubleClick={onOpen}
-                onTouchStart={(e) => (touch.current = { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY })}
+                onTouchStart={(e) => (touch.current = { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null })}
+                onTouchMove={(e) => followFinger(e, o)}
+                onTouchCancel={(e) => {
+                  touch.current = null;
+                  letGo(e.currentTarget);
+                }}
                 onTouchEnd={(e) => {
                   const start = touch.current;
                   touch.current = null;
-                  if (!start || start.id !== o.id) return;
+                  letGo(e.currentTarget);
+                  if (!start || start.id !== o.id || start.axis !== "x") return;
+                  // Sideways is never a tap, also when the finger came back.
+                  e.preventDefault();
                   const dx = e.changedTouches[0].clientX - start.x;
                   const dy = e.changedTouches[0].clientY - start.y;
-                  // A clear sideways swipe: right = "very", left = "no" (zalozenia.md §9).
-                  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 2) {
-                    e.preventDefault();
+                  if (isSwipe(dx, dy)) {
+                    setFlipped(o.id);
                     onInterest(o.id, dx > 0 ? "high" : "no");
                   }
                 }}
               >
                 <td className="c-added">
+                  <CellName text={t("col.added")} />
                   <Flap className="mono" text={addedLabel(o.addedAt, lang, t)} fresh={fresh} />
                 </td>
                 <td className="c-offer">
@@ -198,7 +243,11 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   </span>
                   <span className="offer-line">
                     <span className="offer-company">{o.company}</span>
-                    {o.interest && <span className={`interest interest-${o.interest}`}>{t(`interest.${o.interest}`)}</span>}
+                    {o.interest && (
+                      <span key={o.interest} className={`interest interest-${o.interest}${flipped === o.id ? " flap-in" : ""}`}>
+                        {t(`interest.${o.interest}`)}
+                      </span>
+                    )}
                   </span>
                   {o.sources.length > 1 ? (
                     <span className="offer-sources">
@@ -213,12 +262,20 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   {(view === "review" || view === "rejected") && <RowReasons row={o} />}
                 </td>
                 <td className="c-place">
+                  <CellName text={t("cell.place")} />
                   <Flap text={placeLabel(o, t)} fresh={fresh} />
                 </td>
                 <td className="c-salary">
+                  <CellName text={t("col.salary")} />
                   <Flap className="mono" text={salaryShort(o, t)} fresh={fresh} />
                 </td>
                 <td className="c-match">
+                  <CellName text={t("col.matchLong")} />
+                  {o.score !== null && (
+                    <span className="match-cap" aria-hidden="true">
+                      {t("col.match")}
+                    </span>
+                  )}
                   {o.score === null ? (
                     <span aria-label={t("card.matchNone")}>·</span>
                   ) : (
@@ -239,6 +296,11 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
       </table>
     </div>
   );
+}
+
+/** The phone's rows have no column headings - a screen reader gets the column's name here. */
+function CellName({ text }: { text: string }) {
+  return <span className="cell-name">{text}: </span>;
 }
 
 /** Why the offer is in "To check" / "Rejected by filter" - the first two reasons, in words. */

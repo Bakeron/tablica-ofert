@@ -22,7 +22,7 @@
   --paper-dim: #b8b2a7;
   --perf: #4a4e54;
   --field: #1b1d1f;
-  --field-line: #5a5f66;
+  --field-line: #70757d;
   --stamp: #93b8ff;
   --danger: #ff8a7d;
   --danger-bg: #3a1d1a;
@@ -114,6 +114,12 @@ textarea {
 :focus-visible {
   outline: 3px solid var(--signal);
   outline-offset: 2px;
+}
+
+/* Light theme: yellow alone is too faint on white - a dark edge between the element and the yellow
+   ring. :where keeps it weak, so elements with their own focus look (e.g. the job title) keep it. */
+:where(:root[data-theme="light"]) :focus-visible {
+  box-shadow: 0 0 0 5px var(--ink);
 }
 
 /* The focus ring is there at rest, only invisible, so it fades in instead of popping up
@@ -435,7 +441,7 @@ textarea {
 /* Mouse only - on a phone a tap would leave the hover "stuck". */
 @media (hover: hover) {
   /* The chosen tab, switch or sign stays as it is. */
-  :is(.btn, .icon-btn, .tab, .seg, .sign, .help-btn):hover:not(:disabled, [aria-pressed="true"], [aria-current="page"], [aria-current="true"]),
+  :is(.btn, .icon-btn, .tab, .seg, .sign, .help-btn):hover:not(:disabled, [aria-pressed="true"], [aria-current="page"], [aria-current="true"], :has(input:checked)),
   .chip:hover input:not(:checked, :disabled) + span {
     background-color: color-mix(in srgb, var(--btn-bg) calc(100% - var(--hover-mix)), var(--btn-ink, currentColor));
   }
@@ -660,6 +666,23 @@ details[open]::details-content {
   font-weight: 500;
 }
 
+/* CSV export: the list to save and its button side by side, bottoms in one line. */
+.csv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.9rem;
+}
+
+/* Keyboard hint and "Export this list" on the right of the board heading. */
+.board-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem 0.9rem;
+}
+
 .keys-hint {
   margin: 0;
   font-size: 0.8rem;
@@ -667,6 +690,8 @@ details[open]::details-content {
 }
 
 .board-wrap {
+  /* Holds hidden screen-reader texts inside, so they never make the page longer. */
+  position: relative;
   flex: 1;
   overflow: auto;
 }
@@ -741,6 +766,11 @@ details[open]::details-content {
 .board tbody tr.is-selected {
   background: var(--row-selected);
   box-shadow: inset 5px 0 0 var(--signal);
+}
+
+/* The selected row has the tiles' colour - its flaps go darker, like on the board, not to vanish. */
+.board tbody tr.is-selected :is(.c-added .flap, .c-salary .flap, .score:not(.score-plain) .flap, .tag:not(.tag-new, .tag-flag)) {
+  background-color: var(--hall);
 }
 
 .board tbody tr.is-dim {
@@ -983,6 +1013,7 @@ details[open]::details-content {
 .pass {
   width: var(--pass-width);
   flex: none;
+  position: relative;
   margin: 0.9rem;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1079,7 +1110,7 @@ details[open]::details-content {
 }
 
 .stamp-label {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   letter-spacing: 0.12em;
 }
 
@@ -1090,7 +1121,7 @@ details[open]::details-content {
 }
 
 .stamp-sub {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   letter-spacing: 0.06em;
 }
 
@@ -1235,9 +1266,16 @@ details[open]::details-content {
   cursor: pointer;
 }
 
-.seg[aria-pressed="true"] {
+.seg[aria-pressed="true"],
+.seg-radio:has(input:checked) {
   background: var(--signal);
   color: var(--signal-ink);
+}
+
+/* Never colour alone: the chosen one also gets a check mark (as the profile switches do). */
+.seg[aria-pressed="true"]:not(.seg-icon, .seg-small)::before,
+.seg-radio:has(input:checked)::before {
+  content: "✓";
 }
 
 .seg kbd {
@@ -1523,7 +1561,34 @@ textarea {
   box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--paper-ink) 0%, transparent);
 }
 
+/* A strip of equal buttons glued together, like "Very | Maybe | No"; the rows fill the whole width. */
+.seg-strip {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 2px 2px 0;
+}
+
+.seg-radio {
+  flex: 1 1 0;
+  justify-content: center;
+  margin-bottom: -2px;
+  text-align: center;
+  position: relative;
+}
+
+.seg-radio:has(input:focus-visible) {
+  z-index: 1;
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+
+:where(:root[data-theme="light"]) .seg-radio:has(input:focus-visible) {
+  box-shadow: 0 0 0 5px var(--ink);
+}
+
 .choice-item input {
+  flex: none;
   width: 1.1rem;
   height: 1.1rem;
   accent-color: var(--signal);
@@ -1926,6 +1991,19 @@ fieldset.plain {
 
 .seg-small[aria-pressed="true"]::before {
   content: "✓";
+}
+
+/* Chosen = black outline with a check mark, the other one faded: the criteria's own chosen
+   values stay the only yellow in the profile window. */
+.seg-small[aria-pressed="true"] {
+  position: relative;
+  background: transparent;
+  color: var(--paper-ink);
+}
+
+.seg-small[aria-pressed="false"] {
+  border-color: var(--paper-dim);
+  color: var(--paper-dim);
 }
 
 .city-row {
@@ -2444,6 +2522,20 @@ fieldset.plain {
   gap: 0.6rem;
 }
 
+/* Numbered steps in a "how to" part. */
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+/* A single button in a "how to" part keeps its own width (the column would stretch it). */
+.howto > .btn {
+  align-self: flex-start;
+}
+
 .howto[open] > summary {
   margin-bottom: 0.6rem;
 }
@@ -2771,6 +2863,10 @@ fieldset.plain {
   gap: 0.45rem;
 }
 
+.agenda > .btn {
+  align-self: flex-start;
+}
+
 .agenda p {
   margin: 0;
 }
@@ -3045,6 +3141,24 @@ fieldset.plain {
     border-radius: 0;
   }
 
+  /* The job title gets the whole width (no word cut in half); the stamp moves down beside the company. */
+  .pass-stub > .pass-field-wide:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .stamp {
+    grid-row: 2;
+  }
+
+  /* Section buttons glued into one strip, like "Very | Maybe | No" - one row on a phone. */
+  .settings-nav {
+    column-gap: 0;
+  }
+
+  .settings-nav .seg {
+    padding-inline: 0.55rem;
+  }
+
   .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3063,6 +3177,17 @@ fieldset.plain {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+/* A portal with more under its button (the Jooble API) takes the whole row. */
+.portal-list .portal-wide {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+}
+
+.portal-more {
+  flex-basis: 100%;
+  min-width: 0;
 }
 
 /* A button with only a pictogram (its name is in aria-label and title). */
@@ -3211,4 +3336,399 @@ fieldset.plain {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+/* ---------- touch screens: a finger needs bigger targets (about 44 px) ---------- */
+
+@media (pointer: coarse) {
+  .tab,
+  .btn,
+  .sign,
+  .seg,
+  .icon-btn,
+  .chip span,
+  .choice-item {
+    /* Android asks for 48 dp; rem keeps it growing with bigger text. */
+    min-height: max(48px, 2.75rem);
+  }
+
+  .icon-btn,
+  .sign-edit,
+  .seg-icon {
+    min-width: max(48px, 2.75rem);
+    justify-content: center;
+  }
+
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
+  select {
+    block-size: max(48px, 2.55rem);
+  }
+
+  /* The small "?" keeps its look; an invisible 48 px square around its middle takes the tap. */
+  .help-btn {
+    position: relative;
+  }
+
+  .help-btn::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 48px;
+    height: 48px;
+    translate: -50% -50%;
+  }
+
+  /* No hover on a touch screen to bring a closed offer back to full colour - dim the ink instead of the whole row. */
+  .board tbody tr.is-closed {
+    opacity: 1;
+    color: var(--ink-dim);
+  }
+}
+
+/* Phone: the profile signs in one row that scrolls sideways, like the tabs. A soft right
+   edge says there is more; it goes away at the end of the row (where the browser can tell). */
+@container app (max-width: 37.5rem) {
+  .signs {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .signs > li,
+  .sign {
+    flex: none;
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  @container app (max-width: 37.5rem) {
+    .tabs,
+    .signs {
+      animation: more-to-the-right linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+}
+
+@keyframes more-to-the-right {
+  0%,
+  96% {
+    mask-image: linear-gradient(to right, #000 82%, transparent);
+  }
+
+  100% {
+    mask-image: none;
+  }
+}
+
+/* ---------- QR scanning on the phone: the camera picture is under the app ---------- */
+
+html.scanning,
+html.scanning body,
+html.scanning #root,
+html.scanning .app,
+html.scanning .modal,
+html.scanning .modal::backdrop {
+  background: transparent !important;
+}
+
+html.scanning body * {
+  visibility: hidden;
+}
+
+/* The settings window must not hold the fixed overlay inside itself. */
+html.scanning .modal {
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+  translate: none;
+  animation: none;
+}
+
+html.scanning .scan-overlay,
+html.scanning .scan-overlay * {
+  visibility: visible;
+}
+
+.scan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  justify-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem 1rem;
+}
+
+/* A yellow wayfinding sign above a square frame; the rest of the picture dimmed. */
+/* Above the dimming shadow of the frame. */
+.scan-hint,
+.scan-overlay .btn {
+  position: relative;
+  z-index: 1;
+}
+
+.scan-hint {
+  align-self: end;
+  margin: 0;
+  padding: 0.45rem 0.8rem;
+  border-radius: 2px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font-family: var(--font-board);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.scan-frame {
+  width: min(70vw, 18rem);
+  aspect-ratio: 1;
+  border: 4px solid var(--signal);
+  border-radius: 4px;
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.55);
+}
+
+.scan-overlay .btn {
+  align-self: start;
+}
+
+/* "Back to the list" - only where the card is below the list (the same step as .split). */
+.pass-back {
+  display: none;
+}
+
+@container app (max-width: 58rem) {
+  .pass-back {
+    display: inline-flex;
+    margin: 0.6rem 0 0 1.2rem;
+  }
+}
+
+/* ---------- phone: more of the list, less around it ---------- */
+
+.tab-count-narrow,
+.match-cap,
+.cell-name {
+  display: none;
+}
+
+/* What letting go of a swiped row will do, on the place the row has moved away from. Only the
+   cells move: the row stays where it is and holds the sign. */
+.board tbody tr[data-swipe] {
+  position: relative;
+  overflow: clip;
+}
+
+.board tbody tr[data-swipe] td {
+  transform: translateX(var(--swipe));
+  transition: transform 150ms ease-out;
+}
+
+.board tbody tr[data-dragging] td {
+  transition: none;
+}
+
+.board tbody tr[data-swipe]::before {
+  content: attr(data-swipe-text);
+  position: absolute;
+  inset-block: 0;
+  display: grid;
+  place-items: center;
+  width: var(--swipe-width);
+  overflow: hidden;
+  border: 2px dashed currentColor;
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: width 150ms ease-out;
+}
+
+.board tbody tr[data-dragging]::before {
+  transition: none;
+}
+
+.board tbody tr[data-swipe="right"]::before {
+  left: 0;
+}
+
+.board tbody tr[data-swipe="left"]::before {
+  right: 0;
+}
+
+/* Far enough: from an outline to a full sign - letting go now counts. */
+.board tbody tr[data-armed]::before {
+  border-style: solid;
+}
+
+.board tbody tr[data-armed][data-swipe="right"]::before {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+.board tbody tr[data-armed][data-swipe="left"]::before {
+  border-color: var(--ink-dim);
+  background: var(--ink-dim);
+  color: var(--board);
+}
+
+@keyframes sheet-in {
+  from {
+    translate: 0 100%;
+  }
+}
+
+@keyframes sheet-out {
+  to {
+    translate: 0 100%;
+  }
+}
+
+@container app (max-width: 37.5rem) {
+  .tab-count-narrow {
+    display: inline;
+  }
+
+  /* One row: the tabs scroll between the edge and the two square buttons. The app's name
+     stays for a screen reader - on a phone the list matters more than the sign. */
+  .topbar {
+    gap: 0.5rem;
+  }
+
+  .topbar .brand {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .topbar .tabs {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* "Add offer" as a square "+" next to the gear - the name stays for a screen reader. */
+  .topbar .btn-add {
+    position: relative;
+    justify-content: center;
+    min-width: max(48px, 2.75rem);
+    padding-inline: 0;
+  }
+
+  .btn-add-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* The tab already says which list this is and how many offers it has. */
+  .board-head {
+    position: relative;
+    padding: 0 0.8rem;
+  }
+
+  .board-head h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .board-tools:empty {
+    display: none;
+  }
+
+  .board-tools {
+    margin-left: auto;
+    padding-block: 0.4rem;
+  }
+
+  /* No column headings here: the number says what it is, and a screen reader hears every column's name. */
+  .match-cap {
+    display: block;
+    font-family: var(--font-board);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+    color: var(--ink-dim);
+    text-align: right;
+    text-transform: uppercase;
+  }
+
+  .cell-name {
+    display: inline;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Windows take the whole screen and come up from the bottom; short questions stay small. */
+  .modal:not(:has(.sheet-narrow)),
+  .modal-wide:not(:has(.sheet-narrow)) {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .modal[open]:not(:has(.sheet-narrow)) {
+    animation-name: sheet-in;
+  }
+
+  .modal[open][data-leaving]:not(:has(.sheet-narrow)) {
+    animation-name: sheet-out;
+  }
+
+  .modal:has(.sheet-narrow) {
+    border-radius: 2px;
+  }
+}
+
+/* A low screen (a phone on its side): the bar goes up with the list instead of taking a third of
+   the height - the whole app becomes one scrolling page. */
+@media (max-height: 30rem) {
+  .app {
+    overflow-y: auto;
+  }
+
+  .split {
+    flex: none;
+    min-height: 100%;
+    overflow: visible;
+  }
+
+  .board-wrap {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  /* The card beside the list stays in view while the list goes by. */
+  @container app (min-width: 58.0625rem) {
+    .pass {
+      position: sticky;
+      top: 0.9rem;
+      align-self: flex-start;
+      max-height: calc(100dvh - 1.8rem);
+    }
+  }
 }

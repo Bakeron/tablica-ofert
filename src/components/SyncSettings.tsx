@@ -1,12 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Api } from "../api";
-import type { DeviceCode, SecretHints, Settings, SyncStatus } from "../api/types";
+import { describeError, type DeviceCode, type SecretHints, type Settings, type SyncStatus } from "../api/types";
 import { useI18n } from "../i18n";
 import { fullDate } from "../lib/format";
-import { isPhone, scanSyncKey } from "../lib/platform";
-import { IconWarning } from "./Icons";
+import { onBack } from "../lib/back";
+import { cancelScan, isPhone, openAppSettings, scanSyncKey } from "../lib/platform";
+import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
+import { IconArrowOut, IconWarning } from "./Icons";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
+
+/** Name of the "How to get them" part in the memory of the Settings window. */
+const CLIENT_HOWTO = "sync-client-howto";
+const CLOUD_CONSOLE = "https://console.cloud.google.com/projectcreate";
+const CLIENT_STEPS = [
+  "sync.client.step1",
+  "sync.client.step2",
+  "sync.client.step3",
+  "sync.client.step4",
+  "sync.client.step5",
+  "sync.client.step6",
+  "sync.client.step7",
+] as const;
+/** Same text as `drive::LOGIN_EXPIRED` in Rust - the Google login has ended, connect again. */
+const LOGIN_EXPIRED = "google login expired";
+const loginExpired = (text: string | null | undefined) => !!text && text.includes(LOGIN_EXPIRED);
 
 const QR_SECONDS = 120;
 
@@ -35,6 +53,9 @@ export function SyncSettings({
   const [hints, setHints] = useState<SecretHints>({});
   const [code, setCode] = useState<DeviceCode | null>(null);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  // "Change Google project": the project part shows again although a project is set.
+  const [editClient, setEditClient] = useState(false);
   const [qr, setQr] = useState<{ svg: string; left: number } | null>(null);
   const polling = useRef(false);
 
@@ -102,7 +123,8 @@ export function SyncSettings({
         onSynced();
       }
     } catch (e) {
-      onError(e);
+      // An ended login is said in the Google Drive part, with the "Connect" button next to it.
+      if (!loginExpired(describeError(e).detail)) onError(e);
     } finally {
       setBusy(false);
       await load();
@@ -115,7 +137,7 @@ export function SyncSettings({
       await action();
       onToast(done);
     } catch (e) {
-      onError(e);
+      if (!loginExpired(describeError(e).detail)) onError(e);
     } finally {
       setBusy(false);
       await load();
@@ -123,17 +145,36 @@ export function SyncSettings({
   }
 
   const connected = status?.connected ?? false;
+  const expired = !connected && loginExpired(status?.lastError);
+  const ownProject = settings.google_client_id.trim() !== "";
 
-  return (
-    <div className="settings-part">
-      <p>{t("sync.intro")}</p>
+  /** A login belongs to one Google project - after a change the person connects again. */
+  async function dropOldLogin() {
+    if (!connected) return;
+    try {
+      await api.syncDisconnect();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  const about = (
+    <>
+      <p>{t(isPhone() ? "sync.introPhone" : "sync.intro")}</p>
       <div className="warn-box" role="note">
         <IconWarning />
         <p>
           <strong>{t("mail.warnTitle")}: </strong>
-          {t("sync.lostWarning")}
+          {t(isPhone() ? "sync.lostWarningPhone" : "sync.lostWarning")}
         </p>
       </div>
+    </>
+  );
+
+  return (
+    <div className="settings-part">
+      {/* Connecting is the first thing to do on a phone - the explanation comes under it. */}
+      {!isPhone() && about}
 
       <label className="choice-item">
         <input type="checkbox" checked={settings.sync_drive === "on"} onChange={(e) => onChange("sync_drive", e.target.checked ? "on" : "off")} />
@@ -142,12 +183,35 @@ export function SyncSettings({
 
       {settings.sync_drive === "on" && (
         <>
-          {status && !status.client && (
+          {status && (!status.client || editClient) && (
             <section className="source" aria-labelledby="client-title">
               <h3 id="client-title" className="source-title">{t("sync.clientTitle")}</h3>
               <p>{t("sync.clientText")}</p>
+              <details
+                className="howto"
+                open={settingsMemory.unfolded.has(CLIENT_HOWTO)}
+                onToggle={(e) => rememberUnfolded(CLIENT_HOWTO, e.currentTarget.open)}
+              >
+                <summary>{t("sync.client.howto")}</summary>
+                <ol className="steps-list">
+                  {CLIENT_STEPS.map((k) => (
+                    <li key={k}>{t(k)}</li>
+                  ))}
+                </ol>
+                <p className="hint">{t("sync.client.note")}</p>
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(CLOUD_CONSOLE)}>
+                  {t("sync.client.open")} <IconArrowOut />
+                </button>
+              </details>
               <div className="mail-grid">
-                <TextSetting label={t("sync.clientId")} value={settings.google_client_id} onSave={(v) => onChange("google_client_id", v)} />
+                <TextSetting
+                  label={t("sync.clientId")}
+                  value={settings.google_client_id}
+                  onSave={async (v) => {
+                    await dropOldLogin();
+                    onChange("google_client_id", v);
+                  }}
+                />
                 <SecretField
                   name="google-client-secret"
                   label={t("sync.clientSecret")}
@@ -155,6 +219,7 @@ export function SyncSettings({
                   // Errors are shown by the field itself, under the input.
                   onSave={async (name, value) => {
                     await api.setSecret(name, value);
+                    await dropOldLogin();
                     await load();
                     return true;
                   }}
@@ -166,6 +231,16 @@ export function SyncSettings({
                   onReveal={api.revealSecret}
                 />
               </div>
+              {editClient && (
+                <>
+                  {connected && <p className="hint">{t("sync.changeClientHint")}</p>}
+                  <div>
+                    <button type="button" className="btn btn-ghost btn-small" onClick={() => setEditClient(false)}>
+                      {t("sync.changeClientDone")}
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
           )}
 
@@ -183,11 +258,23 @@ export function SyncSettings({
               <p>{connected ? t("sync.isConnected") : t("sync.notConnected")}</p>
             )}
             {status?.lastSync && <p className="source-state">{t("sync.last", { when: fullDate(status.lastSync, lang) })}</p>}
-            {status?.lastError && (
-              <p className="source-warn">
-                <IconWarning /> {status.lastError}
-              </p>
-            )}
+            {status?.lastError &&
+              (expired ? (
+                <p className="source-warn">
+                  <IconWarning /> {t("sync.expired")}
+                </p>
+              ) : (
+                <div className="source-warn">
+                  <p>
+                    <IconWarning /> {t("sync.failed")}
+                  </p>
+                  <details>
+                    <summary>{t("error.details")}</summary>
+                    <code>{status.lastError}</code>
+                  </details>
+                </div>
+              ))}
+            {ownProject && !expired && <p className="hint">{t("sync.ownProject")}</p>}
             <div className="ai-row">
               {!connected && (
                 <button type="button" className="btn btn-sign btn-small" disabled={!status?.client || code !== null} onClick={connect}>
@@ -212,6 +299,11 @@ export function SyncSettings({
                   </button>
                 </>
               )}
+              {ownProject && status?.client && !editClient && (
+                <button type="button" className="btn btn-ghost btn-small" disabled={busy || code !== null} onClick={() => setEditClient(true)}>
+                  {t("sync.changeClient")}
+                </button>
+              )}
             </div>
           </section>
 
@@ -224,20 +316,26 @@ export function SyncSettings({
                   type="button"
                   className="btn btn-sign btn-small"
                   onClick={async () => {
+                    setScanning(true);
                     try {
-                      const key = await scanSyncKey();
-                      if (!key) return onToast(t("sync.scanNone"));
-                      await api.syncSetKey(key);
+                      const found = await scanSyncKey();
+                      setScanning(false);
+                      if (found === "denied") return onConfirm(t("sync.cameraDenied"), () => void openAppSettings(), t("sync.openAppSettings"));
+                      if (found === "none") return onToast(t("sync.scanNone"));
+                      await api.syncSetKey(found.key);
                       onToast(t("sync.scanDone"));
                       await load();
                     } catch (e) {
                       onError(e);
+                    } finally {
+                      setScanning(false);
                     }
                   }}
                 >
                   {t("sync.scan")}
                 </button>
               </div>
+              {scanning && <ScanOverlay />}
             </section>
           ) : (
           <section className="source" aria-labelledby="phone-title">
@@ -273,6 +371,36 @@ export function SyncSettings({
           )}
         </>
       )}
+
+      {isPhone() && about}
+    </div>
+  );
+}
+
+/**
+ * While scanning, the camera picture is under the app: the whole app turns see-through and
+ * only this frame, its hint and "Cancel" stay. Android "back" cancels too.
+ */
+function ScanOverlay() {
+  const { t } = useI18n();
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("scanning");
+    const stopBack = onBack(() => void cancelScan());
+    return () => {
+      root.classList.remove("scanning");
+      stopBack();
+    };
+  }, []);
+  return (
+    <div className="scan-overlay" role="dialog" aria-modal="true" aria-labelledby="scan-hint">
+      <p id="scan-hint" className="scan-hint">
+        {t("sync.scanHint")}
+      </p>
+      <div className="scan-frame" aria-hidden="true" />
+      <button type="button" className="btn btn-sign" onClick={() => void cancelScan()} autoFocus>
+        {t("sync.scanCancel")}
+      </button>
     </div>
   );
 }

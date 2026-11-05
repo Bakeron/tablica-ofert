@@ -9,7 +9,7 @@ import { DataSettings } from "./DataSettings";
 import { SourcesSettings } from "./SourcesSettings";
 import { SyncSettings } from "./SyncSettings";
 import { ConfirmContext } from "./SecretField";
-import { isPhone } from "../lib/platform";
+import { askNotifications, isPhone, notificationsAllowed, openAppSettings } from "../lib/platform";
 import { settingsMemory } from "../lib/settingsMemory";
 import { followHeight } from "../lib/smoothHeight";
 
@@ -32,7 +32,8 @@ const FIRST_SECTION: SettingsSection = isPhone() ? "sync" : "sources";
 /** How long the window may still grow into the remembered place (sections load their data). */
 const SCROLL_BACK_MS = 1500;
 
-const FEATURES = ["feature_dates", "feature_contacts", "feature_keys"] as const;
+// Keyboard shortcuts make no sense on the phone.
+const FEATURES = isPhone() ? (["feature_dates", "feature_contacts"] as const) : (["feature_dates", "feature_contacts", "feature_keys"] as const);
 
 export function SettingsDialog({
   open,
@@ -45,6 +46,7 @@ export function SettingsDialog({
   onOpenLink,
   onError,
   onToast,
+  onNotificationsAllowed,
   version,
   onConfirm,
   onLoaded,
@@ -60,6 +62,7 @@ export function SettingsDialog({
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
+  onNotificationsAllowed: () => void;
   version: string;
   onConfirm: (message: string, action: () => void, label?: string) => void;
   onLoaded: () => void;
@@ -77,6 +80,7 @@ export function SettingsDialog({
         onOpenLink={onOpenLink}
         onError={onError}
         onToast={onToast}
+        onNotificationsAllowed={onNotificationsAllowed}
         version={version}
         onConfirm={onConfirm}
         onLoaded={onLoaded}
@@ -97,6 +101,7 @@ function SettingsBody({
   onOpenLink,
   onError,
   onToast,
+  onNotificationsAllowed,
   version,
   onConfirm,
   onLoaded,
@@ -111,6 +116,7 @@ function SettingsBody({
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
+  onNotificationsAllowed: () => void;
   version: string;
   onConfirm: (message: string, action: () => void, label?: string) => void;
   onLoaded: () => void;
@@ -188,22 +194,23 @@ function SettingsBody({
         OPTIONS.map((option) => (
           <fieldset key={option.key} className="choice">
             <legend>{t(option.label)}</legend>
-            {option.values.map((value) => (
-              <label key={value} className="choice-item">
-                <input
-                  type="radio"
-                  name={option.key}
-                  value={value}
-                  checked={settings[option.key] === value}
-                  onChange={() => onChange(option.key, value as Settings[typeof option.key])}
-                />
-                <span>
+            <div className="seg-strip">
+              {option.values.map((value) => (
+                <label key={value} className="seg seg-radio">
+                  <input
+                    type="radio"
+                    className="sr-only"
+                    name={option.key}
+                    value={value}
+                    checked={settings[option.key] === value}
+                    onChange={() => onChange(option.key, value as Settings[typeof option.key])}
+                  />
                   {option.key === "language" && value !== "system"
                     ? LANGUAGE_NAMES[value]
                     : t(`${option.label}.${value}` as TextKey)}
-                </span>
-              </label>
-            ))}
+                </label>
+              ))}
+            </div>
             {option.hint && <p className="hint">{t(option.hint)}</p>}
           </fieldset>
         ))}
@@ -221,6 +228,14 @@ function SettingsBody({
             <input type="checkbox" checked={settings.sound === "on"} onChange={(e) => onChange("sound", e.target.checked ? "on" : "off")} />
             <span>{t("features.sound")}</span>
           </label>
+          {/* On the PC this sits with the sources; the phone has no such section. */}
+          {isPhone() && (
+            <PhoneReminders
+              on={settings.notify_reminders === "on"}
+              onChange={(on) => onChange("notify_reminders", on ? "on" : "off")}
+              onAllowed={onNotificationsAllowed}
+            />
+          )}
           <p className="hint">{t("features.hint")}</p>
         </fieldset>
       )}
@@ -259,5 +274,63 @@ function SettingsBody({
       </footer>
     </div>
     </ConfirmContext.Provider>
+  );
+}
+
+/** The phone's reminders: the box ticked is not enough, Android has to allow notifications too. */
+function PhoneReminders({ on, onChange, onAllowed }: { on: boolean; onChange: (on: boolean) => void; onAllowed: () => void }) {
+  const { t } = useI18n();
+  const [allowed, setAllowed] = useState(true);
+  const seen = useRef(true);
+  const report = useRef(onAllowed);
+  report.current = onAllowed;
+
+  const show = (ok: boolean) => {
+    if (ok && !seen.current) report.current();
+    seen.current = ok;
+    setAllowed(ok);
+  };
+
+  // Coming back from Android's settings counts as a new answer.
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState === "visible") notificationsAllowed().then(show, () => {});
+    };
+    check();
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
+  }, []);
+
+  return (
+    <>
+      <label className="choice-item">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => {
+            onChange(e.target.checked);
+            if (e.target.checked) askNotifications().then(show, () => {});
+          }}
+        />
+        <span>{t("bg.remindersPhone")}</span>
+      </label>
+      {on && !allowed && (
+        <div className="source-warn">
+          <p>{t("bg.remindersOff")}</p>
+          <button
+            type="button"
+            className="btn btn-ghost btn-small"
+            onClick={async () => {
+              // After a second "no" Android stops asking - only its settings can change that.
+              const ok = await askNotifications().catch(() => false);
+              show(ok);
+              if (!ok) await openAppSettings().catch(() => {});
+            }}
+          >
+            {t("bg.remindersEnable")}
+          </button>
+        </div>
+      )}
+    </>
   );
 }

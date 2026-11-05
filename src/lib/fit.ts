@@ -63,9 +63,9 @@ export function useFitLevels(ref: RefObject<HTMLElement | null>, levels: string[
   }, [ref, key]);
 }
 
-/** The phone layout (offers as cards, the card below the list) - the same step as in app.css. */
+/** The card is below the list (phone, phone turned sideways, tablet) - the same step as `.split` in app.css. */
 export function isNarrowLayout(): boolean {
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const width = document.querySelector(".app")?.clientWidth ?? window.innerWidth;
-  return width <= 37.5 * rem;
+  return width <= 58 * rem;
 }

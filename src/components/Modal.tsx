@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useI18n } from "../i18n";
+import { onBack } from "../lib/back";
 import { useLastShown, usePresence } from "../lib/presence";
 import { IconClose } from "./Icons";
 import { ToastView } from "./Toast";
@@ -59,6 +60,11 @@ export function Modal({
     if (dirty) setAsking(true);
     else onClose();
   }
+
+  // Android "back" closes the window the same way as Esc (asking first about unsaved text).
+  const closeRef = useRef(softClose);
+  closeRef.current = softClose;
+  useEffect(() => (open ? onBack(() => closeRef.current()) : undefined), [open]);
 
   // Only a click that starts and ends outside the window counts (not text selected
   // inside and released outside).

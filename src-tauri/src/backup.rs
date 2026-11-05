@@ -105,50 +105,33 @@ pub fn csv_cell(value: &str) -> String {
     format!("\"{}\"", safe.replace('"', "\"\""))
 }
 
-/// All offers outside the trash, one per row. Semicolons and a BOM - Polish Excel opens it
-/// with letters and columns right. `pl` = Polish column names.
-pub fn csv(conn: &Connection, pl: bool) -> AppResult<String> {
-    let head: &[&str] = if pl {
-        &[
-            "Stanowisko", "Firma", "Miasto", "Praca zdalna", "Widełki od", "Widełki do", "Waluta", "Okres", "Umowa",
-            "Poziom", "Etap", "Zainteresowanie", "Ulubiona", "Dopasowanie", "Źródło oceny", "Źródła", "Link", "Dodano",
-            "Notatki",
-        ]
-    } else {
-        &[
-            "Title", "Company", "City", "Remote", "Salary from", "Salary to", "Currency", "Period", "Contract", "Level",
-            "Stage", "Interest", "Favourite", "Match", "Score source", "Sources", "Link", "Added", "Notes",
-        ]
-    };
+/// Most rows and cells a CSV from the interface may have, and the longest cell (Excel keeps
+/// at most 32 767 characters in a cell).
+const CSV_MAX_ROWS: usize = 100_000;
+const CSV_MAX_CELLS: usize = 40;
+const CSV_MAX_CELL: usize = 32_000;
+
+/// The cells come from the interface: a short list name for the file and a sane size.
+pub fn csv_check(name: &str, cells: &[Vec<String>]) -> AppResult<()> {
+    let name_ok = (1..=40).contains(&name.len()) && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if !name_ok {
+        return Err(AppError::Invalid("csv name".into()));
+    }
+    if cells.len() > CSV_MAX_ROWS || cells.iter().any(|row| row.len() > CSV_MAX_CELLS) {
+        return Err(AppError::Invalid("csv too big".into()));
+    }
+    Ok(())
+}
+
+/// Rows of cells as CSV. Semicolons and a BOM - Polish Excel opens it with letters and columns
+/// right; every cell safe for Excel (`csv_cell`).
+pub fn csv_text(cells: &[Vec<String>]) -> String {
     let mut out = String::from("\u{feff}");
-    out.push_str(&head.iter().map(|h| csv_cell(h)).collect::<Vec<_>>().join(";"));
-    out.push_str("\r\n");
-    let mut stmt = conn.prepare(
-        "SELECT o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max, o.salary_currency, o.salary_period,
-                o.contract, o.level, o.stage, o.interest, o.favorite, o.score, o.score_source,
-                (SELECT group_concat(s.source, ', ') FROM offer_sources s WHERE s.offer_id = o.id),
-                o.url, o.added_at, o.notes
-         FROM offers o WHERE o.deleted_at IS NULL ORDER BY o.added_at DESC",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(r) = rows.next()? {
-        let mut cells = Vec::with_capacity(19);
-        for i in 0..19 {
-            let value: rusqlite::types::Value = r.get(i)?;
-            let text = match value {
-                rusqlite::types::Value::Null => String::new(),
-                rusqlite::types::Value::Integer(n) if i == 12 => if n == 1 { "tak".into() } else { String::new() },
-                rusqlite::types::Value::Integer(n) => n.to_string(),
-                rusqlite::types::Value::Real(f) => f.to_string(),
-                rusqlite::types::Value::Text(t) => t,
-                rusqlite::types::Value::Blob(_) => String::new(),
-            };
-            cells.push(csv_cell(&text));
-        }
-        out.push_str(&cells.join(";"));
+    for row in cells {
+        out.push_str(&row.iter().map(|c| csv_cell(&crate::text::cut(c, CSV_MAX_CELL))).collect::<Vec<_>>().join(";"));
         out.push_str("\r\n");
     }
-    Ok(out)
+    out
 }
 
 #[cfg(test)]
@@ -197,12 +180,13 @@ mod tests {
         assert_eq!(csv_cell("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
         assert_eq!(csv_cell("-5"), "\"'-5\"");
         assert_eq!(csv_cell("zwykły tekst"), "\"zwykły tekst\"");
-        let mut conn = test_db();
-        add(&mut conn, "=cmd|' /C calc'!A0");
-        let text = csv(&conn, true).unwrap();
+        let cells = vec![vec!["Stanowisko".to_string(), "Firma".into()], vec!["=cmd|' /C calc'!A0".into(), "Firma \"Cudzysłów\"".into()]];
+        let text = csv_text(&cells);
         assert!(text.starts_with('\u{feff}'));
-        assert!(text.contains("\"'=cmd|' /C calc'!A0\""));
-        assert!(text.contains("\"Firma \"\"Cudzysłów\"\"\""));
+        assert!(text.contains("\"'=cmd|' /C calc'!A0\";\"Firma \"\"Cudzysłów\"\"\""));
         assert_eq!(text.lines().count(), 2);
+        assert!(csv_check("oferty", &cells).is_ok());
+        assert!(csv_check("../x", &cells).is_err());
+        assert!(csv_check("", &cells).is_err());
     }
 }

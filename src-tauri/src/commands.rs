@@ -286,7 +286,15 @@ pub async fn ollama_install(app: tauri::AppHandle, program: String, models: Stri
     until_done(ai::ollama_install::install(&program, &models, &say).await, &say)
 }
 
+/// The phone has no folder picker - Ollama is installed only on the PC.
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn pick_folder(_app: tauri::AppHandle) -> AppResult<Option<String>> {
+    Err(AppError::Invalid("choosing a folder is available on the computer".into()))
+}
+
 /// Folder picked for the Ollama install; `None` = the window was closed.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn pick_folder(app: tauri::AppHandle) -> AppResult<Option<String>> {
     use tauri_plugin_dialog::DialogExt;
@@ -530,14 +538,20 @@ pub async fn load_copy(state: State<'_, AppState>, app: tauri::AppHandle, passwo
     Ok(Some(count))
 }
 
-/// "Export to Excel (CSV)" - returns where it was saved (`None` = cancelled).
+/// Offers for "Export to Excel (CSV)": one tab (`view`) or all, the trash too (`None`).
 #[tauri::command]
-pub async fn export_csv(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<Option<String>> {
-    let pl = crate::notify::polish(&state);
-    let text = with_db(&state, |c| crate::backup::csv(c, pl))?;
-    let name = format!("tablica-ofert-{}.csv", crate::clock::file_stamp());
-    let Some(path) = pick_save(&app, name, ("CSV", &["csv"])).await? else { return Ok(None) };
-    std::fs::write(&path, text)?;
+pub async fn export_rows(state: State<'_, AppState>, view: Option<View>) -> AppResult<Vec<ExportRow>> {
+    with_db(&state, |c| offers::export_rows(c, view))
+}
+
+/// Saves the CSV cells the interface made (words in the app language) - returns where it was
+/// saved (`None` = cancelled). `name` - the list, a part of the file name.
+#[tauri::command]
+pub async fn save_csv(app: tauri::AppHandle, name: String, cells: Vec<Vec<String>>) -> AppResult<Option<String>> {
+    crate::backup::csv_check(&name, &cells)?;
+    let file = format!("tablica-{name}-{}.csv", crate::clock::file_stamp());
+    let Some(path) = pick_save(&app, file, ("CSV", &["csv"])).await? else { return Ok(None) };
+    std::fs::write(&path, crate::backup::csv_text(&cells))?;
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 

@@ -240,6 +240,35 @@ pub struct OfferRow {
     pub title_translated: Option<String>,
 }
 
+/// One offer for "Export to Excel (CSV)" - raw values; the interface turns them into words of
+/// the app language and sends the cells back to be saved.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportRow {
+    pub id: i64,
+    pub title: String,
+    pub company: String,
+    pub city: Option<String>,
+    pub remote: Remote,
+    pub salary_min: Option<i64>,
+    pub salary_max: Option<i64>,
+    pub salary_currency: Option<String>,
+    pub salary_period: Option<SalaryPeriod>,
+    pub contract: Option<String>,
+    pub level: Option<String>,
+    pub stage: Stage,
+    pub interest: Option<Interest>,
+    pub favorite: bool,
+    pub score: Option<i64>,
+    pub score_source: Option<String>,
+    pub sources: Vec<String>,
+    pub url: Option<String>,
+    pub added_at: String,
+    pub notes: Option<String>,
+    /// The tab the offer is in (all profiles together, like the board without a chosen profile).
+    pub list: View,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceLink {

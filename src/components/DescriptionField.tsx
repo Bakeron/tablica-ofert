@@ -1,4 +1,5 @@
 import { useI18n, type TextKey } from "../i18n";
+import { isPhone } from "../lib/platform";
 import { IconWarning } from "./Icons";
 
 const QUESTIONS: TextKey[] = ["profile.q1", "profile.q2", "profile.q3", "profile.q4", "profile.q5"];
@@ -42,7 +43,7 @@ export function DescriptionField({
         <IconWarning />
         <p>
           <strong>{t("mail.warnTitle")}: </strong>
-          {t("profile.noPersonal")}
+          {t(isPhone() ? "profile.noPersonalPhone" : "profile.noPersonal")}
         </p>
       </div>
     </div>

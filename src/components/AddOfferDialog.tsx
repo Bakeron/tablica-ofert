@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Captured, Draft, OfferInput, Remote, SalaryPeriod } from "../api/types";
 import { useI18n } from "../i18n";
+import { isPhone } from "../lib/platform";
 import { CloseButton, Modal } from "./Modal";
 import { Reveal } from "./Reveal";
 
@@ -155,16 +156,20 @@ export function AddOfferDialog({
         <p className="hint">{t("add.intro")}</p>
 
         <fieldset className="quick">
-          <legend>{t("quick.title")}</legend>
-          <div className="quick-row">
-            <label className="field">
-              <span>{t("quick.link")}</span>
-              <input type="url" maxLength={2000} placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} />
-            </label>
-            <button type="button" className="btn btn-ghost btn-small" disabled={!/^https?:\/\/.+/i.test(link.trim())} onClick={openPreview}>
-              {t("quick.open")}
-            </button>
-          </div>
+          <legend>{t(isPhone() ? "quick.titlePhone" : "quick.title")}</legend>
+          {/* The phone has no preview window - "Share" from the browser does this job there,
+              and the link goes straight to the form's own link field. */}
+          {!isPhone() && (
+            <div className="quick-row">
+              <label className="field">
+                <span>{t("quick.link")}</span>
+                <input type="url" maxLength={2000} placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} />
+              </label>
+              <button type="button" className="btn btn-ghost btn-small" disabled={!/^https?:\/\/.+/i.test(link.trim())} onClick={openPreview}>
+                {t("quick.open")}
+              </button>
+            </div>
+          )}
           <Reveal show={previewOpen}>
             <div className="quick-row quick-capture">
               <p className="hint">{t("quick.captureHint")}</p>
@@ -174,7 +179,7 @@ export function AddOfferDialog({
             </div>
           </Reveal>
           <label className="field">
-            <span>{t("quick.paste")}</span>
+            <span>{t(isPhone() ? "quick.pastePhone" : "quick.paste")}</span>
             <textarea rows={3} maxLength={100000} value={pasted} onChange={(e) => setPasted(e.target.value)} />
           </label>
           <div className="quick-row">
@@ -192,7 +197,7 @@ export function AddOfferDialog({
             <span>
               {t("add.fieldTitle")} <em className="req">({t("add.required")})</em>
             </span>
-            <input required maxLength={300} value={form.title} onChange={(e) => set("title", e.target.value)} data-autofocus />
+            <input required maxLength={300} value={form.title} onChange={(e) => set("title", e.target.value)} data-autofocus={!isPhone() || undefined} />
           </label>
           <label className="field span-2">
             <span>
