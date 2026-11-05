@@ -207,9 +207,17 @@ export function SyncSettings({
                 <TextSetting
                   label={t("sync.clientId")}
                   value={settings.google_client_id}
-                  onSave={async (v) => {
+                  onSave={async (raw) => {
+                    // The same cleaning as in Rust (settings::without_spaces), so the field shows what was saved.
+                    const v = raw.replace(/[\s\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, "");
+                    try {
+                      await api.setSetting("google_client_id", v);
+                    } catch {
+                      return t("sync.clientIdBad");
+                    }
                     await dropOldLogin();
                     onChange("google_client_id", v);
+                    return null;
                   }}
                 />
                 <SecretField
@@ -322,8 +330,9 @@ export function SyncSettings({
                       setScanning(false);
                       if (found === "denied") return onConfirm(t("sync.cameraDenied"), () => void openAppSettings(), t("sync.openAppSettings"));
                       if (found === "none") return onToast(t("sync.scanNone"));
-                      await api.syncSetKey(found.key);
-                      onToast(t("sync.scanDone"));
+                      const clientId = await api.syncFromQr(found.text);
+                      if (clientId) onChange("google_client_id", clientId);
+                      onToast(t(clientId ? "sync.scanDoneProject" : "sync.scanDone"));
                       await load();
                     } catch (e) {
                       onError(e);

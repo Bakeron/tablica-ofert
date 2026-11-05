@@ -179,7 +179,7 @@ pub fn run() {
             commands::sync_new_key,
             commands::sync_delete_remote,
             commands::sync_disconnect,
-            commands::sync_set_key,
+            commands::sync_from_qr,
             commands::upcoming_events,
         ])
         .run(tauri::generate_context!())

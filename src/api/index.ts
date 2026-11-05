@@ -147,7 +147,8 @@ export interface Api {
   /** Forgets the Google login on this computer. */
   syncDisconnect(): Promise<void>;
   /** The phone saves the key scanned from the PC's QR code. */
-  syncSetKey(key: string): Promise<void>;
+  /** Saves what the phone scanned; the Client ID when the code carried the PC's Google project. */
+  syncFromQr(text: string): Promise<string | null>;
   /** Future dates of all offers (phone reminders). */
   upcomingEvents(): Promise<Upcoming[]>;
   /** Saves a longer description from the offer page; returns whether it changed. */
@@ -236,7 +237,7 @@ async function tauriApi(): Promise<Api> {
     syncNewKey: () => invoke("sync_new_key"),
     syncDeleteRemote: () => invoke("sync_delete_remote"),
     syncDisconnect: () => invoke("sync_disconnect"),
-    syncSetKey: (key) => invoke("sync_set_key", { key }),
+    syncFromQr: (text) => invoke("sync_from_qr", { text }),
     upcomingEvents: () => invoke("upcoming_events"),
     onReminder: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");

@@ -635,8 +635,8 @@ pub async fn sync_now(state: State<'_, AppState>, confirm: bool) -> AppResult<cr
 }
 
 #[tauri::command]
-pub async fn sync_qr() -> AppResult<String> {
-    crate::sync::qr_svg()
+pub async fn sync_qr(state: State<'_, AppState>) -> AppResult<String> {
+    crate::sync::qr_svg(&state)
 }
 
 #[tauri::command]
@@ -655,11 +655,11 @@ pub async fn sync_disconnect() -> AppResult<()> {
     secrets::delete(crate::sync::drive::REFRESH_SECRET)
 }
 
-/// The phone saves the sync key scanned from the PC's QR code.
+/// The phone saves what it scanned from the PC's QR code: the sync key and, when the PC has
+/// its own Google project, that project (its Client ID comes back for the settings on screen).
 #[tauri::command]
-pub async fn sync_set_key(key: String) -> AppResult<()> {
-    let key = crate::sync::crypto::key_from_hex(&key)?;
-    secrets::set(crate::sync::KEY_SECRET, &crate::sync::crypto::key_to_hex(&key))
+pub async fn sync_from_qr(state: State<'_, AppState>, text: String) -> AppResult<Option<String>> {
+    crate::sync::save_scanned(&state, &text)
 }
 
 #[tauri::command]

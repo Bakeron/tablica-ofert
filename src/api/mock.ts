@@ -700,7 +700,9 @@ export function createMockApi(): Api {
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260"><rect width="260" height="260" fill="#fff"/><g fill="#111">${rects}</g></svg>`;
     },
     async syncNewKey() {},
-    async syncSetKey() {},
+    async syncFromQr() {
+      return null;
+    },
     async upcomingEvents() {
       return [...offers.values()].flatMap((o) =>
         o.agenda.events.map((e) => ({ id: e.id, kind: e.kind, at: e.at, title: o.title, company: o.company })),

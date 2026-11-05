@@ -79,7 +79,7 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("hide_below", Rule::One(&["off", "30", "40", "50", "60", "70"])),
 ];
 
-fn is_client_id(v: &str) -> bool {
+pub(crate) fn is_client_id(v: &str) -> bool {
     v.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
 }
 
@@ -147,6 +147,13 @@ fn default_of(rule: &Rule) -> &'static str {
     }
 }
 
+/// Without any whitespace and without the invisible marks a copied text may carry.
+pub(crate) fn without_spaces(v: &str) -> String {
+    v.chars()
+        .filter(|c| !c.is_whitespace() && !matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}'))
+        .collect()
+}
+
 fn accepts(rule: &Rule, value: &str) -> bool {
     match rule {
         Rule::One(values) => values.contains(&value),
@@ -189,7 +196,14 @@ pub fn set(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
         .iter()
         .find(|(k, _)| *k == key)
         .ok_or_else(|| AppError::Invalid(format!("unknown setting {key}")))?;
-    let value = value.trim();
+    // A Client ID never has spaces: a phone keyboard or a chat app adds them (also invisible ones) when copying.
+    let cleaned;
+    let value = if key == "google_client_id" {
+        cleaned = without_spaces(value);
+        cleaned.as_str()
+    } else {
+        value.trim()
+    };
     if !accepts(rule, value) {
         return Err(AppError::Invalid(format!("wrong value for {key}")));
     }
@@ -205,6 +219,14 @@ pub fn set(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::db::tests::test_db;
+
+    #[test]
+    fn a_copied_client_id_loses_spaces_and_invisible_marks() {
+        let conn = test_db();
+        set(&conn, "google_client_id", " 123-abc.apps. googleusercontent\u{200B}.com\n").unwrap();
+        assert_eq!(get(&conn, "google_client_id").unwrap(), "123-abc.apps.googleusercontent.com");
+        assert!(set(&conn, "google_client_id", "Client ID: 123-abc").is_err());
+    }
 
     #[test]
     fn defaults_and_changes() {

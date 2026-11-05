@@ -9,8 +9,8 @@ function insideTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** The key from the QR code, or why there is none: cancelled / not our code, or no camera permission. */
-export type ScanResult = { key: string } | "none" | "denied";
+/** The text of our QR code (Rust checks it), or why there is none: cancelled / not our code, or no camera permission. */
+export type ScanResult = { text: string } | "none" | "denied";
 
 /**
  * Scans the PC's QR code with the sync key. The camera shows under the app (`windowed`), so
@@ -23,8 +23,8 @@ export async function scanSyncKey(): Promise<ScanResult> {
   if (!allowed) return "denied";
   try {
     const result = await scanner.scan({ windowed: true, formats: [scanner.Format.QRCode] });
-    const match = /^tablica-ofert:sync:1:([0-9a-f]{64})$/.exec(result.content.trim());
-    return match ? { key: match[1] } : "none";
+    const text = result.content.trim();
+    return text.startsWith("tablica-ofert:sync:") && text.length <= 1000 ? { text } : "none";
   } catch {
     // cancel() makes scan() fail
     return "none";

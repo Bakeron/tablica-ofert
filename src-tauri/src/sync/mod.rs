@@ -156,10 +156,76 @@ pub async fn delete_remote(state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
+const QR_KEY: &str = "tablica-ofert:sync:1:";
+/// The key and the PC's own Google project, so nothing has to be typed on the phone.
+const QR_KEY_AND_PROJECT: &str = "tablica-ofert:sync:2:";
+
+/// What the phone's camera read from the PC's QR code.
+pub struct Scanned {
+    pub key: [u8; 32],
+    pub client: Option<drive::OAuthClient>,
+}
+
+pub fn qr_payload(key: &[u8; 32], client: Option<&drive::OAuthClient>) -> String {
+    match client {
+        // The secret goes last: only it could ever hold a ':'.
+        Some(c) => format!("{QR_KEY_AND_PROJECT}{}:{}:{}", crypto::key_to_hex(key), c.id, c.secret),
+        None => format!("{QR_KEY}{}", crypto::key_to_hex(key)),
+    }
+}
+
+/// A Google client secret: printable ASCII without spaces, not too long.
+fn is_client_secret(v: &str) -> bool {
+    (1..=200).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_graphic())
+}
+
+/// Checked field by field - the text comes from a camera.
+pub fn parse_qr(text: &str) -> AppResult<Scanned> {
+    let wrong = || AppError::Invalid("not a Tablica Ofert code".into());
+    let text = text.trim();
+    if text.len() > 1000 {
+        return Err(wrong());
+    }
+    if let Some(hex) = text.strip_prefix(QR_KEY) {
+        return Ok(Scanned { key: crypto::key_from_hex(hex)?, client: None });
+    }
+    let rest = text.strip_prefix(QR_KEY_AND_PROJECT).ok_or_else(wrong)?;
+    let mut parts = rest.splitn(3, ':');
+    let (hex, id, secret) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+    if id.is_empty() || id.len() > 200 || !settings::is_client_id(id) || !is_client_secret(secret) {
+        return Err(wrong());
+    }
+    Ok(Scanned { key: crypto::key_from_hex(hex)?, client: Some(drive::OAuthClient { id: id.into(), secret: secret.into() }) })
+}
+
+/// The PC's own Google project (not a built-in one - the phone app has the same built in).
+fn own_client(conn: &rusqlite::Connection) -> AppResult<Option<drive::OAuthClient>> {
+    let id = settings::get(conn, "google_client_id")?;
+    if id.is_empty() {
+        return Ok(None);
+    }
+    Ok(secrets::get("google-client-secret")?.map(|secret| drive::OAuthClient { id, secret }))
+}
+
+/// Phone: saves what the QR code carried. A new Google project ends the old login (it belongs to one project).
+pub fn save_scanned(state: &AppState, text: &str) -> AppResult<Option<String>> {
+    let scanned = parse_qr(text)?;
+    secrets::set(KEY_SECRET, &crypto::key_to_hex(&scanned.key))?;
+    let Some(client) = scanned.client else { return Ok(None) };
+    let old = with_db(state, |c| settings::get(c, "google_client_id"))?;
+    if old != client.id {
+        secrets::delete(drive::REFRESH_SECRET)?;
+    }
+    with_db(state, |c| settings::set(c, "google_client_id", &client.id))?;
+    secrets::set("google-client-secret", &client.secret)?;
+    Ok(Some(client.id))
+}
+
 /// QR code with the key for the phone (shown for 2 minutes, never sent anywhere).
-pub fn qr_svg() -> AppResult<String> {
+pub fn qr_svg(state: &AppState) -> AppResult<String> {
     let key = key_or_new()?;
-    let payload = format!("tablica-ofert:sync:1:{}", crypto::key_to_hex(&key));
+    let client = with_db(state, |c| own_client(c))?;
+    let payload = qr_payload(&key, client.as_ref());
     let code = qrcode::QrCode::new(payload.as_bytes()).map_err(|e| AppError::Invalid(e.to_string()))?;
     Ok(code
         .render::<qrcode::render::svg::Color>()
@@ -167,4 +233,40 @@ pub fn qr_svg() -> AppResult<String> {
         .dark_color(qrcode::render::svg::Color("#111111"))
         .light_color(qrcode::render::svg::Color("#ffffff"))
         .build())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "123456789012-abc.apps.googleusercontent.com";
+
+    #[test]
+    fn the_qr_code_carries_the_key_and_the_own_project() {
+        let key = [7u8; 32];
+        let client = drive::OAuthClient { id: ID.into(), secret: "GOCSPX-a:b_c".into() };
+        let back = parse_qr(&qr_payload(&key, Some(&client))).unwrap();
+        assert_eq!(back.key, key);
+        let c = back.client.unwrap();
+        assert_eq!((c.id.as_str(), c.secret.as_str()), (ID, "GOCSPX-a:b_c"));
+        let plain = parse_qr(&qr_payload(&key, None)).unwrap();
+        assert!(plain.client.is_none());
+        assert_eq!(plain.key, key);
+    }
+
+    #[test]
+    fn a_strange_qr_code_is_refused() {
+        let hex = "ab".repeat(32);
+        for text in [
+            "https://example.com".to_string(),
+            format!("tablica-ofert:sync:2:{hex}"),
+            format!("tablica-ofert:sync:2:{hex}:{ID}:"),
+            format!("tablica-ofert:sync:2:{hex}:bad id:secret"),
+            format!("tablica-ofert:sync:2:{hex}:{ID}:sec ret"),
+            format!("tablica-ofert:sync:2:short:{ID}:secret"),
+            format!("tablica-ofert:sync:1:{hex}{}", "x".repeat(2000)),
+        ] {
+            assert!(parse_qr(&text).is_err(), "{text}");
+        }
+    }
 }
