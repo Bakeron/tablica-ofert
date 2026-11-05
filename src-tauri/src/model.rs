@@ -138,6 +138,16 @@ impl Default for HardFlags {
     }
 }
 
+/// A job the AI thinks fits what the person can do - shown with its reason, added only by the person.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CareerIdea {
+    /// Job title as offers name it - goes to the keywords as it is.
+    pub name: String,
+    /// Why it fits, in the app's language.
+    pub why: String,
+}
+
 /// Criteria of one profile. An empty list means "no requirement".
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

@@ -7,6 +7,7 @@ import {
   describeError,
   type AppStatus,
   type AssistKind,
+  type CareerIdea,
   type Captured,
   type Draft,
   type Criteria,
@@ -397,6 +398,16 @@ export default function App() {
     if (!api) return null;
     try {
       return await api.aiSuggestCriteria(description);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  async function suggestCareers(description: string, experience: string): Promise<CareerIdea[] | null> {
+    if (!api) return null;
+    try {
+      return await api.aiSuggestCareers(description, experience);
     } catch (e) {
       fail(e);
       return null;
@@ -895,6 +906,7 @@ export default function App() {
           experiencePrev={experiencePrev}
           aiOn={aiOn(settings)}
           onSuggest={suggestCriteria}
+          onCareers={suggestCareers}
           onTidy={tidyText}
           onClose={() => setEditing(null)}
           onSave={saveProfile}

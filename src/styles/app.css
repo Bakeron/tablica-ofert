@@ -2764,6 +2764,45 @@ fieldset.plain {
   list-style: none;
 }
 
+/* Proposed jobs: the name (opens the reason) and "Add to keywords" in one row, the reason below. */
+.career-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.career-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem 0.8rem;
+}
+
+.source-unfold.career-name {
+  margin-left: 0;
+  font-family: var(--font-board);
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* Wrapped under the name: still on the right, the same in every row. */
+.career-head > .btn {
+  margin-left: auto;
+}
+
+.career-why {
+  padding-left: 1.4rem;
+}
+
+.career-why p {
+  margin: 0;
+}
+
 .tidy-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

@@ -362,6 +362,11 @@ pub async fn ai_suggest_criteria(state: State<'_, AppState>, description: String
 }
 
 #[tauri::command]
+pub async fn ai_suggest_careers(state: State<'_, AppState>, description: String, experience: String) -> AppResult<Vec<CareerIdea>> {
+    ai::suggest_careers(&state, &description, &experience).await
+}
+
+#[tauri::command]
 pub async fn ai_tidy(state: State<'_, AppState>, text: String) -> AppResult<String> {
     ai::tidy(&state, &text).await
 }

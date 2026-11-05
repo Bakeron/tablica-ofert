@@ -9,6 +9,7 @@ import type {
   Captured,
   Draft,
   Criteria,
+  CareerIdea,
   Machine,
   RateReport,
   TaskStatus,
@@ -84,6 +85,7 @@ export interface Api {
   aiAssist(id: number, kind: AssistKind): Promise<string>;
   /** Filters proposed from a description - the user picks what to keep. */
   aiSuggestCriteria(description: string): Promise<Criteria>;
+  aiSuggestCareers(description: string, experience: string): Promise<CareerIdea[]>;
   /** A clearer version of the user's own text. */
   aiTidy(text: string): Promise<string>;
   checkHardware(): Promise<Machine>;
@@ -200,6 +202,7 @@ async function tauriApi(): Promise<Api> {
     aiRateOffer: (id) => invoke("ai_rate_offer", { id }),
     aiAssist: (id, kind) => invoke("ai_assist", { id, kind }),
     aiSuggestCriteria: (description) => invoke("ai_suggest_criteria", { description }),
+    aiSuggestCareers: (description, experience) => invoke("ai_suggest_careers", { description, experience }),
     aiTidy: (text) => invoke("ai_tidy", { text }),
     checkHardware: () => invoke("check_hardware"),
     ollamaModels: () => invoke("ollama_models"),

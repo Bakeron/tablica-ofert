@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type Dispatch, type FormEvent, type ReactNo
 import type {
   Contract,
   Criteria,
+  CareerIdea,
   HardFlags,
   Level,
   OfferLanguage,
@@ -14,7 +15,7 @@ import type {
 } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { emptyCriteria, joinList, splitList, toAmount } from "../lib/profile";
-import { SuggestPanel, TidyDialog, suggestionsFrom, type Suggestion } from "./AiDialogs";
+import { CareersPanel, SuggestPanel, TidyDialog, suggestionsFrom, type Suggestion } from "./AiDialogs";
 import { DescriptionField } from "./DescriptionField";
 import { Help } from "./Help";
 import { IconPlus, IconTrash } from "./Icons";
@@ -110,6 +111,7 @@ export function ProfileDialog({
   experiencePrev,
   aiOn,
   onSuggest,
+  onCareers,
   onTidy,
   onClose,
   onSave,
@@ -124,6 +126,7 @@ export function ProfileDialog({
   /** An AI provider is set - "Tidy up" and "Suggest filters" are offered. */
   aiOn: boolean;
   onSuggest: (description: string) => Promise<Criteria | null>;
+  onCareers: (description: string, experience: string) => Promise<CareerIdea[] | null>;
   onTidy: (text: string) => Promise<string | null>;
   onClose: () => void;
   onSave: (input: ProfileInput, experience: string) => Promise<boolean>;
@@ -171,6 +174,7 @@ export function ProfileDialog({
           experiencePrev={experiencePrev}
           aiOn={aiOn}
           onSuggest={onSuggest}
+          onCareers={onCareers}
           onTidy={onTidy}
         />
 
@@ -203,6 +207,7 @@ export function ProfileFields({
   experiencePrev,
   aiOn,
   onSuggest,
+  onCareers,
   onTidy,
 }: {
   form: Form;
@@ -211,12 +216,14 @@ export function ProfileFields({
   experiencePrev: string | null;
   aiOn: boolean;
   onSuggest?: (description: string) => Promise<Criteria | null>;
+  onCareers?: (description: string, experience: string) => Promise<CareerIdea[] | null>;
   onTidy?: (text: string) => Promise<string | null>;
 }) {
   const { t } = useI18n();
-  const [aiBusy, setAiBusy] = useState<"description" | "experience" | "suggest" | null>(null);
+  const [aiBusy, setAiBusy] = useState<"description" | "experience" | "suggest" | "careers" | null>(null);
   const [tidy, setTidy] = useState<{ field: "description" | "experience"; before: string; proposal: string } | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [careers, setCareers] = useState<CareerIdea[] | null>(null);
 
   async function askTidy(field: "description" | "experience") {
     setAiBusy(field);
@@ -231,6 +238,15 @@ export function ProfileFields({
     setAiBusy(null);
     if (c) setSuggestions(suggestionsFrom(c, suggestionLabel));
   }
+
+  async function askCareers() {
+    setAiBusy("careers");
+    const ideas = await onCareers?.(form.description, form.experience);
+    setAiBusy(null);
+    if (ideas) setCareers(ideas);
+  }
+
+  const hasKeyword = (word: string) => splitList(form.keywords).some((k) => k.toLowerCase() === word.toLowerCase());
 
   function suggestionLabel(group: Suggestion["group"], value: string): string {
     const what = t(`suggest.g.${group}` as TextKey);
@@ -309,6 +325,18 @@ export function ProfileFields({
               <button type="button" className="btn btn-ghost btn-small" disabled={!form.description.trim() || aiBusy !== null} aria-busy={aiBusy === "suggest"} onClick={askSuggest}>
                 {aiBusy === "suggest" ? t("ai.working") : t("suggest.button")}
               </button>
+              {onCareers && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-small"
+                  disabled={(!form.description.trim() && !form.experience.trim()) || aiBusy !== null}
+                  aria-busy={aiBusy === "careers"}
+                  title={t("careers.buttonHint")}
+                  onClick={askCareers}
+                >
+                  {aiBusy === "careers" ? t("ai.working") : t("careers.button")}
+                </button>
+              )}
             </>
           )}
           {descriptionPrev !== null && descriptionPrev !== form.description && (
@@ -320,6 +348,16 @@ export function ProfileFields({
       )}
       <Reveal show={suggestions !== null}>
         {suggestions && <SuggestPanel items={suggestions} present={isPresent} onAdd={addSuggestions} onClose={() => setSuggestions(null)} />}
+      </Reveal>
+      <Reveal show={careers !== null}>
+        {careers && (
+          <CareersPanel
+            ideas={careers}
+            present={hasKeyword}
+            onAdd={(name) => setForm((f) => ({ ...f, keywords: joinList([...splitList(f.keywords), name]) }))}
+            onClose={() => setCareers(null)}
+          />
+        )}
       </Reveal>
 
       <label className="field">

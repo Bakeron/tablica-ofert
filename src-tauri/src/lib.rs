@@ -148,6 +148,7 @@ pub fn run() {
             commands::ai_rate_offer,
             commands::ai_assist,
             commands::ai_suggest_criteria,
+            commands::ai_suggest_careers,
             commands::ai_tidy,
             commands::check_hardware,
             commands::fill_offer,

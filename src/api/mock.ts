@@ -4,7 +4,7 @@
 // `?firstrun` in the address starts without profiles, with "First steps".
 
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
-import { AI_PROVIDERS, type AiProvider, type AiStatus, type Criteria, type OfferAi, type WorkProgress } from "./types";
+import { AI_PROVIDERS, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type OfferAi, type WorkProgress } from "./types";
 import { bestResult, viewFor } from "../lib/profile";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
@@ -479,6 +479,17 @@ export function createMockApi(): Api {
         return "- Jak wygląda typowy tydzień w zespole?\n- Kto podejmuje decyzje o wyglądzie produktu?\n- Jak często spotykacie się na żywo?\n- Jak wygląda wdrożenie nowej osoby?\n\n(Przykład z podglądu - tu pisze AI.)";
       }
       return "- Testy end-to-end: oferta wymienia Playwright - warto zrobić mały projekt próbny.\n\n(Przykład z podglądu - tu pisze AI.)";
+    },
+    async aiSuggestCareers(): Promise<CareerIdea[]> {
+      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      await new Promise((r) => setTimeout(r, 700));
+      aiCalls++;
+      return [
+        { name: "AI Product Builder", why: "Łączy budowanie stron w WordPressie z narzędziami AI - prototypy produktów od pomysłu do działającej wersji. (Przykład z podglądu.)" },
+        { name: "AI Automation Specialist", why: "Twoje doświadczenie z wtyczkami i integracjami przydaje się przy automatyzacji pracy firm modelami językowymi." },
+        { name: "React", why: "Już w Twoich słowach kluczowych - przycisk dodawania jest wyłączony. (Przykład z podglądu.)" },
+        { name: "Technical Content Engineer", why: "Pisanie dokumentacji i przykładów kodu dla narzędzi AI - łączy programowanie z jasnym tłumaczeniem." },
+      ];
     },
     async aiSuggestCriteria(description): Promise<Criteria> {
       if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };

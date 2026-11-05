@@ -58,6 +58,12 @@ export interface HardFlags {
   keywords: boolean;
 }
 
+/** A job the AI thinks fits (model.rs `CareerIdea`). */
+export interface CareerIdea {
+  name: string;
+  why: string;
+}
+
 export interface Criteria {
   keywords: string[];
   /** Accepted forms of work: "yes" (remote), "hybrid", "no" (office). */

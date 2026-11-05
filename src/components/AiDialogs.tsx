@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import type { Criteria } from "../api/types";
+import { useEffect, useId, useState } from "react";
+import type { CareerIdea, Criteria } from "../api/types";
 import { useI18n } from "../i18n";
 import { droppedWords, wordDiff } from "../lib/diff";
-import { IconWarning } from "./Icons";
+import { IconArrowRight, IconWarning } from "./Icons";
 import { CloseButton, Modal } from "./Modal";
 
 /**
@@ -229,6 +229,70 @@ export function SuggestPanel({
         </button>
         <button type="button" className="btn btn-sign btn-small" disabled={chosen.size === 0} onClick={() => onAdd(fresh.filter((_, i) => chosen.has(i)))}>
           {t("suggest.add")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Jobs the AI proposes. The reason opens on a click (a phone has no hover); each name goes to
+ * the keywords only by its own button.
+ */
+export function CareersPanel({
+  ideas,
+  present,
+  onAdd,
+  onClose,
+}: {
+  ideas: CareerIdea[];
+  /** Is this name already among the keywords? */
+  present: (name: string) => boolean;
+  onAdd: (name: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const toggle = (i: number) =>
+    setOpen((o) => {
+      const next = new Set(o);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  return (
+    <div className="suggest" role="group" aria-label={t("careers.title")}>
+      <p>
+        <strong>{t("careers.title")}</strong> {ideas.length > 0 ? t("careers.intro") : t("careers.none")}
+      </p>
+      {ideas.length > 0 && (
+        <ul className="career-list">
+          {ideas.map((idea, i) => {
+            const added = present(idea.name);
+            return (
+              <li key={idea.name} className="career">
+                <div className="career-head">
+                  <button type="button" className="source-unfold career-name" aria-expanded={open.has(i)} aria-controls={`${id}-${i}`} onClick={() => toggle(i)}>
+                    <IconArrowRight />
+                    {idea.name}
+                    <span className="source-unfold-hint">{open.has(i) ? t("careers.hideWhy") : t("careers.showWhy")}</span>
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-small" disabled={added} onClick={() => onAdd(idea.name)}>
+                    {added ? t("careers.added") : t("careers.add")}
+                  </button>
+                </div>
+                <div id={`${id}-${i}`} className="career-why" hidden={!open.has(i)}>
+                  <p>{idea.why}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="source-row">
+        <button type="button" className="btn btn-ghost btn-small" onClick={onClose}>
+          {t("settings.close")}
         </button>
       </div>
     </div>
