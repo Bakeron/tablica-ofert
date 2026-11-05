@@ -187,6 +187,7 @@ export const pl = {
   "error.dismiss": "Zamknij",
   "modal.leaveAsk": "Zamknąć bez zapisywania? Wpisane zmiany przepadną.",
   "modal.stay": "Wróć do edycji",
+  "form.required": "Wypełnij to pole.",
   "modal.leave": "Zamknij bez zapisywania",
 
   "preview.badge": "Podgląd w przeglądarce - przykładowe dane",

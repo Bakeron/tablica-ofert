@@ -52,7 +52,7 @@ Pomysł na wygląd: **tablica odlotów i znaki kierunkowe** - grafitowa tablica,
 | Dane | SQLite + SQLCipher | jeden plik, zaszyfrowany (są w nim notatki i kontakty); klucz w Menedżerze poświadczeń Windows - bez hasła do wpisywania |
 | Zapis | transakcje, migracje, 5 kopii przy starcie | zapis w całości albo wcale; błąd odczytu blokuje zapis zamiast startu z pustą listą |
 | Pismo | Barlow Condensed, Atkinson Hyperlegible Next (SIL OFL) | wąskie, równe litery na tablicę i krój pod czytelność w treści; wbudowane, bez internetu |
-| Testy | `cargo test` (ok. 140), Vitest | baza na zaszyfrowanym pliku tymczasowym, zmyślone maile z alertami i odpowiedzi API / AI |
+| Testy | `cargo test` (ok. 160), Vitest, GitHub Actions | baza na zaszyfrowanym pliku tymczasowym, zmyślone maile z alertami i odpowiedzi API / AI; po każdym `push` to samo na czystym Windowsie |
 
 ## Instalacja
 

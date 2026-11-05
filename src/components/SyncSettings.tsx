@@ -28,7 +28,7 @@ const loginExpired = (text: string | null | undefined) => !!text && text.include
 
 const QR_SECONDS = 120;
 
-/** Settings → "Sync": Google Drive (hidden app folder), encrypted, key to the phone by QR code. */
+/** Settings → "Sync": one encrypted file in Google Drive (`drive.file`), key to the phone by QR code. */
 export function SyncSettings({
   api,
   settings,

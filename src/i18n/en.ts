@@ -187,6 +187,7 @@ export const en: Record<keyof typeof pl, string> = {
   "error.dismiss": "Close",
   "modal.leaveAsk": "Close without saving? Your changes will be lost.",
   "modal.stay": "Back to editing",
+  "form.required": "Fill in this field.",
   "modal.leave": "Close without saving",
 
   "preview.badge": "Browser preview - sample data",

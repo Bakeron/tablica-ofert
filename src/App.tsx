@@ -121,6 +121,26 @@ export default function App() {
   );
   const { t } = i18n;
 
+  // The browser's "fill in this field" bubble speaks the system's language - this one speaks the app's.
+  useEffect(() => {
+    const onInvalid = (e: Event) => {
+      const field = e.target as HTMLInputElement;
+      if (field.validity?.valueMissing) field.setCustomValidity(t("form.required"));
+    };
+    // Before each check: a form can be filled by code (no input event), and an old message would block it.
+    const onClick = (e: MouseEvent) => {
+      const form = (e.target as Element).closest?.("button")?.form;
+      if (!form) return;
+      for (const field of form.elements) (field as HTMLInputElement).setCustomValidity?.("");
+    };
+    document.addEventListener("invalid", onInvalid, true);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      document.removeEventListener("invalid", onInvalid, true);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [t]);
+
   useEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
