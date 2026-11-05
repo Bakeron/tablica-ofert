@@ -25,6 +25,7 @@ const PORTALS: { name: string; url: string; search: (q: string) => string }[] = 
   // geoId = Poland; the name alone may be resolved by the visitor's country.
   { name: "LinkedIn", url: "https://www.linkedin.com/jobs", search: (q) => `https://www.linkedin.com/jobs/search/?keywords=${q}&location=Poland&geoId=105072130` },
   { name: "Indeed", url: "https://pl.indeed.com", search: (q) => `https://pl.indeed.com/jobs?q=${q}` },
+  { name: "Jooble", url: "https://pl.jooble.org", search: (q) => `https://pl.jooble.org/SearchResult?ukw=${q}` },
 ];
 
 /** At most this many search buttons per portal - one alert per keyword is the usual setup. */
