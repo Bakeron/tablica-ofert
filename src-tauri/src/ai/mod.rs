@@ -7,6 +7,7 @@
 
 pub mod client;
 pub mod ollama;
+pub mod ollama_install;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
@@ -112,7 +113,7 @@ fn connect(c: &Config) -> AppResult<Ai> {
 
 // ---------- what goes to AI ----------
 
-/// Language of the answers: the language the user writes their profiles in.
+/// Language of a text the user wrote - "tidy up" keeps it. Every other answer follows the app.
 fn answer_language(texts: &[&str]) -> &'static str {
     let joined = format!(" {} ", texts.join(" ").to_lowercase());
     let polish = joined.chars().filter(|c| "ąćęłńóśźż".contains(*c)).count();
@@ -184,9 +185,9 @@ fn language_name(code: &str) -> &'static str {
     if code == "en" { "English" } else { "Polish" }
 }
 
-fn rate_prompt(f: &Facts, profiles: &[Profile], experience: &str, language: &str, app_language: &str) -> String {
+fn rate_prompt(f: &Facts, profiles: &[Profile], experience: &str, app_language: &str) -> String {
     let profiles_text = profiles.iter().map(profile_block).collect::<Vec<_>>().join("\n");
-    let target = language_name(app_language);
+    let language = language_name(app_language);
     format!(
         "JOB SEEKER\nExperience: {}\n{}\n\n<offer>\n{}\n</offer>\n\n\
 Answer with this JSON object (write summary, flags and why in {language}):\n\
@@ -205,8 +206,8 @@ Answer with this JSON object (write summary, flags and why in {language}):\n\
   \"summary\": 2-3 sentences: what the job really is,\n\
   \"flags\": up to 5 short warnings for the job seeker (e.g. unpaid trial task, sales targets, no salary range, very long list of duties), [] if none,\n\
   \"scores\": [ {{ \"profile\": profile id, \"score\": 0-100, \"why\": one sentence, \"quote\": the most telling sentence of the offer or null }} ] - one entry for every profile above,\n\
-  \"translated_title\": only when the offer is NOT written in {target}: the title translated into {target}, otherwise null,\n\
-  \"translated_description\": only when the offer is NOT written in {target}: the description translated into {target} - plain text, the same paragraphs and meaning, names of technologies and companies unchanged; otherwise null\n\
+  \"translated_title\": only when the offer is NOT written in {language}: the title translated into {language}, otherwise null,\n\
+  \"translated_description\": only when the offer is NOT written in {language}: the description translated into {language} - plain text, the same paragraphs and meaning, names of technologies and companies unchanged; otherwise null\n\
 }}",
         if experience.trim().is_empty() { "not given" } else { experience.trim() },
         profiles_text,
@@ -486,9 +487,7 @@ impl Drop for Rating<'_> {
 }
 
 async fn rate(ai: &Ai, job: &Job, app_language: &str) -> AppResult<Reading> {
-    let texts: Vec<&str> = job.profiles.iter().map(|p| p.description.as_str()).collect();
-    let language = answer_language(&texts);
-    let prompt = rate_prompt(&job.facts, &job.profiles, &job.experience, language, app_language);
+    let prompt = rate_prompt(&job.facts, &job.profiles, &job.experience, app_language);
     let answer = ai.ask(RATE_SYSTEM, &prompt, true).await?;
     let value = client::json_object(&answer)?;
     let offer_text = offer_block(&job.facts);
@@ -583,6 +582,14 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
         )?)
     })?;
     Ok(report)
+}
+
+/// Rated or failed offers AI would read again ("Rate all again" - not the "Not for me" ones).
+const RATED_AGAIN: &str = "ai_status IS NOT NULL AND deleted_at IS NULL AND filter_result != 'fail' AND COALESCE(interest, '') != 'no'";
+
+/// "Rate all again": every such offer waits for AI once more; old readings stay until replaced.
+pub fn reset_all(conn: &Connection) -> AppResult<usize> {
+    Ok(conn.execute(&format!("UPDATE offers SET ai_status = NULL, ai_error = NULL WHERE {RATED_AGAIN}"), [])?)
 }
 
 /// "Rate again": the offer waits for AI once more.
@@ -699,8 +706,7 @@ pub async fn assist(state: &AppState, offer_id: i64, kind: Assist) -> AppResult<
         let facts = profiles::facts_of(c, offer_id)?.ok_or(AppError::NotFound)?;
         Ok((facts, profiles::list(c)?, profiles::experience(c)?))
     })?;
-    let texts: Vec<&str> = profiles_list.iter().map(|p| p.description.as_str()).collect();
-    let language = answer_language(&texts);
+    let language = language_name(if crate::notify::polish(state) { "pl" } else { "en" });
     let task = match kind {
         Assist::Message => "Write a short, polite message to the recruiter (max 120 words) showing interest in this job and \
             naming 2-3 concrete things from the job seeker's experience that fit the offer. Do not invent experience. \
@@ -875,6 +881,8 @@ pub struct AiStatus {
     pub daily_limit: i64,
     pub waiting: i64,
     pub rated: i64,
+    /// Offers "Rate all again" would send to AI.
+    pub rate_again: i64,
 }
 
 pub fn status(conn: &Connection, key_present: impl Fn(Provider) -> bool) -> AppResult<AiStatus> {
@@ -885,6 +893,7 @@ pub fn status(conn: &Connection, key_present: impl Fn(Provider) -> bool) -> AppR
         |r| r.get(0),
     )?;
     let rated: i64 = conn.query_row("SELECT count(*) FROM offers WHERE ai_status = 'done'", [], |r| r.get(0))?;
+    let rate_again: i64 = conn.query_row(&format!("SELECT count(*) FROM offers WHERE {RATED_AGAIN}"), [], |r| r.get(0))?;
     let on: Vec<Provider> = configs(&s).iter().map(|c| c.provider).collect();
     let mut providers = Vec::new();
     for p in ORDER {
@@ -900,7 +909,7 @@ pub fn status(conn: &Connection, key_present: impl Fn(Provider) -> bool) -> AppR
             model: c.model,
         });
     }
-    Ok(AiStatus { providers, daily_limit: one_config(&s, Provider::Gemini).daily_limit, waiting, rated })
+    Ok(AiStatus { providers, daily_limit: one_config(&s, Provider::Gemini).daily_limit, waiting, rated, rate_again })
 }
 
 #[cfg(test)]
@@ -1090,9 +1099,46 @@ mod tests {
     }
 
     #[test]
-    fn language_of_answers_follows_the_profiles() {
+    fn tidied_text_keeps_its_language() {
         assert_eq!(answer_language(&["Szukam pracy jako tester, najlepiej zdalnie"]), "Polish");
         assert_eq!(answer_language(&["Looking for a remote frontend role"]), "English");
+    }
+
+    #[test]
+    fn answers_follow_the_app_language() {
+        let f = Facts { title: "Tester".into(), company: "X".into(), ..Default::default() };
+        assert!(rate_prompt(&f, &[], "", "en").contains("write summary, flags and why in English"));
+        assert!(rate_prompt(&f, &[], "", "pl").contains("write summary, flags and why in Polish"));
+    }
+
+    #[test]
+    fn rate_all_again_sends_back_only_offers_ai_would_read() {
+        let mut conn = test_db();
+        let mut add = |title: &str| match crate::offers::add(
+            &mut conn,
+            OfferInput { title: title.into(), company: "Firma".into(), source: "jjit".into(), city: Some("Kraków".into()), ..Default::default() },
+        )
+        .unwrap()
+        {
+            AddOutcome::Added { id } => id,
+            other => panic!("{other:?}"),
+        };
+        let (done, failed, declined, trashed, waiting) = (add("A"), add("B"), add("C"), add("D"), add("E"));
+        for (id, status) in [(done, "done"), (failed, "failed"), (declined, "done"), (trashed, "done")] {
+            conn.execute("UPDATE offers SET ai_status = ?2 WHERE id = ?1", rusqlite::params![id, status]).unwrap();
+        }
+        conn.execute("UPDATE offers SET interest = 'no' WHERE id = ?1", [declined]).unwrap();
+        conn.execute("UPDATE offers SET deleted_at = '2026-11-05' WHERE id = ?1", [trashed]).unwrap();
+
+        let keys = |_: Provider| false;
+        assert_eq!(status(&conn, keys).unwrap().rate_again, 2);
+        assert_eq!(reset_all(&conn).unwrap(), 2);
+        let after = status(&conn, keys).unwrap();
+        assert_eq!((after.rate_again, after.waiting), (0, 3));
+        assert!(pending_ids(&conn, 10).unwrap().contains(&waiting));
+        // Left alone: "Not for me" and the Trash keep their status.
+        let kept: i64 = conn.query_row("SELECT count(*) FROM offers WHERE ai_status = 'done'", [], |r| r.get(0)).unwrap();
+        assert_eq!(kept, 2);
     }
 
     #[test]

@@ -3,6 +3,7 @@ import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileF
 import { useI18n } from "../i18n";
 import { fullDate, isWebUrl, placeLabel, salaryFull, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
+import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
 import { IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
@@ -29,6 +30,8 @@ interface Props {
   aiOn: boolean;
   onRateAgain: () => void;
   onAssist: (kind: AssistKind) => void;
+  /** Settings at the AI section. */
+  onOpenAiSettings: () => void;
   /** Opens the offer page in the preview window to take its full text. */
   onFullText: () => void;
   agenda: AgendaActions;
@@ -38,7 +41,7 @@ interface Props {
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onFullText, agenda, showDates, showContacts },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -204,7 +207,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
 
         {!inTrash && <AgendaPart agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />}
 
-        <AiPart offer={offer} aiOn={aiOn && !inTrash} onRateAgain={onRateAgain} onAssist={onAssist} />
+        <AiPart offer={offer} aiOn={aiOn && !inTrash} aiOff={!aiOn && !inTrash && !isPhone()} onRateAgain={onRateAgain} onAssist={onAssist} onOpenAiSettings={onOpenAiSettings} />
 
         <FilterResults filters={offer.filters} />
 
@@ -399,13 +402,18 @@ function Stamp({ offer }: { offer: OfferDetail }) {
 function AiPart({
   offer,
   aiOn,
+  aiOff,
   onRateAgain,
   onAssist,
+  onOpenAiSettings,
 }: {
   offer: OfferDetail;
   aiOn: boolean;
+  /** No provider is on and the place to turn one on is at hand. */
+  aiOff: boolean;
   onRateAgain: () => void;
   onAssist: (kind: AssistKind) => void;
+  onOpenAiSettings: () => void;
 }) {
   const { t } = useI18n();
   const ai = offer.ai;
@@ -452,6 +460,16 @@ function AiPart({
             </li>
           ))}
         </ul>
+      )}
+      {aiOff && (
+        <>
+          {ai.status !== null && <p className="pass-meta">{t("ai.offAgain")}</p>}
+          <div className="ai-row">
+            <button type="button" className="btn btn-ghost btn-small" onClick={onOpenAiSettings}>
+              {t("ai.openSettings")}
+            </button>
+          </div>
+        </>
       )}
       {aiOn && (
         <div className="ai-row">

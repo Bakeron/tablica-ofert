@@ -279,6 +279,26 @@ pub async fn ollama_pull(state: State<'_, AppState>, app: tauri::AppHandle, mode
     result
 }
 
+/// "Install Ollama for me": both folders may stay empty (default places).
+#[tauri::command]
+pub async fn ollama_install(app: tauri::AppHandle, program: String, models: String) -> AppResult<()> {
+    let say = progress_of(&app);
+    until_done(ai::ollama_install::install(&program, &models, &say).await, &say)
+}
+
+/// Folder picked for the Ollama install; `None` = the window was closed.
+#[tauri::command]
+pub async fn pick_folder(app: tauri::AppHandle) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let dialog = app.dialog().file();
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    picked
+        .map(|p| p.into_path().map(|p| p.display().to_string()).map_err(|e| AppError::Invalid(e.to_string())))
+        .transpose()
+}
+
 /// "Check my computer" next to Ollama.
 #[tauri::command]
 pub async fn check_hardware() -> AppResult<crate::hardware::Machine> {
@@ -300,6 +320,17 @@ pub async fn ai_status(state: State<'_, AppState>) -> AppResult<AiStatus> {
 /// AI reads waiting offers now (the same as after every fetch).
 #[tauri::command]
 pub async fn ai_rate_now(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<RateReport> {
+    let say = progress_of(&app);
+    until_done(ai::process(&state, None, &say).await, &say)
+}
+
+/// "Rate all again" in the settings: at most one run of offers, the rest waits for "Rate now".
+#[tauri::command]
+pub async fn ai_rate_all_again(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<RateReport> {
+    if state.rating.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(AppError::Busy);
+    }
+    with_db(&state, |c| ai::reset_all(c))?;
     let say = progress_of(&app);
     until_done(ai::process(&state, None, &say).await, &say)
 }

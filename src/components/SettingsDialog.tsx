@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Api } from "../api";
 import { TEXT_SIZES, type Profile, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
@@ -10,6 +10,7 @@ import { SourcesSettings } from "./SourcesSettings";
 import { SyncSettings } from "./SyncSettings";
 import { ConfirmContext } from "./SecretField";
 import { isPhone } from "../lib/platform";
+import { settingsMemory } from "../lib/settingsMemory";
 
 const OPTIONS: { key: "language" | "theme" | "motion" | "text_size"; label: TextKey; values: readonly string[]; hint?: TextKey }[] = [
   { key: "language", label: "settings.language", values: ["system", "pl", "en"] },
@@ -25,6 +26,11 @@ export type SettingsSection = "look" | "sources" | "ai" | "sync" | "data" | "abo
 /** The phone is a helper - collecting offers, AI and data tools stay on the PC. */
 const SECTIONS: SettingsSection[] = isPhone() ? ["sync", "look", "about"] : ["sources", "ai", "look", "sync", "data", "about"];
 
+const FIRST_SECTION: SettingsSection = isPhone() ? "sync" : "sources";
+
+/** How long the window may still grow into the remembered place (sections load their data). */
+const SCROLL_BACK_MS = 1500;
+
 const FEATURES = ["feature_dates", "feature_contacts", "feature_keys"] as const;
 
 export function SettingsDialog({
@@ -32,7 +38,7 @@ export function SettingsDialog({
   api,
   settings,
   profiles,
-  initialSection = isPhone() ? "sync" : "sources",
+  initialSection,
   onClose,
   onChange,
   onOpenLink,
@@ -46,6 +52,7 @@ export function SettingsDialog({
   api: Api | null;
   settings: Settings;
   profiles: Profile[];
+  /** Opened from a place that needs this section; without it the window comes back as it was left. */
   initialSection?: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -78,7 +85,7 @@ export function SettingsDialog({
   );
 }
 
-/** Inside the dialog, so the chosen section starts fresh every time the window opens. */
+/** Inside the dialog: `settingsMemory` brings back the section and the scroll on every opening. */
 function SettingsBody({
   api,
   settings,
@@ -97,7 +104,7 @@ function SettingsBody({
   api: Api | null;
   settings: Settings;
   profiles: Profile[];
-  initialSection: SettingsSection;
+  initialSection?: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   onOpenLink: (url: string) => void;
@@ -109,10 +116,46 @@ function SettingsBody({
   closeLabel: string;
 }) {
   const { t } = useI18n();
-  const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? settingsMemory.section ?? FIRST_SECTION);
+  const sheet = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    settingsMemory.section = section;
+  }, [section]);
+
+  // Layout effect: its clean-up runs while the window is still there, so closing is not read as scrolling.
+  useLayoutEffect(() => {
+    const content = sheet.current;
+    const box = content?.closest("dialog");
+    if (!content || !box) return;
+    const top = initialSection ? 0 : settingsMemory.scroll;
+    const backToPlace = new ResizeObserver(() => {
+      if (box.scrollTop < top) box.scrollTop = top;
+    });
+    const stop = () => backToPlace.disconnect();
+    const save = () => {
+      settingsMemory.scroll = box.scrollTop;
+    };
+    backToPlace.observe(content);
+    const timer = setTimeout(stop, SCROLL_BACK_MS);
+    // The user moved first - their place wins.
+    box.addEventListener("wheel", stop, { once: true, passive: true });
+    box.addEventListener("pointerdown", stop, { once: true });
+    box.addEventListener("keydown", stop, { once: true });
+    box.addEventListener("scroll", save, { passive: true });
+    return () => {
+      stop();
+      clearTimeout(timer);
+      box.removeEventListener("wheel", stop);
+      box.removeEventListener("pointerdown", stop);
+      box.removeEventListener("keydown", stop);
+      box.removeEventListener("scroll", save);
+    };
+  }, [initialSection]);
+
   return (
     <ConfirmContext.Provider value={onConfirm}>
-    <div className="sheet">
+    <div className="sheet" ref={sheet}>
       {/* Title, "X" and the sections stay at the top while a long section scrolls. */}
       <div className="settings-top">
         <header className="sheet-head">
@@ -193,7 +236,7 @@ function SettingsBody({
       )}
 
       {section === "ai" && api && (
-        <AiSettings api={api} settings={settings} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} />
+        <AiSettings api={api} settings={settings} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} onRated={onLoaded} />
       )}
 
       <footer className="sheet-foot">

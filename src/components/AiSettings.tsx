@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import type { Api } from "../api";
 import { AI_PROVIDERS, type AiProvider, type AiProviderStatus, type AiStatus, type Machine, type SecretHints, type SecretName, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
-import { SecretField } from "./SecretField";
+import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
+import { ConfirmContext, SecretField } from "./SecretField";
 import { SourceBox } from "./SourcesSettings";
 import { TextSetting } from "./TextSetting";
 
@@ -30,6 +31,7 @@ export function AiSettings({
   onOpenLink,
   onError,
   onToast,
+  onRated,
 }: {
   api: Api;
   settings: Settings;
@@ -37,6 +39,8 @@ export function AiSettings({
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
+  /** New scores are in - the board behind this window shows them. */
+  onRated: () => void;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<AiStatus | null>(null);
@@ -67,6 +71,9 @@ export function AiSettings({
   const enabled = status?.providers.filter((x) => x.enabled) ?? [];
   const usedUp = enabled.filter((x) => x.usedUp);
   const canRate = enabled.some((x) => x.ready && !x.usedUp);
+  // Nothing is waiting, so the same button sends everything to AI once more (e.g. a new model).
+  const again = status !== null && status.waiting === 0 && status.rateAgain > 0;
+  const confirm = useContext(ConfirmContext);
 
   async function saveSecret(name: SecretName, value: string) {
     // An error is shown by the field itself, under the input (the app's error bar is behind this window).
@@ -95,16 +102,25 @@ export function AiSettings({
     }
   }
 
-  async function rateNow() {
+  async function rate(ask: () => ReturnType<Api["aiRateNow"]>) {
     setRating(true);
     try {
-      const report = await api.aiRateNow();
+      const report = await ask();
       onToast(t("ai.rated", { count: report.rated, waiting: report.waiting }));
       await load();
+      onRated();
     } catch (e) {
       onError(e);
     } finally {
       setRating(false);
+    }
+  }
+
+  function rateNow() {
+    if (again && status && confirm) {
+      confirm(t("ai.rateAllAsk", { count: status.rateAgain }), () => void rate(() => api.aiRateAllAgain()), t("ai.rateAllAgain"));
+    } else {
+      void rate(() => api.aiRateNow());
     }
   }
 
@@ -144,6 +160,7 @@ export function AiSettings({
                   <li>{t("ai.ollamaStep2")}</li>
                   <li>{t("ai.ollamaStep3")}</li>
                 </ol>
+                <OllamaInstall api={api} onError={onError} onToast={onToast} />
                 <TextSetting label={t("ai.ollamaUrl")} value={settings.ollama_url} onSave={(v) => onChange("ollama_url", v)} />
                 <div className="machine">
                   <button type="button" className="btn btn-ghost btn-small" onClick={check} disabled={checking} aria-busy={checking}>
@@ -215,7 +232,7 @@ export function AiSettings({
         {status && <p className="source-state">{t("ai.counts", { rated: status.rated, waiting: status.waiting })}</p>}
         <div>
           <button type="button" className="btn btn-ghost btn-small" onClick={rateNow} disabled={rating || !canRate} aria-busy={rating}>
-            {rating ? t("ai.rating") : t("ai.rateNow")}
+            {rating ? t("ai.rating") : t(again ? "ai.rateAllAgain" : "ai.rateNow")}
           </button>
         </div>
       </fieldset>
@@ -306,6 +323,94 @@ function OllamaModels({
         )}
       </div>
     </div>
+  );
+}
+
+const INSTALL = "ollama-install";
+
+function FolderChoice({
+  label,
+  value,
+  onPick,
+  onClear,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onPick: () => void;
+  onClear: () => void;
+  disabled: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="folder-choice">
+      <span className="folder-label">{label}</span>
+      <span className="folder-path">{value || t("ai.installDefault")}</span>
+      <div className="about-buttons">
+        <button type="button" className="btn btn-ghost btn-small" onClick={onPick} disabled={disabled} aria-label={`${label}: ${t("ai.installPick")}`}>
+          {t("ai.installPick")}
+        </button>
+        {value && (
+          <button type="button" className="btn btn-ghost btn-small" onClick={onClear} disabled={disabled} aria-label={`${label}: ${t("ai.installClear")}`}>
+            {t("ai.installClear")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** For those who would rather not download and set up Ollama by hand. */
+function OllamaInstall({ api, onError, onToast }: { api: Api; onError: (e: unknown) => void; onToast: (text: string) => void }) {
+  const { t } = useI18n();
+  const confirm = useContext(ConfirmContext);
+  const [program, setProgram] = useState("");
+  const [models, setModels] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function pick(set: (folder: string) => void) {
+    try {
+      const folder = await api.pickFolder();
+      if (folder) set(folder);
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  async function install() {
+    setBusy(true);
+    try {
+      await api.ollamaInstall(program, models);
+      onToast(t("ai.installDone"));
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details
+      className="howto ollama-install"
+      open={settingsMemory.unfolded.has(INSTALL)}
+      onToggle={(e) => rememberUnfolded(INSTALL, e.currentTarget.open)}
+    >
+      <summary>{t("ai.installTitle")}</summary>
+      <p className="hint">{t("ai.installText")}</p>
+      <FolderChoice label={t("ai.installProgram")} value={program} onPick={() => pick(setProgram)} onClear={() => setProgram("")} disabled={busy} />
+      <FolderChoice label={t("ai.installModels")} value={models} onPick={() => pick(setModels)} onClear={() => setModels("")} disabled={busy} />
+      <div>
+        <button
+          type="button"
+          className="btn btn-sign btn-small"
+          onClick={() => confirm?.(t("ai.installAsk"), () => void install(), t("ai.installGo"))}
+          disabled={busy}
+          aria-busy={busy}
+        >
+          {busy ? t("ai.installBusy") : t("ai.installRun")}
+        </button>
+      </div>
+    </details>
   );
 }
 

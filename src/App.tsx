@@ -35,7 +35,7 @@ import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
 import { Reveal } from "./components/Reveal";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsDialog, type SettingsSection } from "./components/SettingsDialog";
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
 import { playClack, playGong } from "./lib/sound";
 import { isPhone, scheduleReminders } from "./lib/platform";
@@ -61,6 +61,7 @@ export default function App() {
   const [error, setError] = useState<{ text: string; detail?: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
   const [confirm, setConfirm] = useState<{ message: string; action: () => void; label?: string } | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   /** null = all profiles together */
@@ -575,6 +576,11 @@ export default function App() {
     }
   }
 
+  function openSettings(section?: SettingsSection) {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }
+
   function finishFirstSteps() {
     setFirstSteps(false);
     changeSetting("onboarding", "done");
@@ -650,7 +656,7 @@ export default function App() {
             <button
               type="button"
               className="icon-btn"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => openSettings()}
               aria-label={t("settings.button")}
               title={t("settings.button")}
               disabled={locked}
@@ -770,6 +776,7 @@ export default function App() {
               })
             }
             aiOn={aiOn(settings)}
+            onOpenAiSettings={() => openSettings("ai")}
             onFullText={() => detail && startFullText(detail)}
             agenda={{
               addEvent: (event) => (selectedId === null ? Promise.resolve(false) : act(() => api!.addEvent(selectedId, event))),
@@ -825,6 +832,7 @@ export default function App() {
           api={api}
           settings={settings}
           profiles={profiles}
+          initialSection={settingsSection}
           onClose={() => setSettingsOpen(false)}
           onChange={changeSetting}
           onOpenLink={openLink}

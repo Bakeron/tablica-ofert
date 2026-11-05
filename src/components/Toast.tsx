@@ -69,6 +69,10 @@ function workText(p: WorkProgress, t: (key: TextKey, params?: Record<string, str
       return t("work.mail");
     case "pull":
       return t("work.pull", { model: p.source ?? "", done: p.done });
+    case "ollama-download":
+      return t("work.ollamaDownload", { done: p.done });
+    case "ollama-run":
+      return t("work.ollamaRun");
     default:
       return p.total > 1 ? t("work.sourceOf", { source: name(p.step), ...count }) : t("work.source", { source: name(p.step) });
   }

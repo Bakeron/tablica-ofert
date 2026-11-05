@@ -29,7 +29,7 @@ time = { version = "0.3.55", features = ["formatting", "parsing", "macros", "ser
 keyring-core = "1.0.1"
 getrandom = "0.4.3"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "gzip", "charset", "http2", "query", "form"] }
-tokio = { version = "1.54.1", features = ["time", "macros"] }
+tokio = { version = "1.54.1", features = ["time", "macros", "fs", "io-util"] }
 # TLS for IMAP comes from below (native-tls on the PC, rustls on Android) - imap gets a ready stream
 imap = { version = "3.0.0-alpha.15", default-features = false }
 mail-parser = "1.0.1"

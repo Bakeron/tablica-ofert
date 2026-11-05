@@ -259,6 +259,8 @@ export interface AiStatus {
   /** Offers waiting for AI. */
   waiting: number;
   rated: number;
+  /** Offers "Rate all again" would send to AI. */
+  rateAgain: number;
 }
 
 /** AI is set up: at least one provider turned on. */

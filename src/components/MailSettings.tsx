@@ -2,11 +2,15 @@ import { useRef, useState } from "react";
 import type { Api } from "../api";
 import { describeError, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
+import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { IconArrowOut, IconHome, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
 import { SourceBox } from "./SourcesSettings";
+
+/** Name of the "How to set up alerts" part in the memory of the Settings window. */
+const HOWTO = "mail-howto";
 
 /** Portals that send alerts by e-mail - where to set them up (always by a person, once).
  *  `search` builds a ready search for one keyword in the whole country (checked 3.11.2026);
@@ -175,7 +179,12 @@ export function MailSettings({
         onSave={(v) => onChange("search_words", v)}
       />
 
-      <details className="howto" ref={howtoRef}>
+      <details
+        className="howto"
+        ref={howtoRef}
+        open={settingsMemory.unfolded.has(HOWTO)}
+        onToggle={(e) => rememberUnfolded(HOWTO, e.currentTarget.open)}
+      >
         <summary>{t("mail.howto")}</summary>
         <p>{t("mail.howtoText")}</p>
         <AlertData email={settings.mail_user} profiles={profiles} />

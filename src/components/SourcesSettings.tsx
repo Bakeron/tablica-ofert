@@ -3,6 +3,7 @@ import type { Api } from "../api";
 import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type TaskStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate } from "../lib/format";
+import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { IconArrowOut, IconArrowRight, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { MailSettings } from "./MailSettings";
@@ -235,12 +236,16 @@ export function SourceBox({
   children: ReactNode;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => settingsMemory.unfolded.has(id));
+  const toggle = () => {
+    rememberUnfolded(id, !open);
+    setOpen(!open);
+  };
   return (
     <section className="source" aria-labelledby={id} data-open={open || undefined}>
       <div className="source-head">
         <h3 id={id}>
-          <button type="button" className="source-unfold" aria-expanded={open} aria-controls={`${id}-more`} onClick={() => setOpen(!open)}>
+          <button type="button" className="source-unfold" aria-expanded={open} aria-controls={`${id}-more`} onClick={toggle}>
             <IconArrowRight />
             {name}
             <span className="source-unfold-hint">{open ? t("src.hide") : t("src.show")}</span>

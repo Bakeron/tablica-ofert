@@ -75,6 +75,8 @@ export interface Api {
   aiStatus(): Promise<AiStatus>;
   /** AI reads waiting offers now. */
   aiRateNow(): Promise<RateReport>;
+  /** Rated offers wait for AI again, then AI reads them. */
+  aiRateAllAgain(): Promise<RateReport>;
   /** "Rate again" for one offer. */
   aiRateOffer(id: number): Promise<RateReport>;
   /** Text written by AI on a click (message, questions, gaps) - never sent anywhere. */
@@ -88,6 +90,10 @@ export interface Api {
   ollamaModels(): Promise<string[]>;
   /** Downloads a model into Ollama (progress in "work-progress"). */
   ollamaPull(model: string): Promise<void>;
+  /** Official installer of Ollama; empty folders = default places (progress in "work-progress"). */
+  ollamaInstall(program: string, models: string): Promise<void>;
+  /** Folder chosen in the system window; null = closed. */
+  pickFolder(): Promise<string | null>;
   /** Fields from a pasted text or a page: AI when set up, plain code otherwise. */
   fillOffer(text: string, title: string | null): Promise<Draft>;
   /** Opens the offer page in the preview window. */
@@ -187,6 +193,7 @@ async function tauriApi(): Promise<Api> {
     },
     aiStatus: () => invoke("ai_status"),
     aiRateNow: () => invoke("ai_rate_now"),
+    aiRateAllAgain: () => invoke("ai_rate_all_again"),
     aiRateOffer: (id) => invoke("ai_rate_offer", { id }),
     aiAssist: (id, kind) => invoke("ai_assist", { id, kind }),
     aiSuggestCriteria: (description) => invoke("ai_suggest_criteria", { description }),
@@ -194,6 +201,8 @@ async function tauriApi(): Promise<Api> {
     checkHardware: () => invoke("check_hardware"),
     ollamaModels: () => invoke("ollama_models"),
     ollamaPull: (model) => invoke("ollama_pull", { model }),
+    ollamaInstall: (program, models) => invoke("ollama_install", { program, models }),
+    pickFolder: () => invoke("pick_folder"),
     fillOffer: (text, title) => invoke("fill_offer", { text, title }),
     openPreview: (url) => invoke("open_preview", { url }),
     capturePreview: () => invoke("capture_preview"),

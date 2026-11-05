@@ -437,6 +437,7 @@ export function createMockApi(): Api {
         dailyLimit: Number(settings.ai_daily_limit),
         waiting: [...offers.values()].filter((o) => o.ai.status === null && !o.deletedAt).length,
         rated: [...offers.values()].filter((o) => o.ai.status === "done").length,
+        rateAgain: [...offers.values()].filter((o) => o.ai.status !== null && !o.deletedAt).length,
       };
     },
     async aiRateNow() {
@@ -451,6 +452,12 @@ export function createMockApi(): Api {
         }
       }
       return { rated, failed: 0, waiting: 0, error: null };
+    },
+    async aiRateAllAgain() {
+      for (const o of offers.values()) {
+        if (!o.deletedAt) o.ai = { ...o.ai, status: null };
+      }
+      return this.aiRateNow();
     },
     async aiRateOffer(id) {
       const o = find(id);
@@ -515,6 +522,18 @@ export function createMockApi(): Api {
       }
       tellProgress(null);
       ollamaModels.push(model);
+    },
+    async ollamaInstall() {
+      for (let done = 0; done <= 100; done += 25) {
+        tellProgress({ step: "ollama-download", source: null, done, total: 100 });
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      tellProgress({ step: "ollama-run", source: null, done: 0, total: 0 });
+      await new Promise((r) => setTimeout(r, 900));
+      tellProgress(null);
+    },
+    async pickFolder() {
+      return "D:\\AI\\Ollama";
     },
     async checkHardware() {
       await new Promise((r) => setTimeout(r, 600));
