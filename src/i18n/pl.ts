@@ -668,6 +668,7 @@ export const pl = {
   "agenda.icsHint": "Zapisuje plik do Pobranych i otwiera go w kalendarzu (Outlook, kalendarz Windows, telefon).",
   "agenda.icsSaved": "Zapisano plik: {path}",
   "agenda.remindHint": "Przypomnienie przyjdzie dzień wcześniej i godzinę przed (powiadomienia Windows).",
+  "agenda.remindHintPhone": "Przypomnienie przyjdzie dzień wcześniej i godzinę przed.",
   "agenda.contacts": "Kontakty",
   "agenda.addContact": "Dodaj osobę",
   "agenda.log": "Historia kontaktów",

@@ -668,6 +668,7 @@ export const en: Record<keyof typeof pl, string> = {
   "agenda.icsHint": "Saves a file to Downloads and opens it in your calendar (Outlook, Windows calendar, phone).",
   "agenda.icsSaved": "File saved: {path}",
   "agenda.remindHint": "A reminder comes a day before and an hour before (Windows notifications).",
+  "agenda.remindHintPhone": "A reminder comes a day before and an hour before.",
   "agenda.contacts": "Contacts",
   "agenda.addContact": "Add a person",
   "agenda.log": "Contact history",

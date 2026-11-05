@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { Agenda, Contact, EventKind, LogKind } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate, isWebUrl, localInputToUtc, nowLocalInput } from "../lib/format";
+import { isPhone } from "../lib/platform";
 import { IconPlus, IconTrash } from "./Icons";
 import { Reveal } from "./Reveal";
 
@@ -121,7 +122,7 @@ export function AgendaPart({
                 {t("agenda.save")}
               </button>
             </div>
-            <p className="hint">{t("agenda.remindHint")}</p>
+            <p className="hint">{t(isPhone() ? "agenda.remindHintPhone" : "agenda.remindHint")}</p>
           </form>
           )}
         </Reveal>
