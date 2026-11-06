@@ -6,7 +6,7 @@ import { useAppearOn } from "../lib/presence";
 import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
-import { IconArrowOut, IconArrowUp, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
+import { IconArrowLeft, IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
 import { AgendaPart, type AgendaActions } from "./AgendaPart";
 import { Help } from "./Help";
 import { StatusTag } from "./StatusTag";
@@ -34,7 +34,7 @@ interface Props {
   onOpenAiSettings: () => void;
   /** Opens the offer page in the preview window to take its full text. */
   onFullText: () => void;
-  /** Narrow layout (card below the list): back to the selected row. */
+  /** Narrow layout (the card is a screen of its own): back to the list. */
   onBackToList: () => void;
   agenda: AgendaActions;
   showDates: boolean;
@@ -76,9 +76,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
 
   return (
     <aside className="pass" aria-labelledby="pass-title" ref={passRef}>
-      {/* Only where the card is below the list (CSS shows it there). */}
+      {/* Only where the card is a screen of its own (CSS shows it there). */}
       <button type="button" className="btn btn-ghost btn-small pass-back" onClick={onBackToList}>
-        <IconArrowUp /> {t("card.backToList")}
+        <IconArrowLeft /> {t("card.backToList")}
       </button>
       {/* Stub - the part you would tear off */}
       <section className="pass-stub">

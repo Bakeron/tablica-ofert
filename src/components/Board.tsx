@@ -202,7 +202,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   .join(" ")}
                 onClick={() => {
                   onSelect(o.id);
-                  // On a phone the card is below the list - go to it.
+                  // On a phone the card is a screen of its own.
                   if (isNarrowLayout()) onOpen();
                 }}
                 onDoubleClick={onOpen}

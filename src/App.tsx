@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Api } from "./api";
 import {
   DEFAULT_SETTINGS,
@@ -40,15 +40,18 @@ import { SettingsDialog, type SettingsSection } from "./components/SettingsDialo
 import { I18nContext, plural, resolveLang, translate, type TextKey } from "./i18n";
 import { playClack, playGong } from "./lib/sound";
 import { askNotifications, isPhone, scheduleReminders } from "./lib/platform";
-import { motionReduced } from "./lib/presence";
 import { isWebUrl } from "./lib/format";
-import { useFitLevels } from "./lib/fit";
+import { isNarrowLayout, useFitLevels } from "./lib/fit";
+import { onBack } from "./lib/back";
 import { viewFor } from "./lib/profile";
 import { csvCells, csvName } from "./lib/csv";
 
 const VIEWS: View[] = ["board", "review", "rejected", "declined", "trash"];
 
 const TOPBAR_FIT = ["", "is-compact", "is-stacked", "is-stacked is-compact"];
+
+/** What can scroll the list, depending on the layout - remembered while the card is on screen. */
+const LIST_SCROLLERS = [".app", ".split", ".board-wrap"];
 
 export default function App() {
   const [api, setApi] = useState<Api | null>(null);
@@ -58,6 +61,9 @@ export default function App() {
   const [rows, setRows] = useState<OfferRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<OfferDetail | null>(null);
+  /** Narrow layout: the card takes the whole screen instead of the list. */
+  const [cardOpen, setCardOpen] = useState(false);
+  const listScroll = useRef<number[]>([]);
   const [sort, setSort] = useState<Sort>({ key: "added", dir: "desc" });
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState<Toast | null>(null);
@@ -226,6 +232,33 @@ export default function App() {
       current = false;
     };
   }, [api, selectedId, rows, fail]);
+
+  // The old offer's details stay until the new ones arrive - the list waits on screen till then.
+  const cardShown = cardOpen && detail !== null && detail.id === selectedId;
+  const cardWasShown = useRef(false);
+
+  function openCard() {
+    listScroll.current = LIST_SCROLLERS.map((s) => document.querySelector(s)?.scrollTop ?? 0);
+    setCardOpen(true);
+  }
+
+  // Android "back" leaves the card like "Back to the list" does (an open window goes first).
+  useEffect(() => (cardOpen ? onBack(() => setCardOpen(false)) : undefined), [cardOpen]);
+
+  // Before painting: the screen must not show the wrong place for a moment.
+  useLayoutEffect(() => {
+    if (cardShown === cardWasShown.current) return;
+    cardWasShown.current = cardShown;
+    if (cardShown) {
+      for (const s of [...LIST_SCROLLERS, ".pass"]) document.querySelector(s)?.scrollTo(0, 0);
+      cardHeading.current?.focus({ preventScroll: true });
+    } else {
+      LIST_SCROLLERS.forEach((s, i) => document.querySelector(s)?.scrollTo(0, listScroll.current[i] ?? 0));
+      // The row may have moved on the list while its card was open.
+      document.getElementById(`offer-${selectedId}`)?.scrollIntoView({ block: "nearest" });
+      document.querySelector<HTMLElement>("table.board")?.focus({ preventScroll: true });
+    }
+  }, [cardShown, selectedId]);
 
   // A message goes by itself after 10 s, or earlier with "X" or Esc; a new one takes its place.
   // The pointer over it or focus inside it (e.g. on "Undo") holds it - the time starts again after.
@@ -530,7 +563,10 @@ export default function App() {
   function selectNeighbour(id: number) {
     const i = sorted.findIndex((r) => r.id === id);
     const neighbour = sorted[i + 1] ?? sorted[i - 1];
-    if (id === selectedId) setSelectedId(neighbour?.id ?? null);
+    if (id !== selectedId) return;
+    setSelectedId(neighbour?.id ?? null);
+    // The offer on screen has left this list - back to the list, not on to the next offer.
+    setCardOpen(false);
   }
 
   const trash = (id: number) => {
@@ -679,7 +715,7 @@ export default function App() {
       <ToastContext.Provider value={toastValue}>
       <ErrorContext.Provider value={errorValue}>
       <WorkContext.Provider value={work}>
-      <div className="app">
+      <div className={cardShown ? "app is-card" : "app"}>
         <header className="topbar" ref={topbarRef}>
           <div className="brand">
             <span className="brand-mark">
@@ -833,7 +869,7 @@ export default function App() {
               sort={sort}
               onSort={onSort}
               onSelect={setSelectedId}
-              onOpen={() => cardHeading.current?.focus()}
+              onOpen={() => (isNarrowLayout() ? openCard() : cardHeading.current?.focus())}
               onInterest={toggleInterest}
               onTrash={trash}
             />
@@ -859,10 +895,7 @@ export default function App() {
             aiOn={aiOn(settings)}
             onOpenAiSettings={() => openSettings("ai")}
             onFullText={() => detail && startFullText(detail)}
-            onBackToList={() => {
-              document.getElementById(`offer-${selectedId}`)?.scrollIntoView({ block: "center", behavior: motionReduced() ? "auto" : "smooth" });
-              document.querySelector<HTMLElement>("table.board")?.focus({ preventScroll: true });
-            }}
+            onBackToList={() => setCardOpen(false)}
             agenda={{
               addEvent,
               deleteEvent: (id) =>

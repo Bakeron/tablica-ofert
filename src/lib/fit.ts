@@ -41,7 +41,10 @@ export function useFitLevels(ref: RefObject<HTMLElement | null>, levels: string[
     if (!el) return;
     const list = key.split("|");
     let frame = 0;
-    const fit = () => fitLevel(el, list);
+    // While hidden (the card's own screen) nothing can be measured - the last layout stays.
+    const fit = () => {
+      if (el.clientWidth > 0) fitLevel(el, list);
+    };
     // Changes caused by `fit` itself are handled in the next frame, never in a loop.
     const later = () => {
       cancelAnimationFrame(frame);
@@ -63,7 +66,7 @@ export function useFitLevels(ref: RefObject<HTMLElement | null>, levels: string[
   }, [ref, key]);
 }
 
-/** The card is below the list (phone, phone turned sideways, tablet) - the same step as `.split` in app.css. */
+/** The list and the card are separate screens (phone, tablet) - the same step as `.split` in app.css. */
 export function isNarrowLayout(): boolean {
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const width = document.querySelector(".app")?.clientWidth ?? window.innerWidth;

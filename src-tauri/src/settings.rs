@@ -3,9 +3,18 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{AppError, AppResult};
+
+/// Settings that travel with sync (the last change wins): they decide what the board shows,
+/// so both devices must agree. All the others stay on their device.
+pub const SYNCED: &[&str] = &["hide_below"];
+
+/// Where the time of a synced setting's last change is kept (never shown to the interface).
+fn changed_key(key: &str) -> String {
+    format!("{key}_changed_at")
+}
 
 /// What a setting may hold.
 enum Rule {
@@ -212,6 +221,34 @@ pub fn set(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
          ON CONFLICT (key) DO UPDATE SET value = excluded.value",
         params![key, value],
     )?;
+    if SYNCED.contains(&key) {
+        store_change(conn, key, value, &crate::clock::now())?;
+    }
+    Ok(())
+}
+
+fn store_change(conn: &Connection, key: &str, value: &str, at: &str) -> AppResult<()> {
+    let stamp = changed_key(key);
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2), (?3, ?4)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        params![key, value, stamp, at],
+    )?;
+    Ok(())
+}
+
+/// When a synced setting last changed here; `None` = never, so the other device decides.
+pub fn changed_at(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn.query_row("SELECT value FROM settings WHERE key = ?1", [changed_key(key)], |r| r.get(0)).optional()?)
+}
+
+/// A value from the sync file, kept with the time of the change on the other device. Comes
+/// from outside: an unknown key or a wrong value is skipped and the local one stays.
+pub fn apply_synced(conn: &Connection, key: &str, value: &str, at: &str) -> AppResult<()> {
+    let known = SYNCED.contains(&key) && ALLOWED.iter().any(|(k, rule)| *k == key && accepts(rule, value));
+    if known {
+        store_change(conn, key, value, at)?;
+    }
     Ok(())
 }
 

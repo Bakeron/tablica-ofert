@@ -1,7 +1,8 @@
 //! The database as a sync snapshot and back. What travels: offers (without the ones rejected
 //! by the filter - the phone does not need them), their sources, stage history and AI scores,
 //! profiles, work experience, dates, contacts, contact history, deleted offers' fingerprints
-//! and tombstones. Settings and secrets never travel - every device has its own.
+//! and tombstones. Secrets never travel, and settings only those in `settings::SYNCED` -
+//! otherwise every device has its own.
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params, types::Value as Sql};
 use serde_json::{Map, Value, json};
@@ -123,6 +124,13 @@ pub fn export(conn: &Connection, device: &str, now: &str) -> AppResult<Snapshot>
     {
         s.tables.insert("experience".into(), vec![Row { uid: "experience".into(), at, data: json!({ "experience": text }) }]);
     }
+    let mut shared = Vec::new();
+    for key in crate::settings::SYNCED {
+        if let Some(at) = crate::settings::changed_at(conn, key)? {
+            shared.push(Row { uid: key.to_string(), at, data: json!({ "value": crate::settings::get(conn, key)? }) });
+        }
+    }
+    s.tables.insert("settings".into(), shared);
     // Fingerprints of offers deleted for good - rows that never change.
     let mut stmt = conn.prepare("SELECT fingerprint, removed_at FROM removed_offers")?;
     let removed = stmt
@@ -295,6 +303,13 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         }
     }
 
+    for r in table("settings") {
+        let Some(value) = r.data.get("value").and_then(Value::as_str) else { continue };
+        if crate::settings::changed_at(&tx, &r.uid)?.is_none_or(|mine| mine < r.at) {
+            crate::settings::apply_synced(&tx, &r.uid, value, &r.at)?;
+        }
+    }
+
     // Tombstones: delete here and remember (so this device passes them on).
     for (kind, list) in &merged.deleted {
         let db_table = match kind.as_str() {
@@ -371,6 +386,35 @@ mod tests {
         let d = crate::offers::detail(&pc, id).unwrap();
         assert_eq!(d.row.stage, Stage::Applied);
         assert_eq!(d.history.len(), 2);
+    }
+
+    #[test]
+    fn the_hide_threshold_travels_and_the_last_change_wins() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "off");
+
+        crate::settings::set(&pc, "hide_below", "60").unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "60");
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        crate::settings::set(&pc, "hide_below", "off").unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "off");
+        assert_eq!(crate::settings::get(&pc, "hide_below").unwrap(), "off");
+    }
+
+    #[test]
+    fn only_listed_settings_with_good_values_come_from_the_sync_file() {
+        let mut phone = test_db();
+        crate::settings::set(&phone, "theme", "dark").unwrap();
+        let row = |uid: &str, value: &str| Row { uid: uid.into(), at: "2099-01-01T00:00:00Z".into(), data: json!({ "value": value }) };
+        let mut snapshot = Snapshot { format: FORMAT, ..Default::default() };
+        snapshot.tables.insert("settings".into(), vec![row("hide_below", "1; DROP TABLE offers"), row("theme", "light")]);
+        apply(&mut phone, &snapshot, NOW).unwrap();
+        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "off");
+        assert_eq!(crate::settings::get(&phone, "theme").unwrap(), "dark");
     }
 
     #[test]

@@ -27,6 +27,8 @@ const LOGIN_EXPIRED = "google login expired";
 const loginExpired = (text: string | null | undefined) => !!text && text.includes(LOGIN_EXPIRED);
 
 const QR_SECONDS = 120;
+/** Asking Google again survives a short loss of network (the phone is in the browser meanwhile). */
+const POLL_NET_FAILS = 3;
 
 /** Settings → "Sync": one encrypted file in Google Drive (`drive.file`), key to the phone by QR code. */
 export function SyncSettings({
@@ -90,13 +92,20 @@ export function SyncSettings({
     try {
       const c = await api.syncLoginStart();
       setCode(c);
-      onOpenLink(c.verificationUrl);
       polling.current = true;
       const until = Date.now() + c.expiresIn * 1000;
+      let netFails = 0;
       while (polling.current && Date.now() < until) {
         await new Promise((r) => setTimeout(r, Math.max(c.interval, 5) * 1000));
         if (!polling.current) return;
-        if (await api.syncLoginPoll(c.deviceCode)) {
+        let done = false;
+        try {
+          done = await api.syncLoginPoll(c.deviceCode);
+          netFails = 0;
+        } catch (e) {
+          if ((e as { code?: string })?.code !== "net" || ++netFails >= POLL_NET_FAILS) throw e;
+        }
+        if (done) {
           polling.current = false;
           setCode(null);
           onToast(t("sync.connected"));
@@ -255,13 +264,7 @@ export function SyncSettings({
           <section className="source" aria-labelledby="drive-title">
             <h3 id="drive-title" className="source-title">{t("sync.driveTitle")}</h3>
             {code ? (
-              <div className="device-code" role="status">
-                <p>{t("sync.typeCode")}</p>
-                <p className="device-code-value mono">{code.userCode}</p>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(code.verificationUrl)}>
-                  {code.verificationUrl}
-                </button>
-              </div>
+              <DeviceCodeSteps code={code} onOpenLink={onOpenLink} onToast={onToast} />
             ) : (
               <p>{connected ? t("sync.isConnected") : t("sync.notConnected")}</p>
             )}
@@ -284,8 +287,8 @@ export function SyncSettings({
               ))}
             {ownProject && !expired && <p className="hint">{t("sync.ownProject")}</p>}
             <div className="ai-row">
-              {!connected && (
-                <button type="button" className="btn btn-sign btn-small" disabled={!status?.client || code !== null} onClick={connect}>
+              {!connected && code === null && (
+                <button type="button" className="btn btn-sign btn-small" disabled={!status?.client} onClick={connect}>
                   {t("sync.connect")}
                 </button>
               )}
@@ -382,6 +385,56 @@ export function SyncSettings({
       )}
 
       {isPhone() && about}
+    </div>
+  );
+}
+
+/**
+ * The Google page covers the app, so the code comes first: copy it, and only then the page
+ * opens up. Google is asked all the time, so coming back finishes the connection by itself.
+ */
+function DeviceCodeSteps({ code, onOpenLink, onToast }: { code: DeviceCode; onOpenLink: (url: string) => void; onToast: (text: string) => void }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const [opened, setOpened] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code.userCode);
+      onToast(t("mail.copied"));
+    } catch {
+      onToast(t("sync.copyFailed"));
+    }
+    // Also after a failed copy: the code can be typed by hand, the way must not stay shut.
+    setCopied(true);
+  }
+
+  return (
+    <div className="device-code">
+      <h4 className="device-code-title">{t("sync.stepsTitle")}</h4>
+      <ol className="device-code-steps">
+        <li>{t("sync.step1")}</li>
+        <li>{t("sync.step2")}</li>
+        <li>{t("sync.step3")}</li>
+      </ol>
+      <p className="device-code-value mono">{code.userCode}</p>
+      <div className="ai-row">
+        <button type="button" className={`btn btn-small ${copied ? "btn-ghost" : "btn-sign"}`} onClick={copy}>
+          {t("sync.copyCode")}
+        </button>
+        <button
+          type="button"
+          className={`btn btn-small ${copied ? "btn-sign" : "btn-ghost"}`}
+          disabled={!copied}
+          onClick={() => {
+            setOpened(true);
+            onOpenLink(code.verificationUrl);
+          }}
+        >
+          {t("sync.openGoogle")} <IconArrowOut />
+        </button>
+      </div>
+      <p role="status">{t(opened ? "sync.waiting" : copied ? "sync.copiedNext" : "sync.copyFirst")}</p>
     </div>
   );
 }

@@ -3087,17 +3087,56 @@ fieldset.plain {
 
 /* ---------- sync ---------- */
 
+/* The way to connect stands out as a whole yellow sign: dark tile for the code, dark buttons. */
 .device-code {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.4rem;
+  gap: 0.55rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+  border-radius: 4px;
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+.device-code :focus-visible {
+  outline-color: var(--signal-ink);
+}
+
+.device-code .btn-sign {
+  --btn-bg: var(--signal-ink);
+  --btn-ink: var(--signal);
+  background: var(--signal-ink);
+  color: var(--signal);
+  border-color: var(--signal-ink);
+}
+
+.device-code .btn-ghost {
+  --btn-bg: var(--signal);
+  --btn-ink: var(--signal-ink);
+  color: var(--signal-ink);
+}
+
+.device-code-title {
+  margin: 0;
+  font-family: var(--font-board);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.device-code-steps {
+  margin: 0;
+  padding-left: 1.4rem;
+  font-weight: 600;
 }
 
 .device-code-value {
   padding: 0.3rem 0.8rem;
-  background: var(--signal);
-  color: var(--signal-ink);
+  border-radius: 3px;
+  background: var(--signal-ink);
+  color: var(--signal);
   font-size: 1.6rem;
   font-weight: 700;
   letter-spacing: 0.15em;
@@ -3537,15 +3576,33 @@ html.scanning .scan-overlay * {
   align-self: start;
 }
 
-/* "Back to the list" - only where the card is below the list (the same step as .split). */
+/* The list and the card are separate screens (the same step as .split). "Back to the list" stays
+   in reach all the way down a long card. */
 .pass-back {
   display: none;
 }
 
 @container app (max-width: 58rem) {
+  .app:not(.is-card) .pass,
+  .app.is-card .topbar,
+  .app.is-card .board-panel {
+    display: none;
+  }
+
+  .app.is-card .pass {
+    flex: 1 1 0;
+    min-height: 0;
+    margin: 0;
+    border-radius: 0;
+  }
+
   .pass-back {
     display: inline-flex;
+    position: sticky;
+    top: 0.5rem;
+    z-index: 1;
     margin: 0.6rem 0 0 1.2rem;
+    background: var(--paper);
   }
 }
 
