@@ -308,23 +308,23 @@ function PhoneReminders({ on, onChange, onAllowed }: { on: boolean; onChange: (o
         />
         <span>{t("bg.remindersPhone")}</span>
       </label>
-      {on && !allowed && (
-        <div className="source-warn">
-          <p>{t("bg.remindersOff")}</p>
-          <button
-            type="button"
-            className="btn btn-ghost btn-small"
-            onClick={async () => {
-              // After a second "no" Android stops asking - only its settings can change that.
-              const ok = await askNotifications().catch(() => false);
-              show(ok);
-              if (!ok) await openAppSettings().catch(() => {});
-            }}
-          >
-            {t("bg.remindersEnable")}
-          </button>
-        </div>
-      )}
+      <div className={on && !allowed ? "source-warn notify-state" : "notify-state"}>
+        <p>{t(allowed ? "bg.remindersOn" : "bg.remindersOff")}</p>
+        <button
+          type="button"
+          className="btn btn-ghost btn-small"
+          onClick={async () => {
+            // An app cannot take the permission back by itself - only Android's settings can.
+            if (allowed) return openAppSettings().catch(() => {});
+            // After a second "no" Android stops asking - only its settings can change that.
+            const ok = await askNotifications().catch(() => false);
+            show(ok);
+            if (!ok) await openAppSettings().catch(() => {});
+          }}
+        >
+          {t(allowed ? "bg.remindersDisable" : "bg.remindersEnable")}
+        </button>
+      </div>
     </>
   );
 }

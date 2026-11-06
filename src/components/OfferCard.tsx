@@ -334,9 +334,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             </button>
           </fieldset>
           {isWebUrl(offer.url) && (
-            <button type="button" className="btn btn-sign pass-open" aria-label={t("card.open")} onClick={() => onOpenLink(offer.url!)}>
-              <IconArrowOut /> <span className="pass-open-long">{t("card.open")}</span>
-              <span className="pass-open-short">{t("card.openShort")}</span>
+            <button type="button" className="btn btn-sign pass-open" onClick={() => onOpenLink(offer.url!)}>
+              <IconArrowOut /> {t("card.open")}
             </button>
           )}
         </div>

@@ -1282,32 +1282,25 @@ details[open]::details-content {
   justify-content: center;
 }
 
-.pass-open-short {
-  display: none;
-}
-
-/* A narrow card (a phone, the card beside the list): the whole stub in one row (it wraps only at 320 px or with big text). */
+/* A narrow card (a phone, the card beside the list): the decisions fill one row, the main button the next. */
 @container pass (max-width: 34rem) {
   .pass-dock {
-    gap: 0.5rem 0.4rem;
-    padding-inline: 1rem;
+    gap: 0.6rem 0.4rem;
+    padding: 0.75rem 1rem;
   }
 
-  .pass-dock .seg:not(.seg-icon) {
-    padding-inline: 0.4rem;
+  .pass-dock .interest-set,
+  .pass-open {
+    flex-basis: 100%;
   }
 
-  .pass-dock .seg-icon {
-    margin-left: 0.4rem;
+  /* Separate buttons here, not one strip: a thumb needs air between them. */
+  .pass-dock .interest-set {
+    gap: 0.4rem;
   }
 
-  .pass-open svg,
-  .pass-open-long {
-    display: none;
-  }
-
-  .pass-open-short {
-    display: inline;
+  .pass-dock .seg {
+    margin-right: 0;
   }
 }
 
@@ -2581,6 +2574,14 @@ fieldset.plain {
   margin-top: 0.1rem;
 }
 
+/* Android's answer about notifications, its button in a line of its own. */
+.notify-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
 /* "Jobs by [Adzuna logo]" - the logo on its own white plate (as Adzuna ships it), at least 116 x 23 px. */
 .adzuna-credit {
   display: flex;
@@ -2676,6 +2677,11 @@ fieldset.plain {
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: 0.6rem 1rem;
   align-items: start;
+}
+
+/* Two fields in a row at most, one under the other when two would not fit. */
+.mail-grid-pairs {
+  grid-template-columns: repeat(auto-fit, minmax(max(15rem, calc(50% - 0.5rem)), 1fr));
 }
 
 .mail-grid .field > span:first-child,
@@ -2774,6 +2780,69 @@ fieldset.plain {
   .copy-list > div {
     grid-template-columns: 1fr;
     gap: 0.1rem;
+  }
+
+  /* The field as wide as the others in the window, its buttons in a line of their own. */
+  .secret-row {
+    flex-wrap: wrap;
+  }
+
+  .secret-row input {
+    flex-basis: 100%;
+  }
+
+  /* No room for the check mark on a narrow screen - the chosen one is the filled one. */
+  .seg[aria-pressed="true"]:not(.seg-icon, .seg-small)::before,
+  .seg-radio:has(input:checked)::before {
+    content: none;
+  }
+
+  /* A name that breaks into two lines still reads as one. */
+  .seg-radio {
+    line-height: 1.15;
+  }
+
+  /* Equal margins at both edges of the screen, wherever its "?" stands. */
+  .help-tip {
+    position-area: bottom span-all;
+    position-try-fallbacks: flip-block;
+    justify-self: center;
+  }
+
+  /* A section's name alone, its switch in the next line. */
+  .crit-head h3 {
+    flex-basis: 100%;
+  }
+
+  .hard-switch {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+  }
+
+  .hard-switch .seg {
+    flex: 1 1 auto;
+    justify-content: center;
+    margin-right: 0;
+    padding: 0.35rem 0.7rem;
+  }
+
+  /* The choices share the whole width; the filled one needs no check mark here either. */
+  .crit-row .chips {
+    flex: 1 1 100%;
+  }
+
+  .crit-row .chip {
+    flex: 1 1 auto;
+  }
+
+  .crit-row .chip span {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .chip input:checked + span::before {
+    content: none;
   }
 }
 
@@ -3731,6 +3800,10 @@ fieldset.plain {
     max-block-size: 50dvh;
   }
 
+  .textarea-tall {
+    min-block-size: 10lh;
+  }
+
   /* No hover on a touch screen to bring a closed offer back to full colour - dim the ink instead of the whole row. */
   .board tbody tr.is-closed {
     opacity: 1;
@@ -3892,6 +3965,17 @@ html.scanning .scan-overlay * {
   /* The message stands above the pinned "Very | Maybe | No", not on it. */
   .app.is-card:has(.pass-dock) .toast-zone {
     bottom: calc(max(48px, 2.75rem) + 2.2rem);
+  }
+}
+
+/* The same when the stub takes two rows (`@container pass` above). */
+@container app (max-width: 34rem) {
+  .app.is-card .pass {
+    scroll-padding-bottom: calc(2 * max(48px, 2.75rem) + 2.5rem);
+  }
+
+  .app.is-card:has(.pass-dock) .toast-zone {
+    bottom: calc(2 * max(48px, 2.75rem) + 2.7rem);
   }
 }
 

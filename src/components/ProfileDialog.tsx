@@ -370,6 +370,7 @@ export function ProfileFields({
       <label className="field">
         <span>{t("profile.experience")}</span>
         <textarea
+          className="textarea-tall"
           rows={3}
           maxLength={20000}
           aria-describedby="experience-hint"

@@ -112,7 +112,6 @@ export const en: Record<keyof typeof pl, string> = {
   "card.history": "History",
   "card.sources": "Where it appeared",
   "card.open": "Open offer",
-  "card.openShort": "Open",
   "form.range": "Enter a number from {min} to {max}.",
   "form.invalid": "Check what is typed here.",
   "form.url": "The address must start with http:// or https://.",
@@ -706,6 +705,8 @@ export const en: Record<keyof typeof pl, string> = {
   "bg.remindersPhone": "Reminders of interviews and dates (a day and an hour before)",
   "bg.remindersOff": "Notifications are turned off in Android - reminders will not come.",
   "bg.remindersEnable": "Turn on notifications",
+  "bg.remindersOn": "Notifications are turned on in Android.",
+  "bg.remindersDisable": "Turn off in Android settings",
 
   "settings.s.data": "Data",
   "settings.s.about": "About",

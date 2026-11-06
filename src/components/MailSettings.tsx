@@ -133,7 +133,7 @@ export function MailSettings({
         </p>
       </div>
 
-      <div className="mail-grid">
+      <div className="mail-grid mail-grid-pairs">
         <TextSetting
           label={t("mail.user")}
           maxLength={TEXT_MAX.mail_user}

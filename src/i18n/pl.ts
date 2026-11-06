@@ -111,7 +111,6 @@ export const pl = {
   "card.history": "Historia",
   "card.sources": "Gdzie się pojawiła",
   "card.open": "Otwórz ofertę",
-  "card.openShort": "Otwórz",
   "form.range": "Wpisz liczbę od {min} do {max}.",
   "form.invalid": "Sprawdź, co tu jest wpisane.",
   "form.url": "Adres musi zaczynać się od http:// albo https://.",
@@ -706,6 +705,8 @@ export const pl = {
   "bg.remindersPhone": "Przypomnienia o rozmowach i terminach (dzień i godzinę przed)",
   "bg.remindersOff": "Powiadomienia są wyłączone w Androidzie - przypomnienia nie przyjdą.",
   "bg.remindersEnable": "Włącz powiadomienia",
+  "bg.remindersOn": "Powiadomienia są włączone w Androidzie.",
+  "bg.remindersDisable": "Wyłącz w ustawieniach Androida",
 
   "settings.s.data": "Dane",
   "settings.s.about": "O aplikacji",
