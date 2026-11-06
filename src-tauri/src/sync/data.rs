@@ -406,6 +406,18 @@ mod tests {
     }
 
     #[test]
+    fn a_threshold_chosen_before_settings_travelled_still_reaches_the_phone() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        pc.execute("INSERT INTO settings (key, value) VALUES ('hide_below', '50')", []).unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "50");
+
+        crate::settings::set(&phone, "hide_below", "70").unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::settings::get(&pc, "hide_below").unwrap(), "70");
+    }
+
+    #[test]
     fn only_listed_settings_with_good_values_come_from_the_sync_file() {
         let mut phone = test_db();
         crate::settings::set(&phone, "theme", "dark").unwrap();

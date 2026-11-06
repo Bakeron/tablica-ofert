@@ -11,6 +11,8 @@ use crate::error::{AppError, AppResult};
 /// so both devices must agree. All the others stay on their device.
 pub const SYNCED: &[&str] = &["hide_below"];
 
+const OLDEST_CHANGE: &str = "2000-01-01T00:00:00Z";
+
 /// Where the time of a synced setting's last change is kept (never shown to the interface).
 fn changed_key(key: &str) -> String {
     format!("{key}_changed_at")
@@ -238,8 +240,10 @@ fn store_change(conn: &Connection, key: &str, value: &str, at: &str) -> AppResul
 }
 
 /// When a synced setting last changed here; `None` = never, so the other device decides.
+/// A value chosen before settings travelled has no time: it counts, but any real change beats it.
 pub fn changed_at(conn: &Connection, key: &str) -> AppResult<Option<String>> {
-    Ok(conn.query_row("SELECT value FROM settings WHERE key = ?1", [changed_key(key)], |r| r.get(0)).optional()?)
+    let read = |k: &str| conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| r.get::<_, String>(0)).optional();
+    Ok(read(&changed_key(key))?.or(read(key)?.map(|_| OLDEST_CHANGE.to_string())))
 }
 
 /// A value from the sync file, kept with the time of the change on the other device. Comes
