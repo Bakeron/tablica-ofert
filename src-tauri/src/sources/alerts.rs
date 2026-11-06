@@ -39,7 +39,7 @@ const NOT_OFFER: &[&str] = &[
     "unsubscribe", "wypisz", "rezygn", "ustawien", "settings", "preferen", "privacy", "prywatno", "polityk",
     "regulamin", "terms", "pomoc", "help", "kontakt", "contact", "app store", "google play", "facebook",
     "instagram", "twitter", "youtube", "tiktok", "zobacz wszystkie", "see all", "wiecej ofert", "more jobs",
-    "zarzadzaj", "manage", "zaloguj", "log in", "sign in", "pobierz aplikacje", "download",
+    "nowe oferty", "nowych ofert", "new jobs", "new offers", "zarzadzaj", "manage", "zaloguj", "log in", "sign in", "pobierz aplikacje", "download",
 ];
 
 /// Lines that carry no information about the offer.
@@ -231,9 +231,17 @@ fn is_offer_url(url: &Url, portal: &Portal) -> bool {
     portal.offer_paths.iter().any(|p| path.contains(p))
 }
 
+/// "10 ofert", "5 jobs for you": a link to a list of offers, never one offer.
+fn offer_count(text: &str) -> bool {
+    let n = normalize(text);
+    let mut words = n.split_whitespace();
+    words.next().is_some_and(|w| w.chars().all(|c| c.is_ascii_digit()))
+        && words.any(|w| ["ofert", "offer", "job"].iter().any(|s| w.starts_with(s)))
+}
+
 fn blocked(text: &str) -> bool {
     let n = normalize(text);
-    NOT_OFFER.iter().any(|w| n.contains(w))
+    NOT_OFFER.iter().any(|w| n.contains(w)) || offer_count(text)
 }
 
 /// How sure we are that a link points to an offer.
@@ -445,6 +453,10 @@ pub fn offers_in_mail(sender: &str, html: Option<&str>, text: Option<&str>) -> V
                     }
                     continue;
                 };
+                // Even with an address that looks like an offer (a portal's list has such addresses too).
+                if offer_count(&text) {
+                    continue;
+                }
                 if let Some(last) = drafts.last_mut() {
                     // Logo, title and "apply" usually point to the same offer.
                     if last.url == url {
@@ -655,6 +667,18 @@ mod tests {
         // From an unknown sender a tracking link is not trusted.
         let offers = offers_in_mail("ktos@example.com", Some(html), None);
         assert_eq!(offers.len(), 1);
+    }
+
+    #[test]
+    fn a_link_to_the_list_of_offers_is_not_an_offer() {
+        let html = r#"<p><a href="https://click.pracuj.pl/c/list">10 nowych ofert</a></p><p>Programista WordPress</p><p>zdalnie</p>
+            <p><a href="https://rocketjobs.pl/oferty-pracy/programista">5 ofert</a></p><p>Programista WordPress</p>
+            <p><a href="https://click.pracuj.pl/c/all">Nowe oferty dla Ciebie</a></p>
+            <p><a href="https://www.pracuj.pl/praca/programista,oferta,1000123456">Programista PHP</a></p><p>Firma Zmyślona</p><p>3 new jobs for you</p>"#;
+        let offers = offers_in_mail("Pracuj.pl <powiadomienia@pracuj.pl>", Some(html), None);
+        assert_eq!(offers.len(), 1);
+        assert_eq!((offers[0].title.as_str(), offers[0].company.as_str()), ("Programista PHP", "Firma Zmyślona"));
+        assert!(!offer_count("3D Artist") && !offer_count("2 Senior Developers") && !offer_count("Job Coach"));
     }
 
     #[test]

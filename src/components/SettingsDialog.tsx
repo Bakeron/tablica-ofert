@@ -69,7 +69,7 @@ export function SettingsDialog({
 }) {
   const { t } = useI18n();
   return (
-    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide">
+    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide modal-settings">
       <SettingsBody
         api={api}
         settings={settings}

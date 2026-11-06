@@ -554,7 +554,7 @@ export const pl = {
   "ai.every.180": "co 3 godziny",
   "ai.every.1440": "raz dziennie",
   "ai.autoOnHint": "Co wybrany czas (gdy aplikacja jest otwarta albo pobiera oferty w tle) AI czyta oferty czekające na ocenę - każda oferta to jedno zapytanie do dostawcy.",
-  "ai.autoOffHint": "AI ocenia tylko po kliknięciu „Oceń teraz” albo „Oceń tę ofertę” na karcie - nic nie dzieje się samo.",
+  "ai.autoOffHint": "Teraz wyłączone: AI ocenia tylko po kliknięciu „Oceń teraz” albo „Oceń tę ofertę” na karcie. Zaznacz, a samo przeczyta nowe oferty - każda oferta to jedno zapytanie do dostawcy.",
   "ai.usedUpApp": "Dzienny limit z ustawień wykorzystany (zapytań: {limit}) - jutro AI zapyta znowu.",
   "ai.usedUpProvider": "{name} odpowiada, że jego dzienny limit jest wykorzystany - jutro AI zapyta znowu.",
   "ai.limitNow": "Dzienny limit wykorzystany: {list}.",

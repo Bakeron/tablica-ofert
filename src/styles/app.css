@@ -1547,6 +1547,11 @@ textarea {
   width: min(760px, calc(100vw - 2rem));
 }
 
+.modal-settings {
+  width: 960px;
+  max-width: 80%;
+}
+
 .modal::backdrop {
   background: rgb(0 0 0 / 0.6);
 }
@@ -1569,7 +1574,7 @@ textarea {
 .sheet:not(.sheet-narrow) .sheet-head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   gap: 1rem;
   margin: -1.1rem -1.3rem 0;
   padding: 0.5rem 0.8rem 0.5rem 1.3rem;
@@ -1586,7 +1591,7 @@ textarea {
 .sheet:not(.sheet-narrow) > .sheet-foot {
   position: sticky;
   bottom: 0;
-  z-index: 1;
+  z-index: 2;
   margin: 0 -1.3rem -1.3rem;
   padding: 0.75rem 1.3rem;
   border-top: 2px dashed var(--perf);
@@ -1628,7 +1633,7 @@ textarea {
 .leave-ask {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2415,7 +2420,7 @@ fieldset.plain {
 .settings-top {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
@@ -3509,24 +3514,23 @@ fieldset.plain {
     font-size: 0.85rem;
   }
 
-  /* The main buttons share a row, whole words only; "Delete" / "Skip" sits under them. */
+  /* Whole words only; with "Delete" / "Skip" around, the main button takes the last row, under the thumb. */
   .sheet-foot {
     flex-wrap: wrap;
   }
 
   .sheet-foot .btn {
+    flex: 1;
     justify-content: center;
     white-space: nowrap;
   }
 
-  .sheet-foot .btn:not(.sheet-foot-start) {
-    flex: 1;
+  .sheet-foot .sheet-foot-start {
+    margin-right: 0;
   }
 
-  .sheet-foot .sheet-foot-start {
-    order: 1;
+  .sheet-foot:has(.sheet-foot-start) .btn-sign {
     flex-basis: 100%;
-    margin-right: 0;
   }
 
   .commute-count {
@@ -3594,6 +3598,7 @@ fieldset.plain {
   display: flex;
   align-items: stretch;
   max-width: min(40rem, calc(100vw - 2rem));
+  padding-bottom: 7px;
   background: #0b0c0d;
   color: #f2f0e8;
   font-family: var(--font-board);
@@ -3619,8 +3624,37 @@ fieldset.plain {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 3px;
-  background: linear-gradient(to right, var(--signal) calc(var(--share) * 100%), transparent 0);
+  height: 7px;
+  overflow: hidden;
+  background: rgb(242 240 232 / 0.18);
+}
+
+.work-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--signal);
+  transform: scaleX(var(--share));
+  transform-origin: left;
+  transition: transform 300ms ease-out;
+}
+
+/* A step that cannot be measured: a block going to and fro says "still working", not "30% done". */
+.work-bar[data-unknown]::before {
+  right: 70%;
+  transform: none;
+  animation: work-unknown 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes work-unknown {
+  to {
+    transform: translateX(233.33%);
+  }
+}
+
+[data-motion="reduced"] .work-bar[data-unknown]::before {
+  right: 0;
+  opacity: 0.5;
 }
 
 /* ---------- a folded source: name, switch, one line; the rest after a click ---------- */

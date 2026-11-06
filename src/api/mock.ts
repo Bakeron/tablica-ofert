@@ -386,6 +386,7 @@ export function createMockApi(): Api {
         { step: "remotive", source: null, done: 1, total: 2 },
         { step: "wait", source: "remotive", done: 2, total: 2 },
         { step: "check", source: "himalayas", done: 3, total: 12 },
+        { step: "mail", source: null, done: 1, total: 1 },
       ];
       for (const step of steps) {
         tellProgress(step);

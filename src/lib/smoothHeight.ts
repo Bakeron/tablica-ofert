@@ -1,7 +1,7 @@
 import { motionReduced } from "./presence";
 
-/** How long after the change the height still follows: a section loads its data a moment later. */
-const FOLLOW_MS = 400;
+/** How long after the change the height still follows: a section may need a while to load its data. */
+const FOLLOW_MS = 1500;
 
 /**
  * A window with `height: auto` jumps to the height of new content - CSS cannot animate from

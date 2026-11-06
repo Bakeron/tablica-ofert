@@ -189,6 +189,7 @@ export function SourcesSettings({
         onChange={onChange}
         onSaveSecret={saveSecret}
         onDeleteSecret={deleteSecret}
+        onChecked={load}
         onOpenLink={onOpenLink}
         onToast={onToast}
       />

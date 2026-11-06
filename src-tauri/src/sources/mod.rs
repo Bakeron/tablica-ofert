@@ -266,6 +266,12 @@ fn record(conn: &Connection, run: &SourceRun, now: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// The source works again (checked in the settings): the last run's result stays, its error goes.
+pub fn clear_error(conn: &Connection, source: &str) -> AppResult<()> {
+    conn.execute("UPDATE source_runs SET last_error = NULL WHERE source = ?1", params![source])?;
+    Ok(())
+}
+
 /// Saves fetched offers one by one - one bad offer never stops the others.
 fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, report: &mut FetchReport) -> AppResult<()> {
     for offer in found {
@@ -837,6 +843,11 @@ mod tests {
         assert_eq!(s.last_ok.as_deref(), Some("2026-11-02T10:00:00Z"));
         assert_eq!(s.last_error.as_deref(), Some("timeout"));
         assert_eq!((s.added, s.merged), (3, 1));
+
+        clear_error(&conn, "adzuna").unwrap();
+        let s = status(&conn, false, false, false).unwrap().into_iter().find(|s| s.source == "adzuna").unwrap();
+        assert_eq!(s.last_error, None);
+        assert_eq!(s.last_ok.as_deref(), Some("2026-11-02T10:00:00Z"));
     }
 
 

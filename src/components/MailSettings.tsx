@@ -69,6 +69,7 @@ export function MailSettings({
   onChange,
   onSaveSecret,
   onDeleteSecret,
+  onChecked,
   onOpenLink,
   onToast,
 }: {
@@ -81,6 +82,8 @@ export function MailSettings({
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   onSaveSecret: (name: SecretName, value: string) => Promise<boolean>;
   onDeleteSecret: (name: SecretName) => Promise<boolean>;
+  /** The mailbox answered, so the source's status has just changed. */
+  onChecked: () => Promise<void>;
   onOpenLink: (url: string) => void;
   onToast: (text: string) => void;
 }) {
@@ -99,6 +102,7 @@ export function MailSettings({
     try {
       const count = await api.mailTest();
       setResult({ ok: true, text: t("mail.testOk", { count }) });
+      await onChecked();
       // The mailbox works - setting up alerts on the portals is what comes next.
       if (howtoRef.current) howtoRef.current.open = true;
     } catch (e) {

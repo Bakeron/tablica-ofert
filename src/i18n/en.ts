@@ -554,7 +554,7 @@ export const en: Record<keyof typeof pl, string> = {
   "ai.every.180": "every 3 hours",
   "ai.every.1440": "once a day",
   "ai.autoOnHint": "Every chosen time (while the app is open or fetches offers in the background) AI reads the offers waiting for a rating - each offer is one request to the provider.",
-  "ai.autoOffHint": "AI rates only after a click on “Rate now” or “Rate this offer” on the card - nothing happens by itself.",
+  "ai.autoOffHint": "Off now: AI scores only when you click “Score now” or “Score this offer” on the card. Tick the box and it reads new offers by itself - each offer is one request to the provider.",
   "ai.usedUpApp": "The daily limit from the settings is used (requests: {limit}) - AI asks again tomorrow.",
   "ai.usedUpProvider": "{name} says its daily limit is used - AI asks again tomorrow.",
   "ai.limitNow": "Daily limit used: {list}.",

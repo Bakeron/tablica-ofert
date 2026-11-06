@@ -246,9 +246,12 @@ pub async fn source_status(state: State<'_, AppState>) -> AppResult<Vec<SourceSt
 pub async fn mail_test(state: State<'_, AppState>) -> AppResult<u32> {
     let settings = with_db(&state, |c| settings::all(c))?;
     let config = sources::mail::config(&settings)?.ok_or_else(|| AppError::Missing("mailbox".into()))?;
-    tauri::async_runtime::spawn_blocking(move || sources::mail::test(&config))
+    let count = tauri::async_runtime::spawn_blocking(move || sources::mail::test(&config))
         .await
-        .map_err(|e| AppError::Net(e.to_string()))?
+        .map_err(|e| AppError::Net(e.to_string()))??;
+    // The mailbox answered, so an error from an earlier run says nothing true any more.
+    with_db(&state, |c| sources::clear_error(c, sources::mail::SOURCE))?;
+    Ok(count)
 }
 
 /// "Fetch now": every enabled source that may run (daily limits still apply).

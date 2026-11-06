@@ -80,9 +80,20 @@ function workText(p: WorkProgress, t: (key: TextKey, params?: Record<string, str
   }
 }
 
+/** Steps whose `done` is a percent ready; the others name the item in work, not finished yet. */
+const PERCENT_STEPS = ["pull", "ollama-download"];
+
+/** How far the step is, 0-1; `null` = cannot be told (one request, one mailbox). */
+function stepShare(p: WorkProgress): number | null {
+  if (p.total <= 1) return null;
+  const ready = PERCENT_STEPS.includes(p.step) ? p.done : p.done - 1;
+  return Math.min(1, Math.max(0, ready / p.total));
+}
+
 /**
  * The line "Now: ..." at the bottom while offers are fetched or read by AI - a long fetch
- * never looks frozen. Not read aloud at every step (it changes every second), only shown.
+ * never looks frozen, and the bar under it says how much of the step is left. Not read aloud
+ * at every step (it changes every second), only shown.
  */
 function WorkLine() {
   const { t } = useI18n();
@@ -90,12 +101,12 @@ function WorkLine() {
   const { mounted, leaving } = usePresence(live !== null);
   const work = useLastShown(live !== null, live);
   if (!mounted || !work) return null;
-  const share = work.total > 0 ? Math.min(1, work.done / work.total) : 0;
+  const share = stepShare(work);
   return (
     <div className="work-line fade" aria-live="off" aria-label={t("work.label")} data-leaving={leaving || undefined}>
       <span className="work-now">{t("work.now")}</span>
       <span className="work-text">{workText(work, t)}</span>
-      {work.total > 1 && <span className="work-bar" style={{ "--share": share } as CSSProperties} aria-hidden="true" />}
+      <span className="work-bar" data-unknown={share === null || undefined} style={{ "--share": share ?? 0 } as CSSProperties} aria-hidden="true" />
     </div>
   );
 }
