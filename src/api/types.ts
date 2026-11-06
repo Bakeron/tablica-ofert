@@ -17,7 +17,7 @@ export type Interest = "high" | "maybe" | "no";
 export type Remote = "yes" | "hybrid" | "no" | "unknown";
 export type SalaryPeriod = "month" | "hour";
 export type FilterResult = "pass" | "fail" | "unsure";
-export type View = "board" | "review" | "rejected" | "declined" | "trash";
+export type View = "today" | "board" | "review" | "rejected" | "declined" | "archive" | "trash";
 export type Contract = "uop" | "b2b" | "mandate";
 export type Level = "junior" | "mid" | "senior";
 export type OfferLanguage = "pl" | "en";
@@ -107,14 +107,14 @@ export interface ProfileFilter {
 }
 
 export interface ViewCounts {
+  /** Offers in "Today" (as many as the setting says, plus the ones added by hand or starred). */
+  today: number;
   board: number;
   review: number;
   rejected: number;
   /** Offers marked "no" - out of every other tab until the interest changes. */
   declined: number;
   trash: number;
-  /** Offers on the board hidden by "hide offers scored below X". */
-  hidden: number;
 }
 
 export interface OfferRow {
@@ -145,7 +145,22 @@ export interface OfferRow {
   /** Language of the AI translation - used only when it is the app language. */
   translationLang: OfferLanguage | null;
   titleTranslated: string | null;
+  /** When the offer was published (the source's date, the alert mail's date or when it was added). */
+  publishedAt: string;
+  /** Past its fresh days and still here - "probably expired". */
+  stale: boolean;
+  /** Applied and further - never greyed out or pushed down. */
+  inRecruitment: boolean;
+  /** Added by hand - always at the top of "Today". */
+  manual: boolean;
+  /** Set = in the archive. */
+  archivedAt: string | null;
+  /** One sentence from AI: why this score. */
+  scoreWhy: string | null;
 }
+
+/** What "Expired" did: nobody touched the offer - archived; otherwise marked "expired". */
+export type ExpiredBy = "archived" | "marked";
 
 /** One offer for "Export to Excel (CSV)" - raw values (mirrors `model::ExportRow`). */
 export interface ExportRow {
@@ -171,6 +186,7 @@ export interface ExportRow {
   notes: string | null;
   /** The tab the offer is in (all profiles together). */
   list: View;
+  publishedAt: string;
 }
 
 export type EventKind = "interview" | "deadline" | "other";
@@ -404,7 +420,10 @@ export interface Settings {
   /** Minutes between the runs of AI on its own. */
   ai_every: "30" | "60" | "180" | "1440";
   ollama_url: string;
-  hide_below: "off" | "30" | "40" | "50" | "60" | "70";
+  /** Days after publication an offer stays fresh: then untouched ones leave for the archive. */
+  fresh_days: "10" | "7" | "14" | "21" | "30";
+  /** How many offers "Today" shows (the ones added by hand or starred on top). */
+  today_count: "15" | "10" | "20" | "30";
 }
 
 /** Defaults - the same as the first value of every rule in settings.rs, except `onboarding`:
@@ -449,7 +468,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ai_auto: "off",
   ai_every: "30",
   ollama_url: "http://localhost:11434",
-  hide_below: "off",
+  fresh_days: "10",
+  today_count: "15",
 };
 
 /** Countries covered by Adzuna (mirrors `ADZUNA_COUNTRIES` in settings.rs). */
@@ -501,6 +521,8 @@ export interface SourceRun {
   merged: number;
   blocked: number;
   invalid: number;
+  /** Published longer ago than offers stay fresh - not saved. */
+  old: number;
   error: { code: AppError["code"]; detail: string } | null;
 }
 

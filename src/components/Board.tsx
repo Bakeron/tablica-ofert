@@ -18,6 +18,9 @@ export interface Sort {
   dir: "asc" | "desc";
 }
 
+/** Every tab but "Today": the newest published first. */
+export const DEFAULT_SORT: Sort = { key: "added", dir: "desc" };
+
 const COLUMNS: { key: SortKey; label: TextKey; className: string }[] = [
   { key: "added", label: "col.added", className: "c-added" },
   { key: "offer", label: "col.offer", className: "c-offer" },
@@ -27,9 +30,10 @@ const COLUMNS: { key: SortKey; label: TextKey; className: string }[] = [
   { key: "status", label: "col.status", className: "c-status" },
 ];
 
-/** Finished offers - rejected, withdrawn or no longer listed. Kept for later, greyed out at the bottom. */
+/** Finished offers - rejected, withdrawn, or (outside a recruitment) expired or probably expired.
+ *  Kept for later, greyed out at the bottom. A recruitment never goes there: it only gets a mark. */
 export function isClosed(o: OfferRow): boolean {
-  return o.stage === "rejected" || o.stage === "withdrawn" || o.expired;
+  return o.stage === "rejected" || o.stage === "withdrawn" || ((o.expired || o.stale) && !o.inRecruitment);
 }
 
 /** Sorted by the chosen column, with finished offers always in their own group below the rest. */
@@ -37,7 +41,7 @@ export function sortRows(rows: OfferRow[], sort: Sort): OfferRow[] {
   const value = (o: OfferRow): string | number => {
     switch (sort.key) {
       case "added":
-        return o.addedAt;
+        return o.publishedAt;
       case "offer":
         return `${o.title} ${o.company}`.toLocaleLowerCase();
       case "place":
@@ -66,21 +70,26 @@ interface Props {
   view: View;
   selectedId: number | null;
   freshIds: Set<number>;
-  sort: Sort;
+  /** `null` = the order the list came in ("Today", ranked by Rust). */
+  sort: Sort | null;
   onSort: (key: SortKey) => void;
   onSelect: (id: number) => void;
   onOpen: () => void;
   onInterest: (id: number, interest: Interest) => void;
   onTrash: (id: number) => void;
+  onExpired: (id: number) => void;
+  /** Quick browsing: the next offer after a decision made with a key. */
+  onNext: (id: number) => void;
 }
 
-export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash }: Props) {
+export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onNext }: Props) {
   const touch = useRef<{ id: number; x: number; y: number; axis: SwipeAxis | null } | null>(null);
   /** The row whose interest mark just came from a swipe - the mark flips in. */
   const [flipped, setFlipped] = useState<number | null>(null);
   const { t, lang } = useI18n();
   const index = rows.findIndex((r) => r.id === selectedId);
-  const firstClosed = rows.findIndex(isClosed);
+  // In the archive everything is old - no group of finished offers there.
+  const firstClosed = view === "archive" ? -1 : rows.findIndex(isClosed);
   const closedCount = firstClosed < 0 ? 0 : rows.length - firstClosed;
 
   function onKeyDown(e: KeyboardEvent) {
@@ -91,13 +100,18 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
       document.getElementById(`offer-${row.id}`)?.scrollIntoView({ block: "nearest" });
     };
     const interests: Record<string, Interest> = { "1": "high", "2": "maybe", "3": "no" };
+    const editable = selectedId !== null && view !== "trash" && view !== "archive";
     if (e.key === "ArrowDown") go(index + 1);
     else if (e.key === "ArrowUp") go(index < 0 ? 0 : index - 1);
     else if (e.key === "Home") go(0);
     else if (e.key === "End") go(rows.length - 1);
     else if (e.key === "Enter" && selectedId !== null) onOpen();
-    else if (interests[e.key] && selectedId !== null && view !== "trash") onInterest(selectedId, interests[e.key]);
-    else if (e.key === "Delete" && selectedId !== null && view !== "trash") onTrash(selectedId);
+    else if (interests[e.key] && editable) {
+      // A decision made - straight on to the next offer.
+      onInterest(selectedId, interests[e.key]);
+      onNext(selectedId);
+    } else if ((e.key === "w" || e.key === "W") && !e.ctrlKey && !e.metaKey && !e.altKey && editable) onExpired(selectedId);
+    else if (e.key === "Delete" && editable) onTrash(selectedId);
     else return;
     e.preventDefault();
   }
@@ -156,19 +170,25 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
         <thead role="rowgroup">
           <tr role="row">
             {COLUMNS.map((col) => {
-              const active = sort.key === col.key;
+              const active = sort?.key === col.key;
               return (
                 <th
                   key={col.key}
                   role="columnheader"
                   className={col.className}
                   scope="col"
-                  aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                  aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"}
                 >
                   <button type="button" className="sort" onClick={() => onSort(col.key)}>
-                    {col.key === "match" ? <abbr title={t("col.matchLong")}>{t(col.label)}</abbr> : t(col.label)}
+                    {col.key === "match" ? (
+                      <abbr title={t("col.matchLong")}>{t(col.label)}</abbr>
+                    ) : col.key === "added" ? (
+                      <abbr title={t("col.addedLong")}>{t(col.label)}</abbr>
+                    ) : (
+                      t(col.label)
+                    )}
                     <span className="sort-mark" aria-hidden="true">
-                      {active ? (sort.dir === "asc" ? "▲" : "▼") : ""}
+                      {active ? (sort?.dir === "asc" ? "▲" : "▼") : ""}
                     </span>
                   </button>
                 </th>
@@ -197,7 +217,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                 className={[
                   selected && "is-selected",
                   o.interest === "no" && "is-dim",
-                  o.expired && "is-expired",
+                  (o.expired || o.stale) && !o.inRecruitment && view !== "archive" && "is-expired",
                   i >= firstClosed && firstClosed >= 0 && "is-closed",
                 ]
                   .filter(Boolean)
@@ -230,8 +250,8 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                 }}
               >
                 <td role="gridcell" className="c-added">
-                  <CellName text={t("col.added")} />
-                  <Flap className="mono" text={addedLabel(o.addedAt, lang, t)} fresh={fresh} />
+                  <CellName text={t("col.addedLong")} />
+                  <Flap className="mono" text={addedLabel(o.publishedAt, lang, t)} fresh={fresh} />
                 </td>
                 <td role="gridcell" className="c-offer">
                   <span className="offer-line">
@@ -263,6 +283,11 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     )
                   )}
                   {(view === "review" || view === "rejected") && <RowReasons row={o} />}
+                  {view === "today" && o.manual && <span className="offer-sources">{t("row.manual")}</span>}
+                  {/* AI orders "Today" and never hides: one sentence says why the score. */}
+                  {view === "today" && o.scoreSource === "ai" && o.scoreWhy && (
+                    <span className="offer-why">{t("row.why", { why: o.scoreWhy })}</span>
+                  )}
                 </td>
                 <td role="gridcell" className="c-place">
                   <CellName text={t("cell.place")} />

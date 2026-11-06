@@ -662,6 +662,8 @@ details[open]::details-content {
 .board-head .count {
   color: var(--ink-dim);
   font-weight: 500;
+  /* "· 7 offers" never breaks between the number and its word. */
+  white-space: nowrap;
 }
 
 /* CSV export: the list to save and its button side by side, bottoms in one line. */
@@ -674,6 +676,9 @@ details[open]::details-content {
 
 /* Keyboard hint and "Export this list" on the right of the board heading. */
 .board-tools {
+  /* The keys hint wraps before the heading does. */
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -685,6 +690,7 @@ details[open]::details-content {
   margin: 0;
   font-size: 0.8rem;
   color: var(--ink-dim);
+  text-align: right;
 }
 
 .board-wrap {
@@ -1282,6 +1288,12 @@ details[open]::details-content {
   justify-content: center;
 }
 
+/* "Expired": a quick decision, but not the main one - plain, beside "Open". */
+.pass-expired {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
 /* A narrow card (a phone, the card beside the list): the decisions fill one row, the main button the next. */
 @container pass (max-width: 34rem) {
   .pass-dock {
@@ -1292,6 +1304,11 @@ details[open]::details-content {
   .pass-dock .interest-set,
   .pass-open {
     flex-basis: 100%;
+  }
+
+  /* "Expired" and "Open" share the last row; "Open" keeps the most room. */
+  .pass-dock:has(.pass-expired) .pass-open {
+    flex-basis: 0;
   }
 
   /* Separate buttons here, not one strip: a thumb needs air between them. */
@@ -1841,6 +1858,18 @@ textarea {
 .offer-reason-fail {
   border-left-style: solid;
   border-left-color: var(--danger);
+}
+
+/* "Today": AI's one sentence why the score - a quiet line under the company, at most two lines. */
+.offer-why {
+  display: -webkit-box;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-family: var(--font-text);
+  font-size: 0.8rem;
+  color: var(--ink-dim);
 }
 
 /* ---------- filter result on the boarding pass ---------- */
@@ -2979,22 +3008,6 @@ fieldset.plain {
   color: var(--paper-dim);
 }
 
-.hidden-note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0.35rem 1rem;
-  border-bottom: 1px solid var(--row-line);
-  color: var(--ink-dim);
-  font-size: 0.92rem;
-}
-
-.hidden-note .btn {
-  color: var(--ink);
-}
-
 .suggest {
   display: flex;
   flex-direction: column;
@@ -3261,6 +3274,27 @@ fieldset.plain {
 .choice-column {
   flex-direction: column;
   flex-wrap: nowrap;
+}
+
+/* The archive has no counter to empty - a search box to find an old offer instead. */
+.archive-search {
+  padding: 0 1rem 0.6rem;
+}
+
+.archive-search input {
+  width: 100%;
+  max-width: 28rem;
+}
+
+/* Settings → Look → Offer list: a name, the choices, a hint - one under another. */
+.list-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.list-option + .list-option {
+  margin-top: 0.6rem;
 }
 
 .about-list {

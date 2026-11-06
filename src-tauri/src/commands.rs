@@ -59,9 +59,8 @@ pub async fn list_offers(
     state: State<'_, AppState>,
     view: View,
     profile: Option<i64>,
-    show_low: Option<bool>,
 ) -> AppResult<Vec<OfferRow>> {
-    with_db(&state, |c| offers::list(c, view, profile, show_low.unwrap_or(false)))
+    with_db(&state, |c| offers::list(c, view, profile))
 }
 
 #[tauri::command]
@@ -124,6 +123,22 @@ pub fn until_done<T>(result: AppResult<T>, progress: OnProgress<'_>) -> AppResul
 #[tauri::command]
 pub async fn set_stage(state: State<'_, AppState>, id: i64, stage: Stage) -> AppResult<()> {
     with_db(&state, |c| offers::set_stage(c, id, stage))
+}
+
+/// "Expired" on the card: nobody touched it - to the archive; otherwise marked "expired".
+#[tauri::command]
+pub async fn set_expired(state: State<'_, AppState>, id: i64) -> AppResult<offers::ExpiredBy> {
+    with_db(&state, |c| offers::set_expired(c, id))
+}
+
+#[tauri::command]
+pub async fn unset_expired(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    with_db(&state, |c| offers::unset_expired(c, id))
+}
+
+#[tauri::command]
+pub async fn unarchive_offer(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    with_db(&state, |c| offers::unarchive(c, id))
 }
 
 #[tauri::command]

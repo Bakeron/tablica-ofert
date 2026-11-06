@@ -33,14 +33,14 @@ import type {
   Stage,
   View,
   ViewCounts,
+  ExpiredBy,
 } from "./types";
 
 /** The calls the UI makes. In the app they go to Rust; in a plain browser (design preview) to a mock. */
 export interface Api {
   appStatus(): Promise<AppStatus>;
-  /** `profile = null` - all profiles together (one fitting profile is enough).
-   *  `showLow` - also offers hidden by "hide offers scored below X". */
-  listOffers(view: View, profile: number | null, showLow?: boolean): Promise<OfferRow[]>;
+  /** `profile = null` - all profiles together (one fitting profile is enough). */
+  listOffers(view: View, profile: number | null): Promise<OfferRow[]>;
   countOffers(profile: number | null): Promise<ViewCounts>;
   getOffer(id: number): Promise<OfferDetail>;
   addOffer(offer: OfferInput): Promise<AddOutcome>;
@@ -50,6 +50,12 @@ export interface Api {
   setNotes(id: number, notes: string): Promise<void>;
   trashOffer(id: number): Promise<void>;
   restoreOffer(id: number): Promise<void>;
+  /** "Expired" on the card: nobody touched it - to the archive, otherwise marked. */
+  setExpired(id: number): Promise<ExpiredBy>;
+  /** "Undo" after "Expired". */
+  unsetExpired(id: number): Promise<void>;
+  /** "Bring back" in the archive - the offer never leaves by itself again. */
+  unarchiveOffer(id: number): Promise<void>;
   purgeOffers(id: number | null): Promise<number>;
   getSettings(): Promise<Settings>;
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): Promise<void>;
@@ -167,7 +173,7 @@ async function tauriApi(): Promise<Api> {
   const { invoke } = await import("@tauri-apps/api/core");
   return {
     appStatus: () => invoke("app_status"),
-    listOffers: (view, profile, showLow) => invoke("list_offers", { view, profile, showLow: showLow ?? false }),
+    listOffers: (view, profile) => invoke("list_offers", { view, profile }),
     countOffers: (profile) => invoke("count_offers", { profile }),
     getOffer: (id) => invoke("get_offer", { id }),
     addOffer: (offer) => invoke("add_offer", { offer }),
@@ -177,6 +183,9 @@ async function tauriApi(): Promise<Api> {
     setNotes: (id, notes) => invoke("set_notes", { id, notes }),
     trashOffer: (id) => invoke("trash_offer", { id }),
     restoreOffer: (id) => invoke("restore_offer", { id }),
+    setExpired: (id) => invoke("set_expired", { id }),
+    unsetExpired: (id) => invoke("unset_expired", { id }),
+    unarchiveOffer: (id) => invoke("unarchive_offer", { id }),
     purgeOffers: (id) => invoke("purge_offers", { id }),
     getSettings: () => invoke("get_settings"),
     setSetting: (key, value) => invoke("set_setting", { key, value }),

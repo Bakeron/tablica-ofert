@@ -525,9 +525,9 @@ mod tests {
         offers::add(&mut conn, from("Zwrotniczy (K/M)", "adzuna")).unwrap();
         offers::add(&mut conn, from("Programista PHP", "adzuna")).unwrap();
         // Adzuna gives only the start of the description - the keywords may be further on.
-        assert!(offers::list(&conn, View::Rejected, None, false).unwrap().is_empty());
+        assert!(offers::list(&conn, View::Rejected, None).unwrap().is_empty());
         let off_topic = |conn: &Connection| -> Vec<String> {
-            offers::list(conn, View::Review, None, false)
+            offers::list(conn, View::Review, None)
                 .unwrap()
                 .into_iter()
                 .filter(|o| o.filter_reasons.iter().any(|r| r.code == "keyword_none"))
@@ -560,8 +560,8 @@ mod tests {
         };
         offers::add(&mut conn, from("Programista WordPress", "WordPress, PHP, ACF i JavaScript, frontend.", "adzuna")).unwrap();
         offers::add(&mut conn, from("Backend Engineer (Go)", "Go i JavaScript.", "manual")).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Backend Engineer (Go)", "Programista WordPress"]);
-        let review = offers::list(&conn, View::Review, None, false).unwrap();
+        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Backend Engineer (Go)", "Programista WordPress"]);
+        let review = offers::list(&conn, View::Review, None).unwrap();
         assert_eq!(ids(&review), vec!["Backend Engineer (Kotlin)"]);
         assert_eq!(review[0].filter_reasons.last().unwrap().code, "low_keyword_score");
 
@@ -571,7 +571,7 @@ mod tests {
         let tx = conn.transaction().unwrap();
         recheck_offer(&tx, weak).unwrap();
         tx.commit().unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 3);
+        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 3);
     }
 
     #[test]
@@ -582,35 +582,35 @@ mod tests {
         offers::add(&mut conn, offer("Biuro Kraków", "Kraków", Remote::No)).unwrap();
         offers::add(&mut conn, offer("Bez informacji", "Wrocław", Remote::Unknown)).unwrap();
         // No profile yet: nothing is filtered out.
-        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 4);
+        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 4);
 
         let a = save(&mut conn, plan("Plan A", remote_only())).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Review, None, false).unwrap()), vec!["Bez informacji"]);
-        assert_eq!(ids(&offers::list(&conn, View::Rejected, None, false).unwrap()), vec!["Biuro Gdynia", "Biuro Kraków"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Review, None).unwrap()), vec!["Bez informacji"]);
+        assert_eq!(ids(&offers::list(&conn, View::Rejected, None).unwrap()), vec!["Biuro Gdynia", "Biuro Kraków"]);
 
         // A second profile: one fitting profile is enough for the "all profiles" board.
         let b = save(&mut conn, plan("Plan B", gdansk())).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Biuro Gdynia", "Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Board, Some(a), false).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Biuro Gdynia", "Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, Some(a)).unwrap()), vec!["Zdalna"]);
         // Plan B wants an office near Gdańsk: a remote offer may still allow the office - unsure.
-        assert_eq!(ids(&offers::list(&conn, View::Board, Some(b), false).unwrap()), vec!["Biuro Gdynia"]);
-        assert_eq!(ids(&offers::list(&conn, View::Review, Some(b), false).unwrap()), vec!["Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Rejected, Some(b), false).unwrap()), vec!["Bez informacji", "Biuro Kraków"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, Some(b)).unwrap()), vec!["Biuro Gdynia"]);
+        assert_eq!(ids(&offers::list(&conn, View::Review, Some(b)).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Rejected, Some(b)).unwrap()), vec!["Bez informacji", "Biuro Kraków"]);
         let counts = offers::counts(&conn, None).unwrap();
-        assert_eq!(counts, ViewCounts { board: 2, review: 1, rejected: 1, declined: 0, trash: 0, hidden: 0 });
+        assert_eq!(counts, ViewCounts { today: 3, board: 2, review: 1, rejected: 1, declined: 0, trash: 0 });
 
         // Reasons travel with the rows and the card.
-        let rejected = offers::list(&conn, View::Rejected, Some(a), false).unwrap();
+        let rejected = offers::list(&conn, View::Rejected, Some(a)).unwrap();
         assert_eq!(rejected[0].filter_reasons[0].code, "office_not_wanted");
         let detail = offers::detail(&conn, rejected[0].id).unwrap();
         assert_eq!(detail.filters.len(), 2);
         assert_eq!(detail.filters[0].profile_name, "Plan A");
 
         delete(&mut conn, b).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None, false).unwrap()), vec!["Zdalna"]);
+        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Zdalna"]);
         delete(&mut conn, a).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 4);
+        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 4);
     }
 
     #[test]
@@ -618,13 +618,13 @@ mod tests {
         let mut conn = test_db();
         save(&mut conn, plan("Plan A", remote_only())).unwrap();
         offers::add(&mut conn, offer("Biuro", "Kraków", Remote::No)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
         // The same offer from another source says "remote" - merged and checked again.
         let mut again = offer("Biuro", "Kraków", Remote::Yes);
         again.source = "adzuna".into();
         again.description = Some("Możliwa praca w pełni zdalna.".into());
         offers::add(&mut conn, again).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -635,18 +635,18 @@ mod tests {
             AddOutcome::Added { id } => id,
             other => panic!("{other:?}"),
         };
-        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
         offers::set_interest(&conn, id, Some(Interest::High)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 0);
-        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 0);
+        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
         // "No" takes it out of every tab into "Not for me", whatever the filter or the stage says.
         offers::set_interest(&conn, id, Some(Interest::No)).unwrap();
-        assert_eq!(offers::list(&conn, View::Rejected, None, false).unwrap().len(), 0);
-        assert_eq!(offers::list(&conn, View::Declined, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 0);
+        assert_eq!(offers::list(&conn, View::Declined, None).unwrap().len(), 1);
         offers::set_stage(&mut conn, id, Stage::Applied).unwrap();
-        assert_eq!(offers::list(&conn, View::Declined, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Declined, None).unwrap().len(), 1);
         offers::set_interest(&conn, id, None).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
     }
 
     #[test]

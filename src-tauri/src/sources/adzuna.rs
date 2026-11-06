@@ -181,6 +181,7 @@ pub fn to_offer(job: Job, country: &str) -> Option<OfferInput> {
         salary_currency: has_salary.then(|| currency(country).to_string()),
         salary_period: if has_salary { salary_period } else { None },
         description: Some(cut(description.trim(), 50_000)).filter(|d| !d.is_empty()),
+        published_at: job.created,
         ..Default::default()
     })
 }

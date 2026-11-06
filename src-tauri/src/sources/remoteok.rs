@@ -27,6 +27,7 @@ pub struct Job {
     pub salary_min: Option<f64>,
     pub salary_max: Option<f64>,
     pub description: Option<String>,
+    pub date: Option<String>,
 }
 
 /// The whole list (one call); offers without any of `words` are dropped.
@@ -85,6 +86,7 @@ pub fn to_offer(job: Job) -> Option<OfferInput> {
         url: Some(url),
         remote: Some(Remote::Yes),
         description: Some(cut(description.trim(), 60_000)),
+        published_at: job.date,
         ..Default::default()
     })
 }

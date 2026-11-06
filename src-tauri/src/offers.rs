@@ -86,6 +86,36 @@ fn utc_time(value: Option<String>) -> AppResult<Option<String>> {
         .map_err(|_| AppError::Invalid("date has a wrong format".into()))
 }
 
+/// The date a source published the offer, in any of the forms the sources use: RFC 3339,
+/// RFC 2822 (feeds), a date and time without a zone (taken as UTC), a bare date or Unix seconds.
+/// A wrong date is dropped (the offer is not), a date in the future becomes `now`.
+pub fn published(value: Option<&str>, now: &str) -> Option<String> {
+    use time::format_description::well_known::Rfc2822;
+    use time::macros::format_description;
+    let v = value?.trim();
+    if v.is_empty() || v.len() > 64 {
+        return None;
+    }
+    let naive = |s: &str| {
+        let s = s.split('.').next().unwrap_or(s).replace(' ', "T");
+        let with_time = time::PrimitiveDateTime::parse(&s, format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]")).ok();
+        with_time
+            .or_else(|| time::Date::parse(&s, format_description!("[year]-[month]-[day]")).ok().map(|d| d.midnight()))
+            .map(|t| t.assume_utc())
+    };
+    let parsed = OffsetDateTime::parse(v, &Rfc3339)
+        .or_else(|_| OffsetDateTime::parse(v, &Rfc2822))
+        .ok()
+        .or_else(|| naive(v))
+        .or_else(|| v.parse::<i64>().ok().and_then(|n| OffsetDateTime::from_unix_timestamp(n).ok()))?;
+    let date = parsed.to_offset(time::UtcOffset::UTC).replace_nanosecond(0).ok()?.format(&Rfc3339).ok()?;
+    // Before 2000 is no job offer anyone looks for - a broken date.
+    if date.as_str() < "2000" {
+        return None;
+    }
+    Some(if date.as_str() > now { now.to_string() } else { date })
+}
+
 /// Validated and trimmed copy of the input.
 fn clean(input: OfferInput) -> AppResult<OfferInput> {
     let mut salary_min = salary(input.salary_min)?;
@@ -113,6 +143,7 @@ fn clean(input: OfferInput) -> AppResult<OfferInput> {
         requirements: text(input.requirements, MAX_LONG, "requirements")?,
         description: text(input.description, MAX_LONG, "description")?,
         expires_at: utc_time(input.expires_at)?,
+        published_at: published(input.published_at.as_deref(), &clock::now()),
     })
 }
 
@@ -170,7 +201,7 @@ pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
             return Err(AppError::Invalid(format!("{key} must be 0 or 1")));
         }
     }
-    for key in ["stage_changed_at", "added_at", "updated_at", "expires_at", "deleted_at", "ai_at"] {
+    for key in ["stage_changed_at", "added_at", "updated_at", "expires_at", "deleted_at", "ai_at", "published_at", "archived_at", "kept_at"] {
         utc_time(word(d, key)?)?;
     }
     let list = |key: &str| d.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
@@ -221,7 +252,7 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         // In the trash: only the user brings it back.
         Some((_, true)) => return Ok(AddOutcome::Blocked),
         Some((id, false)) => {
-            let filled = merge_into(&tx, id, &input)?;
+            let filled = merge_into(&tx, id, &input, &now)?;
             let new_source = tx.execute(
                 "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
                 params![id, input.source, input.url, now],
@@ -251,14 +282,15 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
             tx.execute(
                 "INSERT INTO offers (uid, fingerprint, title, company, url, city, remote,
                     salary_min, salary_max, salary_currency, salary_period, contract, level, language,
-                    requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at)
+                    requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at, published_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    'new', ?18, ?18, ?18)",
+                    'new', ?18, ?18, ?18, COALESCE(?19, ?18))",
                 params![
                     uid, fingerprint, input.title, input.company, input.url, input.city,
                     input.remote.unwrap_or(Remote::Unknown), input.salary_min, input.salary_max,
                     input.salary_currency, input.salary_period, input.contract, input.level,
-                    input.language, input.requirements, input.description, input.expires_at, now
+                    input.language, input.requirements, input.description, input.expires_at, now,
+                    input.published_at
                 ],
             )?;
             let id = tx.last_insert_rowid();
@@ -286,16 +318,23 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
 
 /// Columns `merge_into` may change - compared before and after to tell whether anything was filled in.
 const MERGED_COLUMNS: &str = "SELECT url, city, remote, contract, level, language, requirements, description,
-    expires_at, expired, salary_min, salary_max, salary_currency, salary_period FROM offers WHERE id = ?1";
+    expires_at, expired, salary_min, salary_max, salary_currency, salary_period, published_at, archived_at
+    FROM offers WHERE id = ?1";
 
 fn merged_columns(tx: &rusqlite::Transaction, id: i64) -> AppResult<Vec<rusqlite::types::Value>> {
-    Ok(tx.query_row(MERGED_COLUMNS, [id], |r| (0..14).map(|i| r.get(i)).collect())?)
+    Ok(tx.query_row(MERGED_COLUMNS, [id], |r| (0..16).map(|i| r.get(i)).collect())?)
 }
 
-/// Same offer seen again: fill in what was missing, keep the longer texts.
+/// Same offer seen again: fill in what was missing, keep the longer texts. A newer publication
+/// date (a source brings it again) starts its age anew and takes it out of the archive.
 /// Returns whether anything changed (the caller sets `updated_at` only then).
-fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput) -> AppResult<bool> {
+fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
     let before = merged_columns(tx, id)?;
+    tx.execute(
+        "UPDATE offers SET published_at = ?2, archived_at = NULL
+         WHERE id = ?1 AND ?2 > COALESCE(published_at, added_at)",
+        params![id, input.published_at.as_deref().unwrap_or(now)],
+    )?;
     let has_salary: bool = tx.query_row(
         "SELECT salary_min IS NOT NULL OR salary_max IS NOT NULL FROM offers WHERE id = ?1",
         [id],
@@ -341,14 +380,127 @@ pub fn mark_expired(conn: &Connection, now: &str) -> AppResult<usize> {
     )?)
 }
 
+// ---------- freshness ----------
+
+/// When the offer counts as published: the source's date (newer when seen again), else when added.
+const FRESH_AT: &str = "COALESCE(o.published_at, o.added_at)";
+
+/// Added by hand - kept and always at the top of "Today".
+const MANUAL: &str = "EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o.id AND m.source = 'manual')";
+
+/// Applied and further: never archived, greyed out or pushed down.
+const IN_RECRUITMENT: &str = "(o.stage NOT IN ('new', 'interested'))";
+
+/// The user did something with the offer - it never leaves for the archive by itself.
+const TOUCHED: &str = "(o.stage != 'new' OR o.favorite = 1 OR o.interest IS NOT NULL OR o.notes != ''
+    OR o.kept_at IS NOT NULL
+    OR EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o.id AND m.source = 'manual')
+    OR EXISTS (SELECT 1 FROM events e WHERE e.offer_id = o.id)
+    OR EXISTS (SELECT 1 FROM contacts c WHERE c.offer_id = o.id)
+    OR EXISTS (SELECT 1 FROM contact_log l WHERE l.offer_id = o.id))";
+
+/// Offers waiting for AI (table alias `o`): fresh ones, or older ones the user works on;
+/// never the trash, the archive, rejected by the filter or "not for me".
+pub fn waiting_for_ai(conn: &Connection) -> AppResult<String> {
+    let old = cutoff_now(conn)?;
+    Ok(format!(
+        "o.ai_status IS NULL AND o.deleted_at IS NULL AND o.archived_at IS NULL AND o.filter_result != 'fail'
+         AND COALESCE(o.interest, '') != 'no' AND ({FRESH_AT} >= '{old}' OR {TOUCHED})"
+    ))
+}
+
+/// The order AI reads offers in: the ones the user works on, then the newest.
+pub const AI_ORDER: &str = "(o.stage != 'new' OR o.favorite = 1 OR o.interest IS NOT NULL) DESC,
+    COALESCE(o.published_at, o.added_at) DESC, o.id DESC";
+
+/// Days after publication an offer stays fresh (the "fresh_days" setting).
+pub fn fresh_days(conn: &Connection) -> AppResult<i64> {
+    Ok(crate::settings::get(conn, "fresh_days")?.parse().unwrap_or(10))
+}
+
+/// Offers published before this are old. Always our own RFC 3339 text - safe to put into SQL.
+pub fn cutoff(now: &str, days: i64) -> String {
+    let now = OffsetDateTime::parse(now, &Rfc3339).unwrap_or_else(|_| OffsetDateTime::now_utc());
+    (now - time::Duration::days(days))
+        .replace_nanosecond(0)
+        .ok()
+        .and_then(|t| t.format(&Rfc3339).ok())
+        .unwrap_or_default()
+}
+
+fn cutoff_now(conn: &Connection) -> AppResult<String> {
+    Ok(cutoff(&clock::now(), fresh_days(conn)?))
+}
+
+/// Offers nobody touched leave for the archive some days after they were published.
+pub fn archive_old(conn: &Connection, now: &str) -> AppResult<usize> {
+    let old = cutoff(now, fresh_days(conn)?);
+    Ok(conn.execute(
+        &format!(
+            "UPDATE offers AS o SET archived_at = ?1, updated_at = ?1
+             WHERE o.deleted_at IS NULL AND o.archived_at IS NULL AND NOT {TOUCHED} AND {FRESH_AT} < '{old}'"
+        ),
+        [now],
+    )?)
+}
+
+/// What "Expired" on the card did - the interface says so and can undo it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExpiredBy {
+    /// Nobody touched it - gone to the archive.
+    Archived,
+    /// The user worked on it - stays, marked "expired".
+    Marked,
+}
+
+/// "Expired" on the card: an offer nobody touched goes to the archive, any other one is marked.
+pub fn set_expired(conn: &Connection, id: i64) -> AppResult<ExpiredBy> {
+    let now = clock::now();
+    let touched: bool = conn
+        .query_row(&format!("SELECT {TOUCHED} FROM offers o WHERE o.id = ?1"), [id], |r| r.get(0))
+        .optional()?
+        .ok_or(AppError::NotFound)?;
+    if touched {
+        conn.execute("UPDATE offers SET expired = 1, updated_at = ?2 WHERE id = ?1", params![id, now])?;
+        Ok(ExpiredBy::Marked)
+    } else {
+        conn.execute("UPDATE offers SET archived_at = ?2, updated_at = ?2 WHERE id = ?1", params![id, now])?;
+        Ok(ExpiredBy::Archived)
+    }
+}
+
+/// "Undo" after "Expired": the offer is back as it was.
+pub fn unset_expired(conn: &Connection, id: i64) -> AppResult<()> {
+    changed(conn.execute(
+        "UPDATE offers SET expired = 0, archived_at = NULL, updated_at = ?2 WHERE id = ?1",
+        params![id, clock::now()],
+    )?)
+}
+
+/// "Bring back" in the archive: the user wants it, so it never leaves by itself again.
+pub fn unarchive(conn: &Connection, id: i64) -> AppResult<()> {
+    let now = clock::now();
+    changed(conn.execute(
+        "UPDATE offers SET archived_at = NULL, kept_at = ?2, updated_at = ?2 WHERE id = ?1 AND archived_at IS NOT NULL",
+        params![id, now],
+    )?)
+}
+
 // ---------- reading ----------
 
-/// Columns of a board row. `{result}` and `{reasons}` depend on the chosen profile (see `filter_sql`).
+/// Columns of a board row. `{result}` and `{reasons}` depend on the chosen profile (see `filter_sql`),
+/// `{old}` is the cutoff of fresh offers.
 const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max,
     o.salary_currency, o.salary_period, o.stage, o.stage_changed_at, o.interest, o.favorite,
     o.score, o.score_source,
     (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
-    o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr";
+    o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr,
+    {fresh}, ({fresh} < '{old}' AND NOT {recruit}), {recruit}, {manual}, o.archived_at,
+    (SELECT sc.why FROM offer_scores sc WHERE sc.offer_id = o.id AND sc.source = 'ai' ORDER BY sc.score DESC LIMIT 1)";
+
+/// Number of columns in `ROW_COLUMNS` - the offer card reads its own after them.
+const ROW_LEN: usize = 29;
 
 /// The nearest date of an offer from 3 hours ago on (an interview that just started still counts).
 const NEXT_EVENT: &str = "(SELECT e.at || '|' || e.kind FROM events e WHERE e.offer_id = o.id
@@ -360,6 +512,12 @@ const KEPT: &str = "(o.stage != 'new' OR o.favorite = 1 OR COALESCE(o.interest, 
 /// The user said "no" - the offer leaves every other tab for "Not for me" (not the trash: it stays
 /// in the database, so fetching it again only merges).
 const DECLINED: &str = "(COALESCE(o.interest, '') = 'no')";
+
+/// Neither in the trash nor in the archive.
+const LIVE: &str = "o.deleted_at IS NULL AND o.archived_at IS NULL";
+
+/// At the top of "Today" whatever their score: added by hand or starred.
+const PINNED: &str = "(o.favorite = 1 OR EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o.id AND m.source = 'manual'))";
 
 /// Filter result and reasons: for one profile (`?1`), or the best over all profiles.
 fn filter_sql(profile: Option<i64>) -> (&'static str, &'static str) {
@@ -376,9 +534,16 @@ fn filter_sql(profile: Option<i64>) -> (&'static str, &'static str) {
     }
 }
 
-fn columns(profile: Option<i64>) -> String {
+fn columns(profile: Option<i64>, old: &str) -> String {
     let (result, reasons) = filter_sql(profile);
-    ROW_COLUMNS.replace("{result}", result).replace("{reasons}", reasons).replace("{next}", NEXT_EVENT)
+    ROW_COLUMNS
+        .replace("{result}", result)
+        .replace("{reasons}", reasons)
+        .replace("{next}", NEXT_EVENT)
+        .replace("{fresh}", FRESH_AT)
+        .replace("{old}", old)
+        .replace("{recruit}", IN_RECRUITMENT)
+        .replace("{manual}", MANUAL)
 }
 
 fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
@@ -415,71 +580,95 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         next_event_kind: next.map(|(_, kind)| kind),
         translation_lang: r.get(21)?,
         title_translated: r.get(22)?,
+        published_at: r.get(23)?,
+        stale: r.get(24)?,
+        in_recruitment: r.get(25)?,
+        manual: r.get(26)?,
+        archived_at: r.get(27)?,
+        score_why: r.get(28)?,
     })
 }
 
-/// "Hide offers scored below X" (AI scores only - keyword scores are too rough to hide by).
-fn hide_below(conn: &Connection) -> AppResult<Option<i64>> {
-    Ok(crate::settings::get(conn, "hide_below")?.parse().ok())
-}
-
-fn low(threshold: i64) -> String {
-    // `threshold` comes from the fixed list in settings.rs - safe to put into SQL.
-    format!("(o.score_source = 'ai' AND o.score < {threshold} AND NOT {KEPT})")
-}
-
-fn view_condition(view: View, result: &str, hide: Option<i64>) -> String {
-    let hidden = hide.map(|t| format!(" AND NOT {}", low(t))).unwrap_or_default();
+fn view_condition(view: View, result: &str, old: &str) -> String {
     match view {
-        View::Board => format!("o.deleted_at IS NULL AND NOT {DECLINED} AND ({result} = 'pass' OR {KEPT}){hidden}"),
-        View::Review => format!("o.deleted_at IS NULL AND NOT {DECLINED} AND {result} = 'unsure' AND NOT {KEPT}"),
-        View::Rejected => format!("o.deleted_at IS NULL AND NOT {DECLINED} AND {result} = 'fail' AND NOT {KEPT}"),
-        View::Declined => format!("o.deleted_at IS NULL AND {DECLINED}"),
+        // Fresh offers worth a look today: not rejected by the filter, not in a recruitment yet.
+        View::Today => format!(
+            "{LIVE} AND NOT {DECLINED} AND ({result} != 'fail' OR {KEPT}) AND NOT {IN_RECRUITMENT}
+             AND o.expired = 0 AND {FRESH_AT} >= '{old}'"
+        ),
+        View::Board => format!("{LIVE} AND NOT {DECLINED} AND ({result} = 'pass' OR {KEPT})"),
+        View::Review => format!("{LIVE} AND NOT {DECLINED} AND {result} = 'unsure' AND NOT {KEPT}"),
+        View::Rejected => format!("{LIVE} AND NOT {DECLINED} AND {result} = 'fail' AND NOT {KEPT}"),
+        View::Declined => format!("{LIVE} AND {DECLINED}"),
+        View::Archive => "o.deleted_at IS NULL AND o.archived_at IS NOT NULL".to_string(),
         View::Trash => "o.deleted_at IS NOT NULL".to_string(),
     }
 }
 
+/// How many offers "Today" shows besides the ones added by hand or starred (the "today_count" setting).
+fn today_count(conn: &Connection) -> AppResult<usize> {
+    Ok(crate::settings::get(conn, "today_count")?.parse().unwrap_or(15))
+}
+
 /// Offers of one tab. `profile = None` - all profiles together (one fitting profile is enough).
-/// `show_low` - also offers hidden by "hide offers scored below X".
-pub fn list(conn: &Connection, view: View, profile: Option<i64>, show_low: bool) -> AppResult<Vec<OfferRow>> {
+/// "Today": added by hand and starred first, then the best scores (AI orders, never hides),
+/// the newest first among equal ones - as many as the setting says, the pinned ones always.
+pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Vec<OfferRow>> {
     let (result, _) = filter_sql(profile);
-    let hide = if show_low { None } else { hide_below(conn)? };
+    let old = cutoff_now(conn)?;
+    let order = match view {
+        View::Today => format!("{PINNED} DESC, o.score IS NULL, o.score DESC, {FRESH_AT} DESC, o.id DESC"),
+        View::Archive => format!("o.archived_at DESC, {FRESH_AT} DESC, o.id DESC"),
+        _ => format!("{FRESH_AT} DESC, o.id DESC"),
+    };
     let sql = format!(
-        "SELECT {} FROM offers o WHERE {} ORDER BY o.added_at DESC, o.id DESC",
-        columns(profile),
-        view_condition(view, result, hide)
+        "SELECT {}, {PINNED} FROM offers o WHERE {} ORDER BY {order}",
+        columns(profile, &old),
+        view_condition(view, result, &old)
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = match profile {
-        Some(p) => stmt.query_map([p], row_from)?.collect::<Result<Vec<_>, _>>()?,
-        None => stmt.query_map([], row_from)?.collect::<Result<Vec<_>, _>>()?,
+    let read = |r: &Row| Ok((row_from(r)?, r.get::<_, bool>(ROW_LEN)?));
+    let rows: Vec<(OfferRow, bool)> = match profile {
+        Some(p) => stmt.query_map([p], read)?.collect::<Result<Vec<_>, _>>()?,
+        None => stmt.query_map([], read)?.collect::<Result<Vec<_>, _>>()?,
     };
-    Ok(rows)
+    if view != View::Today {
+        return Ok(rows.into_iter().map(|(row, _)| row).collect());
+    }
+    let room = today_count(conn)?;
+    let pinned = rows.iter().filter(|(_, p)| *p).count();
+    Ok(rows
+        .into_iter()
+        .enumerate()
+        .filter(|(i, (_, p))| *p || *i < room.max(pinned))
+        .map(|(_, (row, _))| row)
+        .collect())
 }
 
 /// Offers for the CSV export: one tab as the board shows it for all profiles (`Some`), or every
-/// offer, the trash too (`None`). Newest first.
+/// offer, the archive and the trash too (`None`). Newest first.
 pub fn export_rows(conn: &Connection, view: Option<View>) -> AppResult<Vec<ExportRow>> {
     let (result, _) = filter_sql(None);
-    // The same order of checks as the tabs: trash, "not for me", then the filter result.
+    let old = cutoff_now(conn)?;
+    // The same order of checks as the tabs: trash, archive, "not for me", then the filter result.
     let list = format!(
-        "CASE WHEN {} THEN 'trash' WHEN {} THEN 'declined' WHEN {} THEN 'board' WHEN {} THEN 'review' ELSE 'rejected' END",
-        view_condition(View::Trash, result, None),
-        view_condition(View::Declined, result, None),
-        view_condition(View::Board, result, None),
-        view_condition(View::Review, result, None),
+        "CASE WHEN {} THEN 'trash' WHEN {} THEN 'archive' WHEN {} THEN 'declined' WHEN {} THEN 'board' WHEN {} THEN 'review' ELSE 'rejected' END",
+        view_condition(View::Trash, result, &old),
+        view_condition(View::Archive, result, &old),
+        view_condition(View::Declined, result, &old),
+        view_condition(View::Board, result, &old),
+        view_condition(View::Review, result, &old),
     );
     let filter = match view {
-        Some(View::Board) => view_condition(View::Board, result, hide_below(conn)?),
-        Some(v) => view_condition(v, result, None),
+        Some(v) => view_condition(v, result, &old),
         None => "1 = 1".into(),
     };
     let sql = format!(
         "SELECT o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max, o.salary_currency, o.salary_period,
                 o.contract, o.level, o.stage, o.interest, o.favorite, o.score, o.score_source,
                 (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
-                o.url, o.added_at, o.notes, {list}
-         FROM offers o WHERE {filter} ORDER BY o.added_at DESC, o.id DESC"
+                o.url, o.added_at, o.notes, {list}, {FRESH_AT}
+         FROM offers o WHERE {filter} ORDER BY {FRESH_AT} DESC, o.id DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
@@ -507,6 +696,7 @@ pub fn export_rows(conn: &Connection, view: Option<View>) -> AppResult<Vec<Expor
                 added_at: r.get(18)?,
                 notes: r.get(19)?,
                 list: r.get(20)?,
+                published_at: r.get(21)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -516,35 +706,32 @@ pub fn export_rows(conn: &Connection, view: Option<View>) -> AppResult<Vec<Expor
 /// Number of offers in every tab, for the tab labels.
 pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> {
     let (result, _) = filter_sql(profile);
-    let hide = hide_below(conn)?;
+    let old = cutoff_now(conn)?;
     let count = |cond: String| format!("COALESCE(SUM(CASE WHEN {cond} THEN 1 ELSE 0 END), 0)");
-    let hidden = match hide {
-        Some(t) => count(format!("{} AND {}", view_condition(View::Board, result, None), low(t))),
-        None => "0".into(),
-    };
     let sql = format!(
-        "SELECT {}, {}, {}, {}, {}, {} FROM offers o",
-        count(view_condition(View::Board, result, hide)),
-        count(view_condition(View::Review, result, None)),
-        count(view_condition(View::Rejected, result, None)),
-        count(view_condition(View::Declined, result, None)),
-        count(view_condition(View::Trash, result, None)),
-        hidden
+        "SELECT {}, {}, {}, {}, {} FROM offers o",
+        count(view_condition(View::Board, result, &old)),
+        count(view_condition(View::Review, result, &old)),
+        count(view_condition(View::Rejected, result, &old)),
+        count(view_condition(View::Declined, result, &old)),
+        count(view_condition(View::Trash, result, &old)),
     );
     let read = |r: &Row| {
         Ok(ViewCounts {
+            today: 0,
             board: r.get(0)?,
             review: r.get(1)?,
             rejected: r.get(2)?,
             declined: r.get(3)?,
             trash: r.get(4)?,
-            hidden: r.get(5)?,
         })
     };
-    Ok(match profile {
+    let mut counts = match profile {
         Some(p) => conn.query_row(&sql, [p], read)?,
         None => conn.query_row(&sql, [], read)?,
-    })
+    };
+    counts.today = list(conn, View::Today, profile)?.len() as i64;
+    Ok(counts)
 }
 
 pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
@@ -552,22 +739,22 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         "SELECT {}, o.url, o.contract, o.level, o.language, o.requirements, o.description,
             o.notes, o.expires_at, o.deleted_at, o.content_removed
          FROM offers o WHERE o.id = ?1",
-        columns(None)
+        columns(None, &cutoff_now(conn)?)
     );
     let mut detail = conn
         .query_row(&sql, [id], |r| {
             Ok(OfferDetail {
                 row: row_from(r)?,
-                url: r.get(23)?,
-                contract: r.get(24)?,
-                level: r.get(25)?,
-                language: r.get(26)?,
-                requirements: r.get(27)?,
-                description: r.get(28)?,
-                notes: r.get(29)?,
-                expires_at: r.get(30)?,
-                deleted_at: r.get(31)?,
-                content_removed: r.get(32)?,
+                url: r.get(29)?,
+                contract: r.get(30)?,
+                level: r.get(31)?,
+                language: r.get(32)?,
+                requirements: r.get(33)?,
+                description: r.get(34)?,
+                notes: r.get(35)?,
+                expires_at: r.get(36)?,
+                deleted_at: r.get(37)?,
+                content_removed: r.get(38)?,
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),
@@ -788,7 +975,7 @@ mod tests {
     fn adds_and_lists_an_offer_with_history() {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("Frontend Developer", "Firma Testowa", "manual")).unwrap());
-        let rows = list(&conn, View::Board, None, false).unwrap();
+        let rows = list(&conn, View::Board, None).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].stage, Stage::New);
         assert_eq!(rows[0].sources, vec!["manual"]);
@@ -815,7 +1002,7 @@ mod tests {
         assert_eq!(d.row.salary_currency.as_deref(), Some("PLN"));
         assert_eq!(d.row.remote, Remote::Yes);
         assert_eq!(d.description.as_deref(), Some("Longer description of the role"));
-        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -839,12 +1026,12 @@ mod tests {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap());
         trash(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 0);
-        assert_eq!(list(&conn, View::Trash, None, false).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 0);
+        assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 1);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Blocked);
 
         assert_eq!(purge(&mut conn, Some(id)).unwrap(), 1);
-        assert_eq!(list(&conn, View::Trash, None, false).unwrap().len(), 0);
+        assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 0);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap(), AddOutcome::Blocked);
     }
 
@@ -854,7 +1041,7 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma C", "manual")).unwrap());
         assert!(matches!(purge(&mut conn, Some(id)), Err(AppError::NotFound)));
         assert_eq!(purge(&mut conn, None).unwrap(), 0);
-        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -863,7 +1050,7 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma D", "manual")).unwrap());
         trash(&conn, id).unwrap();
         restore(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
         assert!(matches!(restore(&conn, id), Err(AppError::NotFound)));
     }
 
@@ -894,7 +1081,7 @@ mod tests {
         set_interest(&conn, id, Some(Interest::No)).unwrap();
         set_favorite(&conn, id, true).unwrap();
         assert_eq!(tabs(&conn), (0, 0, 0, 1, 0));
-        assert_eq!(list(&conn, View::Declined, None, false).unwrap()[0].id, id);
+        assert_eq!(list(&conn, View::Declined, None).unwrap()[0].id, id);
         // The export knows the tab of every offer and takes one tab as the board does.
         let all = export_rows(&conn, None).unwrap();
         assert!(all.iter().any(|r| r.id == id && r.list == View::Declined));
@@ -948,6 +1135,123 @@ mod tests {
         let d = detail(&conn, id).unwrap();
         assert_eq!((d.row.salary_min, d.row.salary_max), (Some(10000), Some(15000)));
         assert_eq!(d.expires_at.as_deref(), Some("2026-12-01T09:00:00Z"));
+    }
+
+    #[test]
+    fn publication_dates_in_every_form_the_sources_use() {
+        let now = "2026-11-06T12:00:00Z";
+        let p = |v: &str| published(Some(v), now);
+        assert_eq!(p("2026-11-01T08:00:00Z").as_deref(), Some("2026-11-01T08:00:00Z"));
+        assert_eq!(p("2026-11-01T08:00:00+01:00").as_deref(), Some("2026-11-01T07:00:00Z"));
+        assert_eq!(p("Mon, 02 Nov 2026 18:18:39 +0000").as_deref(), Some("2026-11-02T18:18:39Z"));
+        assert_eq!(p("2026-11-02T10:13:07").as_deref(), Some("2026-11-02T10:13:07Z"));
+        assert_eq!(p("2026-11-02T00:00:00.0000000").as_deref(), Some("2026-11-02T00:00:00Z"));
+        assert_eq!(p("2026-11-02").as_deref(), Some("2026-11-02T00:00:00Z"));
+        assert_eq!(p("1793238550").as_deref(), Some("2026-10-29T01:49:10Z"));
+        // From the future - now; broken or empty - no date (the offer is kept).
+        assert_eq!(p("2027-01-01T00:00:00Z").as_deref(), Some(now));
+        assert_eq!(p("jutro"), None);
+        assert_eq!(p("0"), None);
+        assert_eq!(published(None, now), None);
+    }
+
+    /// An offer with its publication date `days` ago.
+    fn published_days_ago(conn: &mut Connection, title: &str, source: &str, days: i64) -> i64 {
+        let mut o = offer(title, "Firma Testowa", source);
+        o.published_at = Some(cutoff(&clock::now(), days));
+        id_of(add(conn, o).unwrap())
+    }
+
+    #[test]
+    fn untouched_old_offers_leave_for_the_archive_the_others_stay_marked() {
+        let mut conn = test_db();
+        let untouched = published_days_ago(&mut conn, "Tester", "adzuna", 12);
+        let fresh = published_days_ago(&mut conn, "Analityk", "adzuna", 3);
+        let starred = published_days_ago(&mut conn, "Grafik", "adzuna", 12);
+        set_favorite(&conn, starred, true).unwrap();
+        let noted = published_days_ago(&mut conn, "Pisarz", "jooble", 12);
+        set_notes(&conn, noted, "zadzwonić".into()).unwrap();
+        let by_hand = published_days_ago(&mut conn, "Księgowy", "manual", 12);
+        let applied = published_days_ago(&mut conn, "Programista", "adzuna", 12);
+        set_stage(&mut conn, applied, Stage::Applied).unwrap();
+
+        assert_eq!(archive_old(&conn, &clock::now()).unwrap(), 1);
+        let archive: Vec<i64> = list(&conn, View::Archive, None).unwrap().iter().map(|r| r.id).collect();
+        assert_eq!(archive, vec![untouched]);
+        let board = list(&conn, View::Board, None).unwrap();
+        let stale = |id: i64| board.iter().find(|r| r.id == id).unwrap().stale;
+        assert!(!stale(fresh));
+        assert!(stale(starred) && stale(noted) && stale(by_hand));
+        // In a recruitment: never "probably expired", only its stage.
+        assert!(!stale(applied));
+        assert!(board.iter().find(|r| r.id == applied).unwrap().in_recruitment);
+        assert!(board.iter().find(|r| r.id == by_hand).unwrap().manual);
+
+        // "Bring back": the user wants it - it never leaves by itself again.
+        unarchive(&conn, untouched).unwrap();
+        assert_eq!(archive_old(&conn, &clock::now()).unwrap(), 0);
+        assert!(list(&conn, View::Archive, None).unwrap().is_empty());
+        assert!(matches!(unarchive(&conn, untouched), Err(AppError::NotFound)));
+    }
+
+    #[test]
+    fn expired_by_hand_archives_untouched_and_marks_the_rest() {
+        let mut conn = test_db();
+        let plain = id_of(add(&mut conn, offer("Tester", "Firma A", "adzuna")).unwrap());
+        let starred = id_of(add(&mut conn, offer("Tester", "Firma B", "adzuna")).unwrap());
+        set_favorite(&conn, starred, true).unwrap();
+
+        assert_eq!(set_expired(&conn, plain).unwrap(), ExpiredBy::Archived);
+        assert_eq!(set_expired(&conn, starred).unwrap(), ExpiredBy::Marked);
+        assert_eq!(list(&conn, View::Archive, None).unwrap()[0].id, plain);
+        assert!(detail(&conn, starred).unwrap().row.expired);
+        // Expired offers are not for today.
+        assert!(list(&conn, View::Today, None).unwrap().is_empty());
+
+        unset_expired(&conn, plain).unwrap();
+        unset_expired(&conn, starred).unwrap();
+        assert_eq!(list(&conn, View::Today, None).unwrap().len(), 2);
+        assert!(matches!(set_expired(&conn, 999), Err(AppError::NotFound)));
+    }
+
+    #[test]
+    fn today_puts_hand_added_and_starred_first_then_the_best_scores() {
+        let mut conn = test_db();
+        crate::settings::set(&conn, "today_count", "10").unwrap();
+        let mut ids = Vec::new();
+        for i in 0..14 {
+            let id = published_days_ago(&mut conn, &format!("Oferta {i}"), "adzuna", 1);
+            conn.execute("UPDATE offers SET score = ?2, score_source = 'ai' WHERE id = ?1", params![id, 30 + i]).unwrap();
+            ids.push(id);
+        }
+        let old = published_days_ago(&mut conn, "Stara", "adzuna", 12);
+        conn.execute("UPDATE offers SET score = 99 WHERE id = ?1", [old]).unwrap();
+        let by_hand = published_days_ago(&mut conn, "Ręczna", "manual", 1);
+        set_favorite(&conn, ids[0], true).unwrap();
+        let applied = ids[13];
+        set_stage(&mut conn, applied, Stage::Applied).unwrap();
+
+        let today: Vec<i64> = list(&conn, View::Today, None).unwrap().iter().map(|r| r.id).collect();
+        assert_eq!(today.len(), 10);
+        // Pinned first (by score among them too), then the rest by score; old and applied ones never.
+        assert_eq!(&today[..2], &[ids[0], by_hand]);
+        assert_eq!(today[2], ids[12]);
+        assert!(!today.contains(&old) && !today.contains(&applied));
+        assert_eq!(counts(&conn, None).unwrap().today, 10);
+    }
+
+    #[test]
+    fn ai_reads_fresh_offers_first_and_skips_old_ones_nobody_works_on() {
+        let mut conn = test_db();
+        let old = published_days_ago(&mut conn, "Stara", "adzuna", 15);
+        let old_starred = published_days_ago(&mut conn, "Stara z gwiazdką", "adzuna", 15);
+        set_favorite(&conn, old_starred, true).unwrap();
+        let older = published_days_ago(&mut conn, "Starsza świeża", "adzuna", 5);
+        let newest = published_days_ago(&mut conn, "Najnowsza", "adzuna", 1);
+        let sql = format!("SELECT o.id FROM offers o WHERE {} ORDER BY {AI_ORDER}", waiting_for_ai(&conn).unwrap());
+        let ids: Vec<i64> = conn.prepare(&sql).unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(ids, vec![old_starred, newest, older]);
+        assert!(!ids.contains(&old));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { translate } from "../i18n";
-import { bestResult, emptyCriteria, reasonText, sortedReasons, splitList, toAmount, viewFor } from "./profile";
+import { bestResult, emptyCriteria, leavesView, reasonText, sortedReasons, splitList, toAmount, viewFor } from "./profile";
 
 const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => translate("pl", key, params);
 
@@ -55,5 +55,20 @@ describe("profile helpers", () => {
     expect(bestResult(["fail", "unsure"])).toBe("unsure");
     expect(bestResult(["fail", "pass"])).toBe("pass");
     expect(bestResult(["fail"])).toBe("fail");
+  });
+
+  it("knows when a change takes an offer out of its tab", () => {
+    const offer = { stage: "new" as const, favorite: false, interest: null, filterResult: "pass" as const, expired: false };
+    // "Today" keeps "very" and "maybe"; "no", a recruitment and "expired" take it away.
+    expect(leavesView({ ...offer, interest: "high" }, "today")).toBeNull();
+    expect(leavesView({ ...offer, interest: "no" }, "today")).toBe("declined");
+    expect(leavesView({ ...offer, stage: "applied" }, "today")).toBe("board");
+    expect(leavesView({ ...offer, expired: true }, "today")).toBe("board");
+    // A filtered-out offer stays in "Today" only while it is kept.
+    expect(leavesView({ ...offer, filterResult: "fail", favorite: true }, "today")).toBeNull();
+    expect(leavesView({ ...offer, filterResult: "fail" }, "today")).toBe("rejected");
+    // The other tabs as before; the archive and the trash keep theirs.
+    expect(leavesView({ ...offer, filterResult: "unsure", interest: "high" }, "review")).toBe("board");
+    expect(leavesView({ ...offer, interest: "no" }, "archive")).toBeNull();
   });
 });

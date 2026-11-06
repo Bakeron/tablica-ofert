@@ -454,15 +454,13 @@ fn load_job(conn: &Connection, id: i64) -> AppResult<Option<Job>> {
 }
 
 fn pending_ids(conn: &Connection, limit: usize) -> AppResult<Vec<i64>> {
-    // Offers the user already acted on go first, then the newest; "Not for me" ones wait
-    // ("Rate again" still rates any offer).
-    let mut stmt = conn.prepare(
-        "SELECT o.id FROM offers o
-         WHERE o.ai_status IS NULL AND o.deleted_at IS NULL AND o.filter_result != 'fail' AND COALESCE(o.interest, '') != 'no'
-         ORDER BY (o.stage != 'new' OR o.favorite = 1 OR COALESCE(o.interest, '') IN ('high', 'maybe')) DESC,
-                  o.added_at DESC, o.id DESC
-         LIMIT ?1",
-    )?;
+    // Offers the user already acted on go first, then the newest published; older ones nobody
+    // works on and "Not for me" ones are not read ("Rate again" still rates any offer).
+    let mut stmt = conn.prepare(&format!(
+        "SELECT o.id FROM offers o WHERE {} ORDER BY {} LIMIT ?1",
+        crate::offers::waiting_for_ai(conn)?,
+        crate::offers::AI_ORDER
+    ))?;
     let ids = stmt.query_map([limit as i64], |r| r.get(0))?.collect::<Result<_, _>>()?;
     Ok(ids)
 }
@@ -576,7 +574,7 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
     }
     report.waiting = with_db(state, |c| {
         Ok(c.query_row(
-            "SELECT count(*) FROM offers WHERE ai_status IS NULL AND deleted_at IS NULL AND filter_result != 'fail' AND COALESCE(interest, '') != 'no'",
+            &format!("SELECT count(*) FROM offers o WHERE {}", crate::offers::waiting_for_ai(c)?),
             [],
             |r| r.get(0),
         )?)
@@ -935,7 +933,7 @@ pub struct AiStatus {
 pub fn status(conn: &Connection, key_present: impl Fn(Provider) -> bool) -> AppResult<AiStatus> {
     let s = settings::all(conn)?;
     let waiting: i64 = conn.query_row(
-        "SELECT count(*) FROM offers WHERE ai_status IS NULL AND deleted_at IS NULL AND filter_result != 'fail' AND COALESCE(interest, '') != 'no'",
+        &format!("SELECT count(*) FROM offers o WHERE {}", crate::offers::waiting_for_ai(conn)?),
         [],
         |r| r.get(0),
     )?;
@@ -1156,16 +1154,15 @@ mod tests {
         reset(&conn, id).unwrap();
         assert_eq!(pending_ids(&conn, 10).unwrap(), vec![id]);
 
-        // "Hide offers scored below 70": a low AI score leaves the board, but can be shown.
-        let low = Reading { scores: vec![ProfileScore { profile: pid, score: 30, why: None, quote: None }], ..Default::default() };
+        // A low AI score never hides an offer - it only comes later in "Today", with its reason.
+        let low = Reading {
+            scores: vec![ProfileScore { profile: pid, score: 30, why: Some("Inna technologia".into()), quote: None }],
+            ..Default::default()
+        };
         store(&mut conn, id, &low).unwrap();
-        settings::set(&conn, "hide_below", "70").unwrap();
-        assert!(crate::offers::list(&conn, View::Board, None, false).unwrap().is_empty());
-        assert_eq!(crate::offers::list(&conn, View::Board, None, true).unwrap().len(), 1);
-        assert_eq!(crate::offers::counts(&conn, None).unwrap().hidden, 1);
-        // An offer the user acted on is never hidden.
-        crate::offers::set_favorite(&conn, id, true).unwrap();
-        assert_eq!(crate::offers::list(&conn, View::Board, None, false).unwrap().len(), 1);
+        assert_eq!(crate::offers::list(&conn, View::Board, None).unwrap().len(), 1);
+        let today = crate::offers::list(&conn, View::Today, None).unwrap();
+        assert_eq!(today[0].score_why.as_deref(), Some("Inna technologia"));
     }
 
     #[test]

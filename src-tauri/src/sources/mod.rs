@@ -97,6 +97,8 @@ pub struct SourceRun {
     pub blocked: i64,
     /// Did not pass the checks of outside data.
     pub invalid: i64,
+    /// Published longer ago than offers stay fresh - not saved.
+    pub old: i64,
     pub error: Option<ErrorInfo>,
 }
 
@@ -235,10 +237,13 @@ fn due(last: &LastRun, limits: &Limits, force: bool, now: OffsetDateTime) -> boo
     }
 }
 
-/// Days of offers every Adzuna search asks for. Always the same three weeks: offers seen
-/// before only merge (and change nothing when nothing is new), deleted ones never come back.
-/// The `source_queries` table (migration 008) is no longer used.
-const ADZUNA_DAYS: u32 = 21;
+/// Days of offers every Adzuna search asks for and the first mailbox read reaches back: as long
+/// as offers stay fresh (the "fresh_days" setting). Offers seen before only merge (and change
+/// nothing when nothing is new), deleted ones never come back. The `source_queries` table
+/// (migration 008) is no longer used.
+fn fresh_days(settings: &BTreeMap<String, String>) -> u32 {
+    settings.get("fresh_days").and_then(|v| v.parse().ok()).unwrap_or(10)
+}
 
 // ---------- database part ----------
 
@@ -272,9 +277,16 @@ pub fn clear_error(conn: &Connection, source: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Saves fetched offers one by one - one bad offer never stops the others.
+/// Saves fetched offers one by one - one bad offer never stops the others. Offers published
+/// longer ago than offers stay fresh are skipped (a feed or the first mailbox read reaches far back).
 fn save(conn: &mut Connection, found: Vec<OfferInput>, run: &mut SourceRun, report: &mut FetchReport) -> AppResult<()> {
+    let now = clock::now();
+    let old = offers::cutoff(&now, offers::fresh_days(conn)?);
     for offer in found {
+        if offers::published(offer.published_at.as_deref(), &now).is_some_and(|p| p < old) {
+            run.old += 1;
+            continue;
+        }
         match offers::add(conn, offer) {
             Ok(AddOutcome::Added { id }) => {
                 run.added += 1;
@@ -387,7 +399,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
             for q in first {
                 calls += 1;
                 say(adzuna::SOURCE, calls, first_total);
-                match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 1).await {
+                match adzuna::search(&client, &keys, &country, q, fresh_days(&snap.settings), 1).await {
                     Ok(mut page) => {
                         found.append(&mut page.offers);
                         if page.full {
@@ -406,7 +418,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
                 for q in more {
                     calls += 1;
                     say(adzuna::SOURCE, calls, total);
-                    match adzuna::search(&client, &keys, &country, q, ADZUNA_DAYS, 2).await {
+                    match adzuna::search(&client, &keys, &country, q, fresh_days(&snap.settings), 2).await {
                         Ok(mut page) => found.append(&mut page.offers),
                         Err(e) => {
                             run.error = Some((&e).into());
@@ -526,6 +538,8 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
     report.closed += (expired.deleted + expired.kept) as i64;
     // Every other source: past the expiry date = "expired" on the board.
     report.closed += with_db(state, |c| offers::mark_expired(c, &stamp))? as i64;
+    // Untouched offers past their fresh days leave for the archive.
+    report.closed += with_db(state, |c| offers::archive_old(c, &stamp))? as i64;
 
     // We Work Remotely, Remote OK - the whole feed once a day; only offers with the keywords
     // of profiles that accept remote work are kept.
@@ -625,9 +639,10 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
         } else {
             let config = config.expect("checked above");
             let position = with_db(state, |c| mail::position(c))?;
+            let first_days = i64::from(fresh_days(&snap.settings));
             say(mail::SOURCE, 1, 1);
             // IMAP is blocking - it runs on a worker thread, not on the async runtime.
-            let result = tauri::async_runtime::spawn_blocking(move || mail::fetch(&config, &position))
+            let result = tauri::async_runtime::spawn_blocking(move || mail::fetch(&config, &position, first_days))
                 .await
                 .map_err(|e| AppError::Net(e.to_string()))
                 .and_then(|r| r);
@@ -869,6 +884,7 @@ mod tests {
     #[test]
     fn the_same_answer_fetched_twice_changes_nothing() {
         let mut conn = crate::db::tests::test_db();
+        let published = clock::now();
         let offer = |t: &str| OfferInput {
             title: t.into(),
             company: "Firma Testowa".into(),
@@ -876,6 +892,7 @@ mod tests {
             url: Some(format!("https://example.com/{t}")),
             city: Some("Wrocław".into()),
             description: Some("Opis oferty".into()),
+            published_at: Some(published.clone()),
             ..Default::default()
         };
         let answer = || vec![offer("Dev"), offer("QA")];
@@ -899,5 +916,36 @@ mod tests {
         save(&mut conn, vec![longer], &mut run, &mut FetchReport::default()).unwrap();
         assert_eq!(run.merged, 1);
         assert_eq!(touched(&conn), 1);
+    }
+
+    #[test]
+    fn old_offers_are_skipped_and_a_newer_date_starts_the_age_anew() {
+        let mut conn = crate::db::tests::test_db();
+        let now = clock::now();
+        let days_ago = |days: i64| offers::cutoff(&now, days);
+        let offer = |t: &str, published: String| OfferInput {
+            title: t.into(),
+            company: "Firma Testowa".into(),
+            source: "adzuna".into(),
+            published_at: Some(published),
+            ..Default::default()
+        };
+        let mut run = SourceRun::default();
+        save(&mut conn, vec![offer("Dev", days_ago(3)), offer("QA", days_ago(11))], &mut run, &mut FetchReport::default()).unwrap();
+        assert_eq!((run.added, run.old), (1, 1));
+
+        // Nobody touched it and its days passed - in the archive, not on the board.
+        conn.execute("UPDATE offers SET published_at = ?1", [days_ago(20)]).unwrap();
+        assert_eq!(offers::archive_old(&conn, &now).unwrap(), 1);
+        assert!(offers::list(&conn, crate::model::View::Board, None).unwrap().is_empty());
+
+        // A source brings it again, freshly published: back on the board, its age from the new date.
+        let mut run = SourceRun::default();
+        save(&mut conn, vec![offer("Dev", days_ago(1))], &mut run, &mut FetchReport::default()).unwrap();
+        assert_eq!(run.merged, 1);
+        let rows = offers::list(&conn, crate::model::View::Board, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].published_at, days_ago(1));
+        assert!(offers::list(&conn, crate::model::View::Archive, None).unwrap().is_empty());
     }
 }

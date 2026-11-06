@@ -1,4 +1,4 @@
-import type { Criteria, FilterResult, OfferRow, Reason } from "../api/types";
+import type { Criteria, FilterResult, OfferRow, Reason, View } from "../api/types";
 import type { T, TextKey } from "../i18n";
 import { SALARY_FAR_ABOVE } from "./limits";
 
@@ -77,6 +77,21 @@ export function viewFor(o: Pick<OfferRow, "stage" | "favorite" | "interest" | "f
   if (o.interest === "no") return "declined" as const;
   if (isKept(o) || o.filterResult === "pass") return "board" as const;
   return o.filterResult === "unsure" ? ("review" as const) : ("rejected" as const);
+}
+
+/** The tab an offer goes to after a change, or `null` when it stays in `view` (as the tabs in
+ *  offers.rs: "Today" keeps fresh offers until "no", a recruitment or "expired"; the archive and the
+ *  trash keep theirs until brought back). */
+export function leavesView(
+  o: Pick<OfferRow, "stage" | "favorite" | "interest" | "filterResult" | "expired">,
+  view: View,
+): View | null {
+  const target = viewFor(o);
+  if (view === "archive" || view === "trash") return null;
+  if (view !== "today") return target === view ? null : target;
+  const recruiting = o.stage !== "new" && o.stage !== "interested";
+  const rejected = o.filterResult === "fail" && !isKept(o);
+  return o.interest === "no" || recruiting || o.expired || rejected ? target : null;
 }
 
 /** Best of several profiles: one profile that fits is enough (as `filter::best` in Rust). */

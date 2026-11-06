@@ -47,6 +47,7 @@ pub struct Job {
     pub location_restrictions: Vec<serde_json::Value>,
     pub description: Option<String>,
     pub expiry_date: Option<i64>,
+    pub pub_date: Option<i64>,
     pub application_link: Option<String>,
 }
 
@@ -232,6 +233,7 @@ pub fn to_offer(job: Job) -> Option<OfferInput> {
             .expiry_date
             .and_then(|s| OffsetDateTime::from_unix_timestamp(s).ok())
             .and_then(|t| t.format(&Rfc3339).ok()),
+        published_at: job.pub_date.map(|s| s.to_string()),
         ..Default::default()
     })
 }

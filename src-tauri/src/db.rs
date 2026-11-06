@@ -28,6 +28,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/012_content_removed.sql"),
     include_str!("migrations/013_himalayas_checked.sql"),
     include_str!("migrations/014_ai_providers.sql"),
+    include_str!("migrations/015_freshness.sql"),
+    include_str!("migrations/016_clean_start.sql"),
 ];
 
 /// Schema version this app writes (copies from newer versions are refused).
@@ -191,13 +193,14 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
             Err(e) => diag::log(data_dir, &format!("key copy failed: {e}")),
         }
     }
-    if exists && backup {
+    let before: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    // A copy before a migration too, also in the background run (a migration may move offers).
+    if exists && (backup || before < latest_version()) {
         // Not fatal: the app still works, the next start tries again.
         if let Err(e) = backup_if_changed(&path, &crate::clock::file_stamp()) {
             eprintln!("backup failed: {e}");
         }
     }
-    let before: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     migrate(&mut conn)?;
     // Version 5 added scores without AI, version 10 new filter reasons - check offers saved
     // before once again.
@@ -322,12 +325,64 @@ pub mod tests {
         assert_eq!(events, 1);
     }
 
+    /// The clean start of 6.11.2026: what came by itself goes to the trash, what the user
+    /// worked on stays.
+    #[test]
+    fn clean_start_keeps_only_offers_the_user_worked_on() {
+        let mut conn = open(&temp_dir("clean").join(DB_FILE), TEST_KEY).unwrap();
+        for (index, sql) in MIGRATIONS.iter().enumerate().take(15) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        let offer = |title: &str, source: &str, extra: &str| {
+            conn.execute(
+                &format!(
+                    "INSERT INTO offers (uid, fingerprint, title, company, stage_changed_at, added_at, updated_at)
+                     VALUES ('u-{title}', 'fp-{title}', '{title}', 'Firma', '2026-11-01T00:00:00Z',
+                        '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')"
+                ),
+                [],
+            )
+            .unwrap();
+            let id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO offer_sources (offer_id, source, first_seen) VALUES (?1, ?2, '2026-11-01T00:00:00Z')",
+                rusqlite::params![id, source],
+            )
+            .unwrap();
+            if !extra.is_empty() {
+                conn.execute(&extra.replace("{id}", &id.to_string()), []).unwrap();
+            }
+        };
+        offer("Zebrana", "adzuna", "");
+        offer("Recznie", "manual", "");
+        offer("Gwiazdka", "adzuna", "UPDATE offers SET favorite = 1 WHERE id = {id}");
+        offer("Bardzo", "mail", "UPDATE offers SET interest = 'high' WHERE id = {id}");
+        offer("Wyslana", "jooble", "UPDATE offers SET stage = 'applied' WHERE id = {id}");
+        offer("Notatka", "remotive", "UPDATE offers SET notes = 'zadzwonić' WHERE id = {id}");
+        offer("Termin", "adzuna", "INSERT INTO events (uid, offer_id, kind, at, created_at) VALUES ('e-1', {id}, 'deadline', '2026-11-20T10:00:00Z', '2026-11-01T00:00:00Z')");
+        offer("Kontakt", "adzuna", "INSERT INTO contacts (offer_id, name, created_at) VALUES ({id}, 'Anna Przykładowa', '2026-11-01T00:00:00Z')");
+
+        migrate(&mut conn).unwrap();
+
+        let trashed: Vec<String> = conn
+            .prepare("SELECT title FROM offers WHERE deleted_at IS NOT NULL ORDER BY title")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(trashed, vec!["Zebrana"]);
+        let kept: i64 = conn.query_row("SELECT count(*) FROM offers WHERE deleted_at IS NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(kept, 7);
+    }
+
     /// Fails when an existing migration is edited - a schema change must be a new file.
     #[test]
     fn existing_migrations_are_frozen() {
-        // FNV-1a over migrations 001-014, line endings normalized (Git may check out CRLF).
-        const EXISTING: usize = 14;
-        const HASH: u64 = 16_529_390_142_502_270_356;
+        // FNV-1a over migrations 001-016, line endings normalized (Git may check out CRLF).
+        const EXISTING: usize = 16;
+        const HASH: u64 = 5_358_006_346_166_070_507;
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for sql in &MIGRATIONS[..EXISTING] {
             for b in sql.bytes().filter(|&b| b != b'\r').chain([0u8]) {

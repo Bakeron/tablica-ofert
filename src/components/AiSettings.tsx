@@ -240,18 +240,7 @@ export function AiSettings({
         </div>
       </fieldset>
 
-      <label className="field field-inline">
-        <span>{t("ai.hideBelow")}</span>
-        <select value={settings.hide_below} onChange={(e) => onChange("hide_below", e.target.value as Settings["hide_below"])}>
-          {(["off", "30", "40", "50", "60", "70"] as const).map((v) => (
-            <option key={v} value={v}>
-              {v === "off" ? t("ai.hideOff") : t("ai.hideValue", { value: v })}
-            </option>
-          ))}
-        </select>
-        <span className="hint">{t("ai.hideHint")}</span>
-      </label>
-
+      <p className="hint">{t("ai.orderHint")}</p>
       <p className="hint">{t("ai.privacy")}</p>
       <div className="warn-box" role="note">
         <IconWarning />

@@ -13,6 +13,7 @@ export function StatusTag({ offer, fresh }: { offer: OfferRow; fresh?: boolean }
         <span className="tag tag-today">{t("flag.interviewToday")}</span>
       )}
       {offer.expired && <span className="tag tag-flag">{t("flag.expired")}</span>}
+      {offer.stale && !offer.expired && !offer.archivedAt && <span className="tag tag-flag">{t("flag.stale")}</span>}
       {needsFollowUp(offer) && <span className="tag tag-flag">{t("flag.noReply")}</span>}
     </span>
   );

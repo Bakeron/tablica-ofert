@@ -26,6 +26,21 @@ export const IconBriefcase = () => (
   </Icon>
 );
 
+/** "Today": the sun over the horizon line. */
+export const IconSun = () => (
+  <Icon>
+    <path d="M3 18h18M7 18a5 5 0 0 1 10 0M12 6v3M5.6 9.6l2 2M18.4 9.6l-2 2" />
+  </Icon>
+);
+
+/** The archive: a box with its lid. */
+export const IconArchive = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="5" />
+    <path d="M5 9v11h14V9M10 13h4" />
+  </Icon>
+);
+
 export const IconPlus = () => (
   <Icon>
     <path d="M12 5v14M5 12h14" />

@@ -6,6 +6,8 @@ import { useAppearOn } from "../lib/presence";
 import { LOW_KEYWORD_SCORE } from "../lib/limits";
 import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
+import { isNarrowLayout } from "../lib/fit";
+import { isSwipe, lockAxis, type SwipeAxis } from "../lib/swipe";
 import { sourceLabel } from "./Board";
 import { IconArrowLeft, IconArrowOut, IconRestore, IconStar, IconTrash, IconWarning } from "./Icons";
 import { AgendaPart, type AgendaActions } from "./AgendaPart";
@@ -27,6 +29,12 @@ interface Props {
   onTrash: () => void;
   onRestore: () => void;
   onPurge: () => void;
+  /** "Expired" (or "Still open" when it is marked). */
+  onExpired: () => void;
+  /** "Bring back to the list" in the archive. */
+  onUnarchive: () => void;
+  /** A swipe on the card where it is a screen of its own: right = "very", left = "no", then the next offer. */
+  onSwipe: (interest: Interest) => void;
   /** An AI provider is set. */
   aiOn: boolean;
   onRateAgain: () => void;
@@ -44,7 +52,7 @@ interface Props {
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, onUnarchive, onSwipe, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -54,6 +62,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   // An offer in another language shows the AI translation; the original is one click away.
   const [showOriginal, setShowOriginal] = useState(false);
   useEffect(() => setShowOriginal(false), [offer?.id]);
+  /** Where a finger started on the card (a swipe = the next offer). */
+  const touch = useRef<{ x: number; y: number; axis: SwipeAxis | null } | null>(null);
   // Another offer chosen - the card changes with a short fade, not a jump.
   const passRef = useRef<HTMLElement>(null);
   useAppearOn(passRef, offer?.id ?? null);
@@ -67,6 +77,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   }
 
   const inTrash = offer.deletedAt !== null;
+  const inArchive = !inTrash && offer.archivedAt !== null;
   const missing = t("card.missing");
   const titleTr = translatedTitle(offer, lang);
   const descriptionTr = offer.translationLang === lang ? offer.ai.descriptionTranslated : null;
@@ -76,7 +87,26 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   const remoteText = t(`remote.${offer.remote}`);
 
   return (
-    <aside className="pass" aria-labelledby="pass-title" ref={passRef}>
+    <aside
+      className="pass"
+      aria-labelledby="pass-title"
+      ref={passRef}
+      onTouchStart={(e) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null })}
+      onTouchMove={(e) => {
+        const start = touch.current;
+        if (start) start.axis ??= lockAxis(e.touches[0].clientX - start.x, e.touches[0].clientY - start.y);
+      }}
+      onTouchEnd={(e) => {
+        const start = touch.current;
+        touch.current = null;
+        // Only where the card is a screen of its own, and never inside a field or a sideways strip.
+        if (!start || start.axis !== "x" || inTrash || inArchive || !isNarrowLayout()) return;
+        if ((e.target as Element).closest("input, textarea, select, .seg-strip, .interest-set")) return;
+        const dx = e.changedTouches[0].clientX - start.x;
+        if (isSwipe(dx, e.changedTouches[0].clientY - start.y)) onSwipe(dx > 0 ? "high" : "no");
+      }}
+      onTouchCancel={() => (touch.current = null)}
+    >
       {/* Only where the card is a screen of its own (CSS shows it there). */}
       <div className="pass-back-bar">
         <button type="button" className="btn btn-ghost btn-small" onClick={onBackToList}>
@@ -140,12 +170,29 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
       <section className="pass-body">
         {inTrash && <p className="pass-note">{t("card.inTrash")}</p>}
 
+        {inArchive && <p className="pass-note">{t("archive.note")}</p>}
+
         <div className="pass-row">
           <StatusTag offer={offer} />
           <span className="pass-meta">
-            {t("card.added")}: {fullDate(offer.addedAt, lang)}
+            {t("card.published")}: {fullDate(offer.publishedAt, lang)}
+            {/* Added later than published (a fetch, a mail) - both dates say something. */}
+            {offer.addedAt.slice(0, 16) !== offer.publishedAt.slice(0, 16) && (
+              <>
+                {" · "}
+                {t("card.added")}: {fullDate(offer.addedAt, lang)}
+              </>
+            )}
           </span>
         </div>
+
+        {inArchive && (
+          <div className="pass-actions">
+            <button type="button" className="btn btn-sign" onClick={onUnarchive}>
+              <IconRestore /> {t("archive.restore")}
+            </button>
+          </div>
+        )}
 
         {inTrash && (
           <div className="pass-actions">
@@ -307,7 +354,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
       </section>
 
       {/* The everyday decisions stay under the thumb all the way down the card, like the stub of a pass. */}
-      {!inTrash && (
+      {!inTrash && !inArchive && (
         <div className="pass-dock">
           <fieldset className="interest-set">
             <legend className="sr-only">{t("interest.label")}</legend>
@@ -333,6 +380,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               <IconStar filled={offer.favorite} />
             </button>
           </fieldset>
+          <button type="button" className="btn btn-ghost pass-expired" onClick={onExpired} title={offer.expired ? undefined : t("expired.hint")}>
+            {!isPhone() && !offer.expired && <kbd aria-hidden="true">W</kbd>} {t(offer.expired ? "expired.undoButton" : "expired.button")}
+          </button>
           {isWebUrl(offer.url) && (
             <button type="button" className="btn btn-sign pass-open" onClick={() => onOpenLink(offer.url!)}>
               <IconArrowOut /> {t("card.open")}

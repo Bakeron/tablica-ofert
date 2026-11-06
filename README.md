@@ -10,7 +10,8 @@ Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe ofe
 
 ## Co umie
 
-- **Tablica jak na lotnisku** - jeden wiersz = jedna oferta, stałe kolumny (dodano, stanowisko i firma, miasto / zdalnie, widełki, dopasowanie, status). Gdy coś się zmienia, moduł obraca się jak klapka - raz, ok. 0,3 s.
+- **„Dziś” zamiast skrzynki do opróżnienia** - ok. 15 najlepszych świeżych ofert według oceny AI, a dodane ręcznie i z gwiazdką zawsze na górze. AI niczego nie ukrywa: ustawia kolejność i przy ofercie pisze jedno zdanie, dlaczego taka ocena. Oferta, przy której nic nie zrobisz, po ok. 10 dniach od publikacji sama idzie do archiwum (z wyszukiwarką i przywracaniem); ta, przy której pracujesz, dostaje znacznik „Pewnie wygasła”, a rekrutacja nigdy nie znika. Liczby da się zmienić w ustawieniach.
+- **Tablica jak na lotnisku** - jeden wiersz = jedna oferta, stałe kolumny (data publikacji, stanowisko i firma, miasto / zdalnie, widełki, dopasowanie, status). Gdy coś się zmienia, moduł obraca się jak klapka - raz, ok. 0,3 s.
 - **Karta oferty w kształcie karty pokładowej** - najważniejsze dane na odcinku nad perforacją, ocena dopasowania jako pieczątka.
 - **Ta sama oferta z kilku portali = jeden wiersz** („na 3 portalach: JJIT · NFJ · Pracuj”); brakujące dane uzupełniają się z kolejnych źródeł.
 - **Etapy rekrutacji z historią** (nowa → wysłano → rozmowa HR → … → oferta pracy), zainteresowanie „Bardzo / Może / Nie” (oferty z „Nie” czekają w osobnej zakładce „Nie dla mnie”), ulubione, notatki.
@@ -22,7 +23,7 @@ Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe ofe
 - **Terminy i kontakty** - rozmowy i terminy zadań z przypomnieniem dzień i godzinę przed, „brak odpowiedzi od 7 dni”, „Dodaj do kalendarza” (Kalendarz Google albo plik `.ics`), kontakty i historia kontaktów przy ofercie.
 - **Kosz** - przywróć albo usuń na zawsze; usunięta oferta nie wróci przy następnym pobieraniu.
 - **Dane** - kopia w pliku zaszyfrowanym własnym hasłem (da się ją wczytać na innym komputerze), eksport do Excela (CSV z ochroną przed formułami), „Usuń wszystkie dane”.
-- **Bez myszy** - strzałki, 1 / 2 / 3 (zainteresowanie), Del (do kosza), Enter (karta).
+- **Szybkie przeglądanie** - na PC strzałki, 1 / 2 / 3 (zainteresowanie i od razu następna oferta), W (wygasła), Del (do kosza), Enter (karta); na telefonie przesunięcie karty oferty w prawo („Bardzo”) albo w lewo („Nie”) otwiera następną.
 - Motyw ciemny i jasny, ograniczenie animacji, polski i angielski.
 
 Pomysł na wygląd: **tablica odlotów i znaki kierunkowe** - grafitowa tablica, żółty sygnałowy, piktogramy z kreski. Z lotniska jest tylko wygląd i ruch, napisy mówią językiem rekrutacji.

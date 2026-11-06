@@ -51,6 +51,8 @@ pub struct Job {
     pub kind: Option<String>,
     pub link: Option<String>,
     pub company: Option<String>,
+    /// When the offer was last updated at its site, e.g. "2026-11-02T00:00:00.0000000".
+    pub updated: Option<String>,
 }
 
 pub fn key() -> AppResult<Option<String>> {
@@ -136,6 +138,7 @@ pub fn to_offer(job: Job) -> Option<OfferInput> {
         salary_currency: parsed.as_ref().map(|p| p.2.clone()),
         salary_period: parsed.as_ref().map(|p| p.3),
         description: Some(cut(description.trim(), 50_000)).filter(|d| !d.is_empty()),
+        published_at: job.updated,
         ..Default::default()
     })
 }

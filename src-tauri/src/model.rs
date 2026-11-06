@@ -54,7 +54,15 @@ word_enum!(SalaryPeriod { Month => "month", Hour => "hour" });
 
 word_enum!(FilterResult { Pass => "pass", Fail => "fail", Unsure => "unsure" });
 
-word_enum!(View { Board => "board", Review => "review", Rejected => "rejected", Declined => "declined", Trash => "trash" });
+word_enum!(View {
+    Today => "today",
+    Board => "board",
+    Review => "review",
+    Rejected => "rejected",
+    Declined => "declined",
+    Archive => "archive",
+    Trash => "trash",
+});
 
 word_enum!(Contract { Uop => "uop", B2b => "b2b", Mandate => "mandate" });
 
@@ -207,14 +215,13 @@ pub struct ProfileFilter {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewCounts {
+    pub today: i64,
     pub board: i64,
     pub review: i64,
     pub rejected: i64,
     /// Offers the user marked "no" - out of every other tab until the interest changes.
     pub declined: i64,
     pub trash: i64,
-    /// Offers on the board hidden by "hide offers scored below X".
-    pub hidden: i64,
 }
 
 /// One line on the board.
@@ -248,6 +255,19 @@ pub struct OfferRow {
     /// Language of the AI translation ('pl' / 'en') - shown only when it is the app language.
     pub translation_lang: Option<String>,
     pub title_translated: Option<String>,
+    /// When the offer was published (the source's date, the alert mail's date, or when it was
+    /// added); seen again in a source = the newer date.
+    pub published_at: String,
+    /// Older than the days in the settings and still here (the user worked on it) - "probably expired".
+    pub stale: bool,
+    /// Applied and further - never greyed out or pushed down, only a small mark.
+    pub in_recruitment: bool,
+    /// Added by hand - always at the top of "Today".
+    pub manual: bool,
+    /// Set = in the archive.
+    pub archived_at: Option<String>,
+    /// One sentence from AI: why this score (the best profile).
+    pub score_why: Option<String>,
 }
 
 /// One offer for "Export to Excel (CSV)" - raw values; the interface turns them into words of
@@ -277,6 +297,7 @@ pub struct ExportRow {
     pub notes: Option<String>,
     /// The tab the offer is in (all profiles together, like the board without a chosen profile).
     pub list: View,
+    pub published_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,6 +362,9 @@ pub struct OfferInput {
     pub requirements: Option<String>,
     pub description: Option<String>,
     pub expires_at: Option<String>,
+    /// When the source published it (any common date format; a wrong one is dropped, a date in
+    /// the future becomes now). `None` = now.
+    pub published_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

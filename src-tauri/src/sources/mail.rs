@@ -18,8 +18,6 @@ pub const SOURCE: &str = "mail";
 const MAX_MESSAGES: usize = 150;
 /// Alerts are small - anything bigger is not an alert.
 const MAX_MESSAGE_BYTES: u32 = 3 * 1024 * 1024;
-/// First run (or after the server reset its numbering): mails from the last two weeks.
-const FIRST_DAYS: i64 = 14;
 const TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Config {
@@ -125,14 +123,16 @@ fn imap_date(days_ago: i64) -> String {
 }
 
 /// New alert e-mails since the last run. Blocking - call it off the async runtime.
-pub fn fetch(c: &Config, last: &Position) -> AppResult<Fetched> {
+/// `first_days`: the first run (or after the server reset its numbering) reads mails from that
+/// many days back - as long as offers stay fresh.
+pub fn fetch(c: &Config, last: &Position, first_days: i64) -> AppResult<Fetched> {
     let mut session = connect(c)?;
     let inbox = session.examine("INBOX").map_err(mail_error)?;
     let validity = inbox.uid_validity.unwrap_or(0);
     let account = account_of(c);
     let continuing = last.account == account && last.uid_validity == validity && last.last_uid > 0;
 
-    let query = if continuing { format!("UID {}:*", last.last_uid + 1) } else { format!("SINCE {}", imap_date(FIRST_DAYS)) };
+    let query = if continuing { format!("UID {}:*", last.last_uid + 1) } else { format!("SINCE {}", imap_date(first_days)) };
     let mut uids: Vec<u32> = session
         .uid_search(&query)
         .map_err(mail_error)?
@@ -179,7 +179,13 @@ pub fn offers_in_raw(raw: &[u8]) -> Vec<OfferInput> {
         .to_string();
     let html = message.body_html(0).map(|h| h.into_owned());
     let text = message.body_text(0).map(|t| t.into_owned());
-    alerts::offers_in_mail(&sender, html.as_deref(), text.as_deref())
+    // An alert has no dates of its own offers - the mail's date counts as their publication.
+    let date = message.date().map(|d| d.to_rfc3339());
+    let mut offers = alerts::offers_in_mail(&sender, html.as_deref(), text.as_deref());
+    for o in &mut offers {
+        o.published_at = date.clone();
+    }
+    offers
 }
 
 #[cfg(test)]
@@ -208,6 +214,9 @@ Content-Transfer-Encoding: quoted-printable\r\n\
         let offers = offers_in_raw(raw.as_bytes());
         assert_eq!(offers.len(), 1);
         assert_eq!(offers[0].company, "Firma Z");
+        assert_eq!(offers[0].published_at, None);
+        let dated = raw.replace("Subject:", "Date: Tue, 03 Nov 2026 08:15:00 +0100\r\nSubject:");
+        assert_eq!(offers_in_raw(dated.as_bytes())[0].published_at.as_deref(), Some("2026-11-03T08:15:00+01:00"));
         assert_eq!(offers[0].salary_max, Some(24000));
         assert!(offers_in_raw(b"not a mail at all").is_empty());
     }

@@ -2,7 +2,7 @@ import type { ExportRow } from "../api/types";
 import { DICTS, translate, type Lang, type TextKey } from "../i18n";
 
 /** What "Export to Excel (CSV)" can save: one tab (in the order of the tabs) or every offer. */
-export const CSV_LISTS = ["board", "review", "rejected", "declined", "trash", "all"] as const;
+export const CSV_LISTS = ["today", "board", "review", "rejected", "declined", "archive", "trash", "all"] as const;
 export type CsvList = (typeof CSV_LISTS)[number];
 
 const HEADERS: TextKey[] = [
@@ -23,6 +23,7 @@ const HEADERS: TextKey[] = [
   "csv.scoreSource",
   "csv.sources",
   "csv.link",
+  "csv.published",
   "csv.added",
   "csv.notes",
   "csv.list",
@@ -68,6 +69,7 @@ export function csvCells(rows: ExportRow[], lang: Lang): string[][] {
       word(lang, "csv.scoreOf", r.scoreSource),
       r.sources.map((s) => word(lang, "source", s)).join(", "),
       r.url ?? "",
+      csvDate(r.publishedAt),
       csvDate(r.addedAt),
       r.notes ?? "",
       word(lang, "tabs", r.list),

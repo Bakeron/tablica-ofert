@@ -5,7 +5,7 @@
 
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
 import { AI_PROVIDERS, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type OfferAi, type WorkProgress } from "./types";
-import { bestResult, viewFor } from "../lib/profile";
+import { bestResult, isKept, viewFor } from "../lib/profile";
 import { JOOBLE_KEY_CALLS } from "../lib/limits";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
@@ -106,6 +106,12 @@ export function createMockApi(): Api {
       nextEventKind: demo.event ? demo.event.kind : null,
       translationLang: demo.translation ? "pl" : null,
       titleTranslated: demo.translation?.title ?? null,
+      publishedAt: added,
+      stale: false,
+      inRecruitment: false,
+      manual: false,
+      archivedAt: null,
+      scoreWhy: null,
       url: input.url ?? null,
       contract: input.contract ?? null,
       level: input.level ?? null,
@@ -156,35 +162,76 @@ export function createMockApi(): Api {
     return ordered.find((f) => f.result === result) ?? { result };
   }
 
+  /** Brought back from the archive - never leaves by itself again (`kept_at` in Rust). */
+  const kept = new Set<number>();
+  const freshMs = () => Number(settings.fresh_days) * 24 * 3_600_000;
+  const isOld = (o: OfferDetail) => Date.now() - Date.parse(o.publishedAt) > freshMs();
+  const inRecruitment = (o: OfferDetail) => o.stage !== "new" && o.stage !== "interested";
+  const isManual = (o: OfferDetail) => o.sources.includes("manual");
+  /** As `TOUCHED` in offers.rs. */
+  const touched = (o: OfferDetail) =>
+    o.stage !== "new" || o.favorite || o.interest !== null || o.notes !== "" || kept.has(o.id) || isManual(o) ||
+    o.agenda.events.length + o.agenda.contacts.length + o.agenda.log.length > 0;
+  /** As `archive_old` in offers.rs - runs before every list. */
+  function archiveOld() {
+    for (const o of offers.values()) if (!o.deletedAt && !o.archivedAt && !touched(o) && isOld(o)) o.archivedAt = now();
+  }
+
   function row(o: OfferDetail, profile: number | null): OfferDetail {
     const f = filterOf(o.id, profile);
-    return { ...o, filterResult: f.result, filterReasons: f.reasons ?? [] };
+    return {
+      ...o,
+      filterResult: f.result,
+      filterReasons: f.reasons ?? [],
+      stale: isOld(o) && !inRecruitment(o),
+      inRecruitment: inRecruitment(o),
+      manual: isManual(o),
+      scoreWhy: o.ai.scores.find((s) => s.source === "ai")?.why ?? null,
+    };
   }
 
   function inView(o: OfferDetail, view: View): boolean {
     if (view === "trash") return o.deletedAt !== null;
     if (o.deletedAt) return false;
+    if (view === "archive") return o.archivedAt !== null;
+    if (o.archivedAt) return false;
+    if (view === "today") {
+      return o.interest !== "no" && (o.filterResult !== "fail" || isKept(o)) && !inRecruitment(o) && !o.expired && !isOld(o);
+    }
     return viewFor(o) === view;
   }
 
-  const rowsOf = (view: View, profile: number | null) =>
-    [...offers.values()].map((o) => row(o, profile)).filter((o) => inView(o, view));
+  const pinned = (o: OfferDetail) => o.favorite || isManual(o);
+  const rowsOf = (view: View, profile: number | null) => {
+    archiveOld();
+    const rows = [...offers.values()].map((o) => row(o, profile)).filter((o) => inView(o, view));
+    if (view !== "today") return rows.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+    rows.sort(
+      (a, b) =>
+        Number(pinned(b)) - Number(pinned(a)) ||
+        Number(a.score === null) - Number(b.score === null) ||
+        (b.score ?? 0) - (a.score ?? 0) ||
+        b.publishedAt.localeCompare(a.publishedAt),
+    );
+    const room = Math.max(Number(settings.today_count), rows.filter(pinned).length);
+    return rows.filter((o, i) => pinned(o) || i < room);
+  };
 
   return {
     async appStatus() {
       return { ok: true, problem: null, version: "0.1.0-preview" };
     },
     async listOffers(view, profile) {
-      return rowsOf(view, profile).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+      return rowsOf(view, profile);
     },
     async countOffers(profile) {
       return {
+        today: rowsOf("today", profile).length,
         board: rowsOf("board", profile).length,
         review: rowsOf("review", profile).length,
         rejected: rowsOf("rejected", profile).length,
         declined: rowsOf("declined", profile).length,
         trash: rowsOf("trash", profile).length,
-        hidden: 0,
       };
     },
     async getOffer(id) {
@@ -233,6 +280,12 @@ export function createMockApi(): Api {
         nextEventKind: null,
         translationLang: null,
         titleTranslated: null,
+        publishedAt: at,
+        stale: false,
+        inRecruitment: false,
+        manual: false,
+        archivedAt: null,
+        scoreWhy: null,
         url: input.url ?? null,
         contract: input.contract ?? null,
         level: input.level ?? null,
@@ -274,6 +327,25 @@ export function createMockApi(): Api {
     },
     async restoreOffer(id) {
       find(id).deletedAt = null;
+    },
+    async setExpired(id) {
+      const o = find(id);
+      if (touched(o)) {
+        o.expired = true;
+        return "marked";
+      }
+      o.archivedAt = now();
+      return "archived";
+    },
+    async unsetExpired(id) {
+      const o = find(id);
+      o.expired = false;
+      o.archivedAt = null;
+    },
+    async unarchiveOffer(id) {
+      const o = find(id);
+      o.archivedAt = null;
+      kept.add(id);
     },
     async purgeOffers(id) {
       let count = 0;
@@ -407,11 +479,11 @@ export function createMockApi(): Api {
         const isNew = outcome.status === "added";
         added += isNew ? 1 : 0;
         sourceRuns.remotive = { lastTry: now(), lastOk: now(), lastError: null, added: isNew ? 1 : 0, merged: isNew ? 0 : 1, callsToday: 3 };
-        runs.push({ source: "remotive" as const, skipped: null, added: isNew ? 1 : 0, merged: isNew ? 0 : 1, blocked: 0, invalid: 0, error: null });
+        runs.push({ source: "remotive" as const, skipped: null, added: isNew ? 1 : 0, merged: isNew ? 0 : 1, blocked: 0, invalid: 0, old: 0, error: null });
       }
       if (settings.source_adzuna === "on") {
         const ready = Boolean(secrets["adzuna-app-id"] && secrets["adzuna-app-key"]);
-        runs.push({ source: "adzuna" as const, skipped: ready ? null : ("missing_key" as const), added: 0, merged: 0, blocked: 0, invalid: 0, error: null });
+        runs.push({ source: "adzuna" as const, skipped: ready ? null : ("missing_key" as const), added: 0, merged: 0, blocked: 0, invalid: 0, old: 0, error: null });
       }
       return { runs, added, newOnBoard: added, newReview: 0, newRejected: 0, closed: 0 };
     },
@@ -647,7 +719,7 @@ export function createMockApi(): Api {
     async exportRows(view) {
       return [...offers.values()]
         .filter((o) => view === null || inView(row(o, null), view))
-        .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
+        .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
         .map((o) => ({
           id: o.id,
           title: o.title,
@@ -669,7 +741,8 @@ export function createMockApi(): Api {
           url: o.url,
           addedAt: o.addedAt,
           notes: o.notes || null,
-          list: o.deletedAt ? ("trash" as const) : viewFor(row(o, null)),
+          list: o.deletedAt ? ("trash" as const) : o.archivedAt ? ("archive" as const) : viewFor(row(o, null)),
+          publishedAt: o.publishedAt,
         }));
     },
     async saveCsv(name) {

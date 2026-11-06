@@ -24,6 +24,7 @@ const row: ExportRow = {
   addedAt: "2026-11-05T18:14:00Z",
   notes: null,
   list: "review",
+  publishedAt: "2026-11-04T08:00:00Z",
 };
 
 describe("csv", () => {
@@ -38,6 +39,7 @@ describe("csv", () => {
     expect(at("Źródła")).toBe("JJIT, Jooble, nieznane");
     expect(at("Lista")).toBe("Do sprawdzenia");
     expect(at("Widełki do")).toBe("");
+    expect(at("Opublikowano")).toMatch(/^2026-11-04 \d\d:00$/);
     expect(csvCells([row], "en")[1][3]).toBe("hybrid");
   });
 

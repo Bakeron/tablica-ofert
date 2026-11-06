@@ -21,6 +21,12 @@ const OPTIONS: { key: "language" | "theme" | "motion" | "text_size"; label: Text
   { key: "text_size", label: "settings.text_size", values: TEXT_SIZES, hint: isPhone() ? undefined : "settings.text_size.keys" },
 ];
 
+/** How long offers stay fresh and how many "Today" shows (both travel with sync). */
+const LIST_OPTIONS: { key: "fresh_days" | "today_count"; label: TextKey; unit: TextKey; values: readonly string[]; hint: TextKey }[] = [
+  { key: "fresh_days", label: "list.freshDays", unit: "list.days", values: ["7", "10", "14", "21", "30"], hint: "list.freshHint" },
+  { key: "today_count", label: "list.todayCount", unit: "list.offers", values: ["10", "15", "20", "30"], hint: "list.todayHint" },
+];
+
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
 export type SettingsSection = "look" | "sources" | "ai" | "sync" | "data" | "about";
@@ -214,6 +220,33 @@ function SettingsBody({
             {option.hint && <p className="hint">{t(option.hint)}</p>}
           </fieldset>
         ))}
+
+      {section === "look" && (
+        <fieldset className="choice choice-column">
+          <legend>{t("list.title")}</legend>
+          {LIST_OPTIONS.map((option) => (
+            <div key={option.key} className="list-option">
+              <span id={`${option.key}-label`}>{t(option.label)}</span>
+              <div className="seg-strip" role="radiogroup" aria-labelledby={`${option.key}-label`}>
+                {option.values.map((value) => (
+                  <label key={value} className="seg seg-radio">
+                    <input
+                      type="radio"
+                      className="sr-only"
+                      name={option.key}
+                      value={value}
+                      checked={settings[option.key] === value}
+                      onChange={() => onChange(option.key, value as Settings[typeof option.key])}
+                    />
+                    {t(option.unit, { count: value })}
+                  </label>
+                ))}
+              </div>
+              <p className="hint">{t(option.hint)}</p>
+            </div>
+          ))}
+        </fieldset>
+      )}
 
       {section === "look" && (
         <fieldset className="choice choice-column">

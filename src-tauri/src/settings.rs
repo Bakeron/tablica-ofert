@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 
 /// Settings that travel with sync (the last change wins): they decide what the board shows,
 /// so both devices must agree. All the others stay on their device.
-pub const SYNCED: &[&str] = &["hide_below"];
+pub const SYNCED: &[&str] = &["fresh_days", "today_count"];
 
 const OLDEST_CHANGE: &str = "2000-01-01T00:00:00Z";
 
@@ -86,8 +86,11 @@ const ALLOWED: &[(&str, Rule)] = &[
     // Minutes between the AI runs on its own.
     ("ai_every", Rule::One(&["30", "60", "180", "1440"])),
     ("ollama_url", Rule::Text { max: 200, default: "http://localhost:11434", check: is_base_url }),
-    // Board: hide offers scored below this (offers you acted on stay).
-    ("hide_below", Rule::One(&["off", "30", "40", "50", "60", "70"])),
+    // Days after publication an offer stays fresh: then it leaves for the archive when nobody
+    // touched it, or gets "probably expired". Also how far back sources and the mailbox look.
+    ("fresh_days", Rule::One(&["10", "7", "14", "21", "30"])),
+    // How many offers "Today" shows (the ones added by hand or starred come on top of that).
+    ("today_count", Rule::One(&["15", "10", "20", "30"])),
 ];
 
 pub(crate) fn is_client_id(v: &str) -> bool {

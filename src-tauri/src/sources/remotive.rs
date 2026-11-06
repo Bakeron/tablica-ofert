@@ -31,6 +31,8 @@ pub struct Job {
     pub candidate_required_location: Option<String>,
     pub salary: Option<String>,
     pub description: Option<String>,
+    /// "2026-11-02T10:13:07" - UTC without a zone.
+    pub publication_date: Option<String>,
 }
 
 /// One search by a keyword (one API call).
@@ -71,6 +73,7 @@ pub fn to_offer(job: Job) -> Option<OfferInput> {
         url: Some(url),
         remote: Some(Remote::Yes),
         description: Some(cut(description.trim(), 60_000)),
+        published_at: job.publication_date,
         ..Default::default()
     })
 }

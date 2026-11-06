@@ -88,6 +88,7 @@ fn to_offer(item: &str) -> Option<OfferInput> {
         remote: Some(Remote::Yes),
         description: Some(cut(description.trim(), 60_000)),
         expires_at: utc(tag(item, "expires_at")),
+        published_at: tag(item, "pubDate"),
         ..Default::default()
     })
 }

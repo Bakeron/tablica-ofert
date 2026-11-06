@@ -109,7 +109,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
     },
   },
   {
-    hoursAgo: 2,
+    hoursAgo: 290,
     score: 74,
     scoreSource: "ai",
     stage: "interested",
@@ -200,7 +200,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
     },
   },
   {
-    hoursAgo: 50,
+    hoursAgo: 300,
     score: 55,
     scoreSource: "ai",
     filters: [

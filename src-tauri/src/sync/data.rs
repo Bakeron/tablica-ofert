@@ -16,6 +16,7 @@ const OFFER_COLS: &[&str] = &[
     "salary_period", "contract", "level", "language", "requirements", "description", "notes", "interest", "favorite",
     "stage", "stage_changed_at", "expires_at", "expired", "added_at", "updated_at", "deleted_at", "ai_status", "ai_at",
     "ai_summary", "ai_flags", "ai_remote_quote", "ai_tr_lang", "ai_title_tr", "ai_description_tr", "content_removed",
+    "published_at", "archived_at", "kept_at",
 ];
 const PROFILE_COLS: &[&str] = &["name", "position", "description", "criteria", "description_prev", "created_at", "updated_at"];
 const EVENT_COLS: &[&str] = &["kind", "at", "minutes", "note", "created_at"];
@@ -361,7 +362,7 @@ mod tests {
     }
 
     fn titles(conn: &Connection) -> Vec<String> {
-        let mut t: Vec<String> = crate::offers::list(conn, View::Board, None, false).unwrap().into_iter().map(|r| r.title).collect();
+        let mut t: Vec<String> = crate::offers::list(conn, View::Board, None).unwrap().into_iter().map(|r| r.title).collect();
         t.sort();
         t
     }
@@ -396,32 +397,34 @@ mod tests {
     }
 
     #[test]
-    fn the_hide_threshold_travels_and_the_last_change_wins() {
+    fn the_freshness_settings_travel_and_the_last_change_wins() {
         let (mut pc, mut phone) = (test_db(), test_db());
         round(&mut pc, &mut phone);
-        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "off");
+        assert_eq!(crate::settings::get(&phone, "fresh_days").unwrap(), "10");
 
-        crate::settings::set(&pc, "hide_below", "60").unwrap();
+        crate::settings::set(&pc, "fresh_days", "21").unwrap();
+        crate::settings::set(&pc, "today_count", "30").unwrap();
         round(&mut pc, &mut phone);
-        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "60");
+        assert_eq!(crate::settings::get(&phone, "fresh_days").unwrap(), "21");
+        assert_eq!(crate::settings::get(&phone, "today_count").unwrap(), "30");
 
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        crate::settings::set(&pc, "hide_below", "off").unwrap();
+        crate::settings::set(&pc, "fresh_days", "10").unwrap();
         round(&mut pc, &mut phone);
-        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "off");
-        assert_eq!(crate::settings::get(&pc, "hide_below").unwrap(), "off");
+        assert_eq!(crate::settings::get(&phone, "fresh_days").unwrap(), "10");
+        assert_eq!(crate::settings::get(&pc, "fresh_days").unwrap(), "10");
     }
 
     #[test]
-    fn a_threshold_chosen_before_settings_travelled_still_reaches_the_phone() {
+    fn a_setting_chosen_before_settings_travelled_still_reaches_the_phone() {
         let (mut pc, mut phone) = (test_db(), test_db());
-        pc.execute("INSERT INTO settings (key, value) VALUES ('hide_below', '50')", []).unwrap();
+        pc.execute("INSERT INTO settings (key, value) VALUES ('fresh_days', '14')", []).unwrap();
         round(&mut pc, &mut phone);
-        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "50");
+        assert_eq!(crate::settings::get(&phone, "fresh_days").unwrap(), "14");
 
-        crate::settings::set(&phone, "hide_below", "70").unwrap();
+        crate::settings::set(&phone, "fresh_days", "30").unwrap();
         round(&mut pc, &mut phone);
-        assert_eq!(crate::settings::get(&pc, "hide_below").unwrap(), "70");
+        assert_eq!(crate::settings::get(&pc, "fresh_days").unwrap(), "30");
     }
 
     #[test]
@@ -437,9 +440,9 @@ mod tests {
         crate::settings::set(&phone, "theme", "dark").unwrap();
         let row = |uid: &str, value: &str| Row { uid: uid.into(), at: "2099-01-01T00:00:00Z".into(), data: json!({ "value": value }) };
         let mut snapshot = Snapshot { format: FORMAT, ..Default::default() };
-        snapshot.tables.insert("settings".into(), vec![row("hide_below", "1; DROP TABLE offers"), row("theme", "light")]);
+        snapshot.tables.insert("settings".into(), vec![row("fresh_days", "1; DROP TABLE offers"), row("theme", "light")]);
         apply(&mut phone, &snapshot, NOW).unwrap();
-        assert_eq!(crate::settings::get(&phone, "hide_below").unwrap(), "off");
+        assert_eq!(crate::settings::get(&phone, "fresh_days").unwrap(), "10");
         assert_eq!(crate::settings::get(&phone, "theme").unwrap(), "dark");
     }
 
