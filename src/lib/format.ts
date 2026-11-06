@@ -30,7 +30,7 @@ export function fullDate(iso: string, lang: Lang): string {
 }
 
 /** Compact salary for the board: "12-16 tys", "45-60 EUR/h". */
-export function salaryShort(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salaryCurrency" | "salaryPeriod">, t: T): string {
+export function salaryShort(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salaryCurrency" | "salaryPeriod">, lang: Lang, t: T): string {
   const { salaryMin: min, salaryMax: max } = o;
   if (min == null && max == null) return t("salary.none");
   const currency = o.salaryCurrency && o.salaryCurrency !== "PLN" ? ` ${o.salaryCurrency}` : "";
@@ -39,7 +39,7 @@ export function salaryShort(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salar
   }
   const k = (v: number) => {
     const thousands = v / 1000;
-    return Number.isInteger(thousands) ? String(thousands) : thousands.toFixed(1).replace(".", ",");
+    return Number.isInteger(thousands) ? String(thousands) : thousands.toFixed(1).replace(".", lang === "pl" ? "," : ".");
   };
   return `${range(min, max, k)} ${t("salary.thousand")}${currency}`;
 }

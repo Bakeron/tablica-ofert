@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::error::{AppError, AppResult};
+
 /// One synchronised row: its table, stable id, time of the last change and the fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Row {
@@ -46,6 +48,15 @@ pub struct MergeStats {
     pub changed: usize,
     /// Local rows the other device deleted.
     pub removed: usize,
+}
+
+/// A file from a newer app version is refused: merging it here would write it back
+/// in the old format and drop the fields this version does not know.
+pub fn check_format(remote: &Snapshot) -> AppResult<()> {
+    if remote.format > FORMAT {
+        return Err(AppError::Outdated);
+    }
+    Ok(())
 }
 
 fn clip(at: &str, now: &str) -> String {
@@ -134,6 +145,13 @@ mod tests {
     }
 
     const NOW: &str = "2026-11-05T12:00:00Z";
+
+    #[test]
+    fn a_file_from_a_newer_version_is_refused() {
+        assert!(check_format(&snap("phone", vec![], vec![])).is_ok());
+        let newer = Snapshot { format: FORMAT + 1, ..snap("phone", vec![row("a", NOW, "x")], vec![]) };
+        assert!(matches!(check_format(&newer), Err(AppError::Outdated)));
+    }
 
     #[test]
     fn newer_row_wins_on_both_sides_and_new_rows_are_added() {

@@ -61,7 +61,7 @@ pub fn check_copy(source: &Path, password: &str) -> AppResult<i64> {
         .map_err(|_| AppError::Invalid("wrong password or not a copy of Tablica Ofert".into()))?;
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > db::latest_version() {
-        return Err(AppError::Invalid("the copy comes from a newer app version - update the app first".into()));
+        return Err(AppError::Outdated);
     }
     Ok(count)
 }
@@ -173,6 +173,24 @@ mod tests {
         let version: i64 = loaded.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
         assert_eq!(version, db::latest_version());
         assert!(target_dir.join("kopie").read_dir().unwrap().count() >= 1);
+    }
+
+    #[test]
+    fn a_copy_from_a_newer_version_asks_for_an_update() {
+        let dir = temp_dir("newer-copy");
+        let conn = test_db();
+        let copy = dir.join("kopia.tablica");
+        save_copy(&conn, &copy, "hasło-do-kopii").unwrap();
+        {
+            let newer = Connection::open(&copy).unwrap();
+            newer.pragma_update(None, "key", "hasło-do-kopii").unwrap();
+            newer.pragma_update(None, "user_version", db::latest_version() + 1).unwrap();
+        }
+        let error = check_copy(&copy, "hasło-do-kopii").unwrap_err();
+        assert!(matches!(error, AppError::Outdated));
+        // `SyncSettings.tsx` looks for these words, and the UI for this code.
+        assert!(error.to_string().contains("newer app version"));
+        assert_eq!(error.code(), "outdated");
     }
 
     #[test]

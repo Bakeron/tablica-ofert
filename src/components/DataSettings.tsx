@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import type { Api } from "../api";
 import { useI18n, type TextKey } from "../i18n";
 import { CSV_LISTS, csvCells, csvName, type CsvList } from "../lib/csv";
+import { PASSWORD_MIN } from "../lib/limits";
 import { IconWarning } from "./Icons";
 import { ShowToggle } from "./SecretField";
 
@@ -34,7 +35,7 @@ export function DataSettings({
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (mismatch || savePass.length < 8) return;
+    if (mismatch || savePass.length < PASSWORD_MIN) return;
     setBusy(true);
     try {
       const path = await api.saveCopy(savePass);
@@ -94,7 +95,7 @@ export function DataSettings({
               <label htmlFor={`${id}-save`}>{t("data.password")}</label>
               <ShowToggle controls={`${id}-save`} shown={shown.save} onToggle={(v) => setShown({ ...shown, save: v })} />
             </div>
-            <input id={`${id}-save`} type={shown.save ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={200} value={savePass} onChange={(e) => setSavePass(e.target.value)} />
+            <input id={`${id}-save`} type={shown.save ? "text" : "password"} autoComplete="new-password" minLength={PASSWORD_MIN} maxLength={200} value={savePass} onChange={(e) => setSavePass(e.target.value)} />
           </div>
           <div className="field">
             <div className="secret-head">
@@ -105,9 +106,9 @@ export function DataSettings({
             {mismatch && <span className="source-warn">{t("data.mismatch")}</span>}
           </div>
         </div>
-        <p className="hint">{t("data.passwordHint")}</p>
+        <p className="hint">{t("data.passwordHint", { min: PASSWORD_MIN })}</p>
         <div>
-          <button type="submit" className="btn btn-sign btn-small" disabled={busy || mismatch || savePass.length < 8 || savePass2 === ""}>
+          <button type="submit" className="btn btn-sign btn-small" disabled={busy || mismatch || savePass.length < PASSWORD_MIN || savePass2 === ""}>
             {t("data.save")}
           </button>
         </div>

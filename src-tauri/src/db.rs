@@ -295,7 +295,7 @@ pub mod tests {
         conn.execute(
             "INSERT INTO offers (uid, fingerprint, title, company, description, notes,
                 stage_changed_at, added_at, updated_at)
-             VALUES ('u-1', 'fp-1', 'Tester', 'Firma PrzykĹ‚adowa', 'Opis oferty', 'Moja notatka',
+             VALUES ('u-1', 'fp-1', 'Tester', 'Firma Przykładowa', 'Opis oferty', 'Moja notatka',
                 '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
             [],
         )
@@ -325,9 +325,9 @@ pub mod tests {
     /// Fails when an existing migration is edited - a schema change must be a new file.
     #[test]
     fn existing_migrations_are_frozen() {
-        // FNV-1a over migrations 001-013, line endings normalized (Git may check out CRLF).
-        const EXISTING: usize = 13;
-        const HASH: u64 = 2_580_925_480_483_856_098;
+        // FNV-1a over migrations 001-014, line endings normalized (Git may check out CRLF).
+        const EXISTING: usize = 14;
+        const HASH: u64 = 16_529_390_142_502_270_356;
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for sql in &MIGRATIONS[..EXISTING] {
             for b in sql.bytes().filter(|&b| b != b'\r').chain([0u8]) {

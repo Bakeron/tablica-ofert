@@ -437,8 +437,8 @@ function ProviderAlert({ st, limit }: { st: AiProviderStatus; limit: number }) {
 }
 
 function MachineView({ m }: { m: Machine }) {
-  const { t } = useI18n();
-  const gb = (mb: number) => (mb / 1024).toFixed(mb >= 10240 ? 0 : 1).replace(".", ",");
+  const { t, lang } = useI18n();
+  const gb = (mb: number) => (mb / 1024).toFixed(mb >= 10240 ? 0 : 1).replace(".", lang === "pl" ? "," : ".");
   return (
     <div className="machine-result" role="status">
       <p>

@@ -272,7 +272,7 @@ export function AddOfferDialog({
             <datalist id="contracts">
               <option value="UoP" />
               <option value="B2B" />
-              <option value="Umowa zlecenie" />
+              <option value={t("contract.mandate")} />
             </datalist>
           </label>
           <label className="field">

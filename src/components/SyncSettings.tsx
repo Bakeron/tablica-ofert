@@ -26,6 +26,8 @@ const CLIENT_STEPS = [
 /** Same text as `drive::LOGIN_EXPIRED` in Rust - the Google login has ended, connect again. */
 const LOGIN_EXPIRED = "google login expired";
 const loginExpired = (text: string | null | undefined) => !!text && text.includes(LOGIN_EXPIRED);
+/** Same text as `AppError::Outdated` in Rust - the other device has a newer version of the app. */
+const OUTDATED = "newer app version";
 
 const QR_SECONDS = 120;
 /** Asking Google again survives a short loss of network (the phone is in the browser meanwhile). */
@@ -279,7 +281,7 @@ export function SyncSettings({
               ) : (
                 <div className="source-warn">
                   <p>
-                    <IconWarning /> {t("sync.failed")}
+                    <IconWarning /> {t(status.lastError.includes(OUTDATED) ? "error.outdated" : "sync.failed")}
                   </p>
                   <details>
                     <summary>{t("error.details")}</summary>

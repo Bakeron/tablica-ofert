@@ -274,6 +274,9 @@ mod tests {
         assert_eq!(numbers["JOOBLE_KEY_CALLS"] as i64, crate::sources::jooble::KEY_CALLS);
         assert_eq!(numbers["FOLLOW_UP_DAYS"] as i64, crate::agenda::FOLLOW_UP_DAYS);
         assert_eq!(numbers["SECRET_MAX"], crate::secrets::MAX_SECRET);
+        assert_eq!(numbers["LOW_KEYWORD_SCORE"] as i64, crate::profiles::LOW_KEYWORD_SCORE);
+        assert_eq!(numbers["SALARY_FAR_ABOVE"] as f64, crate::filter::FAR_ABOVE);
+        assert_eq!(numbers["PASSWORD_MIN"], crate::backup::MIN_PASSWORD);
         for (key, rule) in ALLOWED {
             // The list of providers comes from check boxes, not from a text field.
             let Rule::Text { max, .. } = rule else { continue };

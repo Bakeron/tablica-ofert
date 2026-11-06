@@ -51,8 +51,9 @@ pub fn open(app: &AppHandle, url: &str) -> AppResult<()> {
         return Ok(());
     }
     let handle = app.clone();
+    let polish = crate::notify::polish(&app.state::<crate::commands::AppState>());
     WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(parsed))
-        .title("Tablica Ofert - podgląd strony")
+        .title(if polish { "Tablica Ofert - podgląd strony" } else { "Tablica Ofert - page preview" })
         .inner_size(1100.0, 800.0)
         .on_navigation(move |target| {
             if target.host_str() != Some(CAPTURE_HOST) {

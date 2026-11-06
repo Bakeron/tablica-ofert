@@ -486,8 +486,8 @@ export function createMockApi(): Api {
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       return [
-        { name: "AI Product Builder", why: "Łączy budowanie stron w WordPressie z narzędziami AI - prototypy produktów od pomysłu do działającej wersji. (Przykład z podglądu.)" },
-        { name: "AI Automation Specialist", why: "Twoje doświadczenie z wtyczkami i integracjami przydaje się przy automatyzacji pracy firm modelami językowymi." },
+        { name: "Product Engineer (Frontend)", why: "Łączy React i TypeScript z pracą nad całym produktem - od pomysłu do działającej wersji. (Przykład z podglądu.)" },
+        { name: "Accessibility Specialist", why: "Twoje doświadczenie z interfejsami przydaje się przy dostępności aplikacji - czytniki ekranu, klawiatura, kontrast." },
         { name: "React", why: "Już w Twoich słowach kluczowych - przycisk dodawania jest wyłączony. (Przykład z podglądu.)" },
         { name: "Technical Content Engineer", why: "Pisanie dokumentacji i przykładów kodu dla narzędzi AI - łączy programowanie z jasnym tłumaczeniem." },
       ];

@@ -851,6 +851,9 @@ details[open]::details-content {
 }
 
 .offer-title {
+  /* Shrinks next to the star instead of dropping below it and leaving the star alone on a line. */
+  flex: 1 1 0;
+  min-width: 0;
   font-weight: 600;
   font-size: 1.15rem;
   line-height: 1.2;
@@ -871,7 +874,11 @@ details[open]::details-content {
 
 .fav {
   color: var(--accent-text);
-  align-self: center;
+  /* Stays at the first line of a wrapped title. */
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  height: 1.38rem; /* one line of .offer-title: 1.15rem x 1.2 */
 }
 
 .fav svg {
@@ -2351,7 +2358,12 @@ fieldset.plain {
     display: none;
   }
 
+  /* Gives the job title room: at about 1100 px it had 112 px and wrapped into three lines. */
   .c-place {
+    width: 7.5rem;
+  }
+
+  .c-status {
     width: 8.5rem;
   }
 }
@@ -2368,6 +2380,17 @@ fieldset.plain {
 
   .board-wrap {
     min-height: 50vh;
+  }
+}
+
+/* The card moves under the list, so a wide enough list gets the full columns back. */
+@container app (min-width: 50rem) and (max-width: 58rem) {
+  .c-place {
+    width: 8.5rem;
+  }
+
+  .c-status {
+    width: 10.5rem;
   }
 }
 

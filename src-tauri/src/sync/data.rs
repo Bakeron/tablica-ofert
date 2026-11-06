@@ -202,7 +202,7 @@ fn offer_id(tx: &Transaction, uid: &str) -> AppResult<Option<i64>> {
 /// only a part of the offers). Ends with a full filter re-check.
 pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<()> {
     if merged.format > FORMAT {
-        return Err(AppError::Invalid("the sync file comes from a newer app version - update the app".into()));
+        return Err(AppError::Outdated);
     }
     let tx = conn.transaction()?;
     let empty = Vec::new();
@@ -211,6 +211,10 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
     // Profiles first (scores point to them), then offers, then what belongs to offers.
     for r in table("profiles") {
         if local_at(&tx, "profiles", "updated_at", &r.uid)?.is_some_and(|mine| mine >= r.at) {
+            continue;
+        }
+        // The same field rules as on this device; a bad row is skipped, the local copy stays.
+        if crate::profiles::check_synced(&r.data).is_err() {
             continue;
         }
         upsert(&tx, "profiles", PROFILE_COLS, &r.uid, &r.data, &[])?;
@@ -283,6 +287,9 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         ("log", "contact_log", LOG_COLS, "at"),
     ] {
         for r in table(name) {
+            if crate::agenda::check_synced(name, &r.data).is_err() {
+                continue;
+            }
             let Some(offer) = r.data.get("offer_uid").and_then(Value::as_str) else { continue };
             let Some(id) = offer_id(&tx, offer)? else { continue };
             if local_at(&tx, db_table, at_col, &r.uid)?.is_some_and(|mine| mine >= r.at) {
@@ -292,7 +299,7 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         }
     }
 
-    if let Some(r) = table("experience").first() {
+    if let Some(r) = table("experience").first().filter(|r| crate::profiles::check_synced_experience(&r.data).is_ok()) {
         let mine: Option<String> = tx.query_row("SELECT updated_at FROM candidate WHERE id = 1", [], |x| x.get(0)).optional()?;
         if mine.is_none_or(|m| m < r.at) {
             tx.execute(
@@ -418,6 +425,13 @@ mod tests {
     }
 
     #[test]
+    fn a_snapshot_from_a_newer_version_is_not_applied() {
+        let mut phone = test_db();
+        let snapshot = Snapshot { format: FORMAT + 1, ..Default::default() };
+        assert!(matches!(apply(&mut phone, &snapshot, NOW), Err(AppError::Outdated)));
+    }
+
+    #[test]
     fn only_listed_settings_with_good_values_come_from_the_sync_file() {
         let mut phone = test_db();
         crate::settings::set(&phone, "theme", "dark").unwrap();
@@ -511,5 +525,41 @@ mod tests {
         crate::agenda::delete_event(&phone, a.events[0].id).unwrap();
         round(&mut pc, &mut phone);
         assert!(crate::agenda::agenda(&pc, id).unwrap().events.is_empty());
+    }
+
+    #[test]
+    fn bad_profile_date_contact_and_history_rows_from_the_sync_file_are_skipped() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let input = |name: &str| ProfileInput { id: None, name: name.into(), description: "Frontend".into(), criteria: Criteria::default() };
+        crate::profiles::save(&mut phone, input("Plan A")).unwrap();
+        crate::profiles::save(&mut phone, input("Plan B")).unwrap();
+        let id = add(&mut phone, "Tester");
+        crate::agenda::add_event(&phone, id, crate::agenda::EventInput { kind: "interview".into(), at: "2026-11-05T13:00:00Z".into(), minutes: 60, note: String::new() }).unwrap();
+        crate::agenda::add_event(&phone, id, crate::agenda::EventInput { kind: "other".into(), at: "2026-11-06T13:00:00Z".into(), minutes: 60, note: String::new() }).unwrap();
+        crate::agenda::save_contact(&phone, id, crate::agenda::Contact { name: "Anna Zmyślona".into(), ..Default::default() }).unwrap();
+        crate::agenda::save_contact(&phone, id, crate::agenda::Contact { name: "Jan Testowy".into(), ..Default::default() }).unwrap();
+        crate::agenda::add_log(&phone, id, crate::agenda::LogInput { at: "2026-11-04T09:00:00Z".into(), kind: "call".into(), note: "Rozmowa".into() }).unwrap();
+        crate::agenda::add_log(&phone, id, crate::agenda::LogInput { at: "2026-11-04T10:00:00Z".into(), kind: "mail".into(), note: String::new() }).unwrap();
+        crate::profiles::set_experience(&phone, "4 lata React").unwrap();
+
+        let mut snapshot = export(&phone, "phone", NOW).unwrap();
+        let mut spoil = |table: &str, index: usize, key: &str, value: Value| {
+            snapshot.tables.get_mut(table).unwrap()[index].data.as_object_mut().unwrap().insert(key.into(), value);
+        };
+        spoil("profiles", 1, "name", json!("x".repeat(1_000)));
+        spoil("events", 1, "at", json!("jutro"));
+        spoil("contacts", 1, "linkedin", json!("javascript:alert(1)"));
+        spoil("log", 1, "kind", json!("telegram"));
+        spoil("experience", 0, "experience", json!(42));
+        apply(&mut pc, &snapshot, NOW).unwrap();
+
+        let names: Vec<String> = crate::profiles::list(&pc).unwrap().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, vec!["Plan A"]);
+        let pc_id: i64 = pc.query_row("SELECT id FROM offers", [], |r| r.get(0)).unwrap();
+        let a = crate::agenda::agenda(&pc, pc_id).unwrap();
+        assert_eq!(a.events.len(), 1);
+        assert_eq!(a.contacts.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["Anna Zmyślona"]);
+        assert_eq!(a.log.len(), 1);
+        assert_eq!(crate::profiles::experience(&pc).unwrap(), "");
     }
 }

@@ -32,6 +32,10 @@ pub enum AppError {
     /// The same long task (e.g. fetching offers) is already running.
     #[error("already running")]
     Busy,
+    /// A sync file or a copy made by a newer app version - this device needs the update.
+    /// The text is also matched in `SyncSettings.tsx` (a past sync keeps only the text).
+    #[error("data from a newer app version")]
+    Outdated,
 }
 
 impl AppError {
@@ -48,6 +52,7 @@ impl AppError {
             AppError::Limit(_) => "limit",
             AppError::Missing(_) => "missing",
             AppError::Busy => "busy",
+            AppError::Outdated => "outdated",
         }
     }
 }

@@ -822,7 +822,7 @@ fn in_offer_terms(amount: i64, rule: &SalaryRule, b2b: bool) -> (f64, bool) {
 
 /// The bottom of the range this many times above what the user expects usually means a higher
 /// level than the title says (e.g. 18 000 for someone expecting 7 000).
-const FAR_ABOVE: f64 = 2.0;
+pub(crate) const FAR_ABOVE: f64 = 2.0;
 
 /// Pay far above the expectation is not a reason to reject, but worth a look before applying.
 fn salary_far_above(f: &Facts, text: &Text, c: &Criteria, out: &mut Out) {

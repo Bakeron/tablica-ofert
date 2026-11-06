@@ -4,9 +4,9 @@ import { CSV_LISTS, csvCells, csvDate, csvName } from "./csv";
 
 const row: ExportRow = {
   id: 1,
-  title: "Programista WordPress",
+  title: "Programista Java",
   company: "Firma Testowa",
-  city: "Olsztyn",
+  city: "Wrocław",
   remote: "hybrid",
   salaryMin: 9000,
   salaryMax: null,

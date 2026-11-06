@@ -20,6 +20,8 @@ const LICENSES: [string, string][] = [
   ["keyring-core", "MIT / Apache-2.0"],
   ["Barlow Condensed, Atkinson Hyperlegible Next", "SIL Open Font License 1.1"],
   ["AndroidX, Material Components (Android)", "Apache-2.0"],
+  ["CameraX, Jackson, Kotlin coroutines (Android)", "Apache-2.0"],
+  ["ML Kit, Google Play services (Android, QR code scanner)", "Google APIs Terms of Service"],
 ];
 
 function Parts({ parts, onOpenLink }: { parts: Inline[]; onOpenLink: (url: string) => void }) {
@@ -109,7 +111,7 @@ export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink
         <h3 id="privacy-title" className="source-title">{t("about.privacyTitle")}</h3>
         <ul className="about-list">
           <li>{t(isPhone() ? "about.p1Phone" : "about.p1")}</li>
-          <li>{t("about.p2")}</li>
+          <li>{t(isPhone() ? "about.p2Phone" : "about.p2")}</li>
           <li>{t("about.p3")}</li>
           <li>{t("about.p4")}</li>
         </ul>

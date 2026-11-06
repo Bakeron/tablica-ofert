@@ -105,6 +105,63 @@ fn field(value: &str) -> String {
     one_line(value, MAX_FIELD)
 }
 
+/// A text field of a row from the sync file: missing = empty, another type = error.
+fn synced_text<'a>(d: &'a serde_json::Value, key: &str) -> AppResult<&'a str> {
+    match d.get(key) {
+        None | Some(serde_json::Value::Null) => Ok(""),
+        Some(serde_json::Value::String(s)) => Ok(s),
+        Some(_) => Err(AppError::Invalid(format!("{key} has a wrong type"))),
+    }
+}
+
+/// A row of dates, contacts or contact history from the sync file gets the same rules as
+/// one typed on this device (`kind`: "events", "contacts" or "log"); a bad row is skipped.
+pub fn check_synced(kind: &str, d: &serde_json::Value) -> AppResult<()> {
+    let one_line_field = |key: &str| -> AppResult<()> {
+        let v = synced_text(d, key)?;
+        if v.chars().count() > MAX_FIELD || v.chars().any(char::is_control) {
+            return Err(AppError::Invalid(format!("{key} is too long or has control characters")));
+        }
+        Ok(())
+    };
+    let time = |key: &str| parse_time(synced_text(d, key)?).map(|_| ());
+    match kind {
+        "events" => {
+            if !["interview", "deadline", "other"].contains(&synced_text(d, "kind")?) {
+                return Err(AppError::Invalid("unknown kind of date".into()));
+            }
+            time("at")?;
+            time("created_at")?;
+            if !d.get("minutes").and_then(serde_json::Value::as_i64).is_some_and(|m| (5..=24 * 60).contains(&m)) {
+                return Err(AppError::Invalid("minutes out of range".into()));
+            }
+            note(synced_text(d, "note")?).map(|_| ())
+        }
+        "contacts" => {
+            if synced_text(d, "name")?.trim().is_empty() {
+                return Err(AppError::Invalid("name is required".into()));
+            }
+            for key in ["name", "role", "email", "phone", "linkedin"] {
+                one_line_field(key)?;
+            }
+            let linkedin = synced_text(d, "linkedin")?;
+            if !linkedin.is_empty() {
+                crate::offers::safe_url(Some(linkedin.to_string()))?;
+            }
+            time("created_at")?;
+            time("updated_at")
+        }
+        "log" => {
+            if !["call", "mail", "meeting", "message"].contains(&synced_text(d, "kind")?) {
+                return Err(AppError::Invalid("unknown kind of contact".into()));
+            }
+            time("at")?;
+            note(synced_text(d, "note")?).map(|_| ())
+        }
+        _ => Err(AppError::Invalid(format!("unknown table {kind}"))),
+    }
+}
+
 fn offer_exists(conn: &Connection, offer_id: i64) -> AppResult<()> {
     let found: Option<i64> = conn.query_row("SELECT id FROM offers WHERE id = ?1", [offer_id], |r| r.get(0)).optional()?;
     found.map(|_| ()).ok_or(AppError::NotFound)

@@ -31,6 +31,8 @@ const read = (path) => readFileSync(path, "utf8").replace(/\r\n/g, "\n").trim();
 
 // ---------- Rust ----------
 const crates = new Map();
+// Android libraries the Tauri plugins add to the APK themselves (their own Gradle files).
+const pluginGradle = new Set();
 for (const target of TARGETS) {
   const meta = JSON.parse(
     execFileSync(
@@ -61,6 +63,12 @@ for (const target of TARGETS) {
   for (const id of seen) {
     const p = packages.get(id);
     const dir = dirname(p.manifest_path);
+    if (target.includes("android")) {
+      for (const sub of ["android", join("mobile", "android")]) {
+        const file = join(dir, sub, "build.gradle.kts");
+        if (existsSync(file)) pluginGradle.add(file);
+      }
+    }
     const files = licenseFiles(dir, p.name.endsWith("-src") || p.name === "libsqlite3-sys");
     if (p.license_file) files.push(join(dir, p.license_file));
     crates.set(`${p.name} ${p.version}`, {
@@ -86,8 +94,20 @@ for (const [path, p] of Object.entries(lock.packages)) {
 }
 
 // ---------- Android libraries (APK only, from Maven) ----------
-const gradle = read(join(ROOT, "src-tauri", "gen", "android", "app", "build.gradle.kts"));
-const android = [...gradle.matchAll(/implementation\("([^"]+)"\)/g)].map((m) => m[1]);
+// The app's own Gradle file first, then the plugins'; one entry per library (group:name).
+const android = new Map();
+for (const file of [join(ROOT, "src-tauri", "gen", "android", "app", "build.gradle.kts"), ...[...pluginGradle].sort()]) {
+  for (const m of read(file).matchAll(/implementation\("([^"]+)"\)/g)) {
+    // A version kept in a Gradle variable ("${camerax_version}") is left out.
+    const lib = m[1].replace(/:\$\{[^}]*\}$/, "");
+    const name = lib.split(":").slice(0, 2).join(":");
+    if (!android.has(name)) android.set(name, lib);
+  }
+}
+// Google Play services and ML Kit (the QR scanner) are not open source - Google's own terms.
+const isGoogle = (lib) => /^com\.google\.(android\.gms|mlkit):/.test(lib);
+const androidOpen = [...android.values()].filter((lib) => !isGoogle(lib));
+const androidGoogle = [...android.values()].filter(isGoogle);
 
 // ---------- one copy of every distinct text (per file: Apache-2.0 once, each MIT notice kept) ----------
 const groups = new Map();
@@ -120,11 +140,20 @@ const parts = [
 for (const g of groups.values()) {
   parts.push(line, `Used by: ${g.who.join(", ")}`, `Licence: ${[...g.licenses].join("; ")}`, line, "", g.text, "");
 }
-if (android.length) {
+if (androidOpen.length) {
   parts.push(
     line,
-    "Android only (APK): " + android.join(", ") + " and their AndroidX / Kotlin dependencies",
+    "Android only (APK): " + androidOpen.join(", ") + " and their AndroidX / Kotlin dependencies",
     "Licence: Apache-2.0 (text above) - https://developer.android.com/jetpack/androidx",
+    line,
+    "",
+  );
+}
+if (androidGoogle.length) {
+  parts.push(
+    line,
+    "Android only (APK), QR code scanner: " + androidGoogle.join(", ") + " and their Google Play services dependencies",
+    "Licence: Google APIs Terms of Service (not open source) - https://developers.google.com/ml-kit/terms",
     line,
     "",
   );

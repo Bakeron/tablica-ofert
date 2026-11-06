@@ -270,7 +270,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                 </td>
                 <td role="gridcell" className="c-salary">
                   <CellName text={t("col.salary")} />
-                  <Flap className="mono" text={salaryShort(o, t)} fresh={fresh} />
+                  <Flap className="mono" text={salaryShort(o, lang, t)} fresh={fresh} />
                 </td>
                 <td role="gridcell" className="c-match">
                   <CellName text={t("col.matchLong")} />

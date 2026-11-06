@@ -529,7 +529,7 @@ export interface WorkProgress {
 
 /** Error shape sent by the Rust side (`AppError`). */
 export interface AppError {
-  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy";
+  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy" | "outdated";
   detail: string;
 }
 
@@ -545,7 +545,7 @@ export function isAppError(value: unknown): value is AppError {
 /** Any thrown value as a text key (`error.*`) for the person plus the technical detail. */
 export function describeError(e: unknown): { key: string; detail: string } {
   if (!isAppError(e)) return { key: "error.generic", detail: String(e) };
-  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy"];
+  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy", "outdated"];
   return { key: known.includes(e.code) ? `error.${e.code}` : "error.generic", detail: e.detail };
 }
 

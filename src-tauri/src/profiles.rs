@@ -180,6 +180,41 @@ pub fn delete(conn: &mut Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// A profile from the sync file gets the same rules as one saved on this device;
+/// a bad row is skipped.
+pub fn check_synced(d: &serde_json::Value) -> AppResult<()> {
+    use serde_json::Value;
+    let text = |key: &str| -> AppResult<String> {
+        match d.get(key) {
+            None | Some(Value::Null) => Ok(String::new()),
+            Some(Value::String(s)) => Ok(s.clone()),
+            Some(_) => Err(AppError::Invalid(format!("{key} has a wrong type"))),
+        }
+    };
+    clean_text(&text("name")?, MAX_NAME, "profile name", true)?;
+    clean_text(&text("description")?, MAX_DESCRIPTION, "description", true)?;
+    clean_text(&text("description_prev")?, MAX_DESCRIPTION, "description", false)?;
+    let criteria: Criteria = serde_json::from_str(&text("criteria")?).map_err(|e| AppError::Invalid(format!("criteria: {e}")))?;
+    clean_criteria(criteria)?;
+    if !d.get("position").is_some_and(|p| p.as_i64().is_some_and(|n| n >= 0)) {
+        return Err(AppError::Invalid("position out of range".into()));
+    }
+    for key in ["created_at", "updated_at"] {
+        time::OffsetDateTime::parse(&text(key)?, &time::format_description::well_known::Rfc3339)
+            .map_err(|_| AppError::Invalid(format!("{key} has a wrong format")))?;
+    }
+    Ok(())
+}
+
+/// Shared work experience from the sync file: the same limits as typed text.
+pub fn check_synced_experience(d: &serde_json::Value) -> AppResult<()> {
+    match d.get("experience") {
+        None | Some(serde_json::Value::Null) => Ok(()),
+        Some(serde_json::Value::String(s)) => clean_text(s, MAX_EXPERIENCE, "experience", false).map(|_| ()),
+        Some(_) => Err(AppError::Invalid("experience has a wrong type".into())),
+    }
+}
+
 // ---------- shared work experience ----------
 
 pub fn experience(conn: &Connection) -> AppResult<String> {
@@ -243,7 +278,7 @@ fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
 /// Below this score without AI an offer that passed the filter goes to "Do sprawdzenia" instead of
 /// standing next to good ones. Kept low: Adzuna and Jooble give only the start of the description,
 /// so even fitting offers rarely show many of the profile's words.
-const LOW_KEYWORD_SCORE: i64 = 30;
+pub(crate) const LOW_KEYWORD_SCORE: i64 = 30;
 
 fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -> AppResult<()> {
     tx.execute("DELETE FROM offer_filters WHERE offer_id = ?1", [offer_id])?;

@@ -118,7 +118,9 @@ async fn run_inner(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
         Some(f) => {
             let bytes = drive::download(&http, &access, f).await?;
             let plain = crypto::open(&key, &bytes)?;
-            serde_json::from_slice::<merge::Snapshot>(&plain).map_err(|e| AppError::Invalid(format!("damaged sync file: {e}")))?
+            let remote = serde_json::from_slice::<merge::Snapshot>(&plain).map_err(|e| AppError::Invalid(format!("damaged sync file: {e}")))?;
+            merge::check_format(&remote)?;
+            remote
         }
         None => merge::Snapshot::default(),
     };
@@ -134,11 +136,15 @@ async fn run_inner(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
 }
 
 /// "Disconnect devices": a new key - an old phone can no longer read the file.
-/// The file on Drive is re-encrypted with the new key right away.
+/// The file on Drive is re-encrypted with the new key right away. When Google cannot be
+/// reached (no network, expired login), the old key stays: a new one would lock this
+/// computer out of its own file on Drive.
 pub async fn new_key(state: &AppState) -> AppResult<()> {
     let old = key()?;
     let fresh = crypto::new_key()?;
-    if let (Some(old), Ok((http, access))) = (old, token(state).await) {
+    let connected = secrets::get(drive::REFRESH_SECRET)?.is_some();
+    if let (Some(old), true) = (old, connected) {
+        let (http, access) = token(state).await?;
         if let Some(file) = drive::find(&http, &access).await? {
             let plain = crypto::open(&old, &drive::download(&http, &access, &file).await?)?;
             drive::upload(&http, &access, Some(&file), crypto::seal(&fresh, &plain)?).await?;

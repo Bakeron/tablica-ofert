@@ -457,7 +457,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
   },
   {
     hoursAgo: 2,
-    score: 81,
+    score: 45,
     scoreSource: "ai",
     filters: [fit, { result: "unsure", reasons: [{ kind: "unsure", code: "remote_not_wanted" }] }],
     ai: {
@@ -468,7 +468,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
       remoteQuote: null,
       error: null,
       scores: [
-        { profile: 0, score: 81, why: "WordPress, PHP i ACF - jak w opisie profilu, w pełni zdalnie.", quote: "Fully remote, anywhere in Europe" },
+        { profile: 0, score: 45, why: "PHP i WordPress - poza słowami kluczowymi profilu, ale w pełni zdalnie.", quote: "Fully remote, anywhere in Europe" },
         { profile: 1, score: 40, why: "Praca zdalna, a Plan B szuka biura we Wrocławiu.", quote: null },
       ],
     },

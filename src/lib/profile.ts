@@ -1,5 +1,6 @@
 import type { Criteria, FilterResult, OfferRow, Reason } from "../api/types";
 import type { T, TextKey } from "../i18n";
+import { SALARY_FAR_ABOVE } from "./limits";
 
 /** Criteria of a new profile: nothing required yet, everything except keywords as a hard filter. */
 export function emptyCriteria(): Criteria {
@@ -56,7 +57,7 @@ export function toAmount(value: string): number | null {
 export function reasonText(reason: Reason, t: T): string {
   const key = `filter.reason.${reason.code}` as TextKey;
   const value = reason.code === "language_mismatch" ? reason.value?.toUpperCase() : reason.value;
-  const text = t(key, { value: value ?? "" });
+  const text = t(key, { value: value ?? "", times: SALARY_FAR_ABOVE });
   return text === key ? reason.code : text.replace(/\s*\(\)\s*$/, "").trim();
 }
 

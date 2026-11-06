@@ -3,6 +3,7 @@ import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileF
 import { useI18n } from "../i18n";
 import { fullDate, isWebUrl, placeLabel, salaryFull, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
+import { LOW_KEYWORD_SCORE } from "../lib/limits";
 import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { sourceLabel } from "./Board";
@@ -402,7 +403,7 @@ function Stamp({ offer }: { offer: OfferDetail }) {
         <span className="stamp-label">{t("card.matchWords")}</span>
         <span className="stamp-score">{offer.score}</span>
         <span className="stamp-sub">
-          {t("card.matchOf100")} <Help text={t(isPhone() ? "card.matchWordsHelpPhone" : "card.matchWordsHelp")} />
+          {t("card.matchOf100")} <Help text={t(isPhone() ? "card.matchWordsHelpPhone" : "card.matchWordsHelp", { score: LOW_KEYWORD_SCORE })} />
         </span>
       </div>
     );

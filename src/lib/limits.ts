@@ -4,6 +4,12 @@
 export const JOOBLE_KEY_CALLS = 500;
 /** Days after "applied" without a later stage before a follow-up (`agenda::FOLLOW_UP_DAYS`). */
 export const FOLLOW_UP_DAYS = 7;
+/** Below this word match an offer goes to "To check" (`profiles::LOW_KEYWORD_SCORE`). */
+export const LOW_KEYWORD_SCORE = 30;
+/** Pay this many times above the expectation goes to "To check" (`filter::FAR_ABOVE`). */
+export const SALARY_FAR_ABOVE = 2;
+/** Shortest password of a backup copy (`backup::MIN_PASSWORD`). */
+export const PASSWORD_MIN = 8;
 /** Longest key or password (`secrets::MAX_SECRET`). */
 export const SECRET_MAX = 512;
 /** Longest value of a text setting (`max` of the rules in settings.rs). */
