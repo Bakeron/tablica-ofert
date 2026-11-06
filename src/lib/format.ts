@@ -1,5 +1,6 @@
 import type { Lang, T } from "../i18n";
 import type { OfferRow } from "../api/types";
+import { FOLLOW_UP_DAYS } from "./limits";
 
 const DAY = 86_400_000;
 
@@ -65,9 +66,9 @@ export function placeLabel(o: Pick<OfferRow, "city" | "remote">, t: T): string {
   return o.city ?? t("card.missing");
 }
 
-/** 7 days after "applied" without any later stage → time for a follow-up. */
+/** `FOLLOW_UP_DAYS` after "applied" without any later stage → time for a follow-up. */
 export function needsFollowUp(o: Pick<OfferRow, "stage" | "stageChangedAt">, now = Date.now()): boolean {
-  return o.stage === "applied" && now - new Date(o.stageChangedAt).getTime() >= 7 * DAY;
+  return o.stage === "applied" && now - new Date(o.stageChangedAt).getTime() >= FOLLOW_UP_DAYS * DAY;
 }
 
 /** Only plain web links may be opened - never `javascript:`, `file:` etc. */

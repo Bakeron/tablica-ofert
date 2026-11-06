@@ -6,6 +6,7 @@
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
 import { AI_PROVIDERS, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type OfferAi, type WorkProgress } from "./types";
 import { bestResult, viewFor } from "../lib/profile";
+import { JOOBLE_KEY_CALLS } from "../lib/limits";
 import type { Api } from "./index";
 import { DEFAULT_SETTINGS, type OfferDetail, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
 
@@ -370,7 +371,7 @@ export function createMockApi(): Api {
         one("himalayas", true, 8),
         one("weworkremotely", true, 4),
         one("remoteok", true, 4),
-        one("jooble", Boolean(secrets["jooble-key"]), 1, 500),
+        one("jooble", Boolean(secrets["jooble-key"]), 1, JOOBLE_KEY_CALLS),
         one("mail", Boolean(settings.mail_user && secrets["mail-password"]), 0),
       ];
     },

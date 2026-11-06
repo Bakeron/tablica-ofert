@@ -1,6 +1,7 @@
 import { createContext, useContext, useId, useState, type FormEvent } from "react";
 import { describeError, type SecretName } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
+import { SECRET_MAX } from "../lib/limits";
 import { IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 
@@ -128,7 +129,7 @@ export function SecretField({
           type={shown ? "text" : "password"}
           autoComplete="off"
           spellCheck={false}
-          maxLength={512}
+          maxLength={SECRET_MAX}
           value={value}
           placeholder={hint ?? ""}
           aria-describedby={`${id}-state`}

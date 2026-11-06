@@ -45,6 +45,7 @@ import { isNarrowLayout, useFitLevels } from "./lib/fit";
 import { onBack } from "./lib/back";
 import { viewFor } from "./lib/profile";
 import { csvCells, csvName } from "./lib/csv";
+import { JOOBLE_KEY_CALLS } from "./lib/limits";
 
 const VIEWS: View[] = ["board", "review", "rejected", "declined", "trash"];
 
@@ -1007,7 +1008,7 @@ export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Rec
   if (report.runs.length === 0) return t("fetch.noSources");
   const ran = report.runs.some((r) => !r.skipped);
   const skipped = report.runs.find((r) => r.skipped);
-  if (!ran && skipped?.skipped) return t(`fetch.skip.${skipped.skipped}` as TextKey);
+  if (!ran && skipped?.skipped) return t(`fetch.skip.${skipped.skipped}` as TextKey, { calls: JOOBLE_KEY_CALLS });
   return t("fetch.none");
 }
 

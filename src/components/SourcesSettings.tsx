@@ -4,6 +4,7 @@ import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate } from "../lib/format";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
+import { FOLLOW_UP_DAYS, JOOBLE_KEY_CALLS } from "../lib/limits";
 import { IconArrowOut, IconArrowRight, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { MailSettings } from "./MailSettings";
@@ -126,7 +127,7 @@ export function SourcesSettings({
         </label>
         <label className="choice-item">
           <input type="checkbox" checked={settings.notify_reminders === "on"} onChange={(e) => onChange("notify_reminders", e.target.checked ? "on" : "off")} />
-          <span>{t("bg.reminders")}</span>
+          <span>{t("bg.reminders", { days: FOLLOW_UP_DAYS })}</span>
         </label>
       </fieldset>
 
@@ -292,7 +293,7 @@ export function SourceState({
             ? t("src.status.last", { when: fullDate(s.lastOk, lang), added: s.added, merged: s.merged })
             : t("src.status.never")}{" "}
           {s.callsADay > 0 && t("src.status.calls", { count: s.callsToday, max: s.callsADay })}{" "}
-          {s.callsLeft !== null && t("src.status.callsLeft", { count: s.callsLeft })}
+          {s.callsLeft !== null && t("src.status.callsLeft", { count: s.callsLeft, calls: JOOBLE_KEY_CALLS })}
         </p>
       )}
       {failed && (

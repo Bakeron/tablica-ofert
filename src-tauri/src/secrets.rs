@@ -22,7 +22,7 @@ pub const USER_SECRETS: &[&str] = &[
     "google-client-secret",
 ];
 
-const MAX_SECRET: usize = 512;
+pub const MAX_SECRET: usize = 512;
 
 pub fn init() -> AppResult<()> {
     #[cfg(windows)]

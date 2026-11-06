@@ -7,6 +7,7 @@ import { IconArrowOut, IconHome, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
+import { JOOBLE_KEY_CALLS, TEXT_MAX } from "../lib/limits";
 import { SourceBox, SourceState } from "./SourcesSettings";
 
 /** Name of the "How to set up alerts" part in the memory of the Settings window. */
@@ -135,14 +136,15 @@ export function MailSettings({
       <div className="mail-grid">
         <TextSetting
           label={t("mail.user")}
+          maxLength={TEXT_MAX.mail_user}
           hint={t("mail.userHint")}
           value={settings.mail_user}
           type="email"
           onSave={(v) => onChange("mail_user", v)}
         />
         <SecretField name="mail-password" label={t(isGmail ? "mail.passwordGmail" : "mail.password")} hint={hints["mail-password"]} onSave={onSaveSecret} onDelete={onDeleteSecret} onReveal={api.revealSecret} />
-        <TextSetting label={t("mail.host")} value={settings.mail_host} onSave={(v) => onChange("mail_host", v)} />
-        <TextSetting label={t("mail.port")} value={settings.mail_port} inputMode="numeric" onSave={(v) => onChange("mail_port", v)} />
+        <TextSetting label={t("mail.host")} maxLength={TEXT_MAX.mail_host} value={settings.mail_host} onSave={(v) => onChange("mail_host", v)} />
+        <TextSetting label={t("mail.port")} maxLength={TEXT_MAX.mail_port} value={settings.mail_port} inputMode="numeric" onSave={(v) => onChange("mail_port", v)} />
       </div>
       <p className="hint">{t("mail.gmailHint")}</p>
       <div>
@@ -184,6 +186,7 @@ export function MailSettings({
       </div>
       <TextSetting
         label={t("mail.searchWords")}
+        maxLength={TEXT_MAX.search_words}
         hint={t("mail.searchWordsHint")}
         value={settings.search_words}
         placeholder={t("mail.searchWordsPlaceholder")}
@@ -249,7 +252,7 @@ export function MailSettings({
               {p.name === JOOBLE && (
                 <Reveal show={joobleOpen} className="portal-more">
                   <div id="jooble-api" className="source-more" role="region" aria-label={t("src.more", { name: JOOBLE })}>
-                    <p>{t("src.jooble.text")}</p>
+                    <p>{t("src.jooble.text", { calls: JOOBLE_KEY_CALLS })}</p>
                     <label className="choice-item">
                       <input
                         type="checkbox"

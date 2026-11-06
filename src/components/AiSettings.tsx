@@ -3,6 +3,7 @@ import type { Api } from "../api";
 import { AI_PROVIDERS, type AiProvider, type AiProviderStatus, type AiStatus, type Machine, type SecretHints, type SecretName, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
+import { TEXT_MAX } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { ConfirmContext, SecretField } from "./SecretField";
 import { SourceBox } from "./SourcesSettings";
@@ -161,7 +162,7 @@ export function AiSettings({
                   <li>{t("ai.ollamaStep3")}</li>
                 </ol>
                 <OllamaInstall api={api} onError={onError} onToast={onToast} />
-                <TextSetting label={t("ai.ollamaUrl")} value={settings.ollama_url} onSave={(v) => onChange("ollama_url", v)} />
+                <TextSetting label={t("ai.ollamaUrl")} maxLength={TEXT_MAX.ollama_url} value={settings.ollama_url} onSave={(v) => onChange("ollama_url", v)} />
                 <div className="machine">
                   <button type="button" className="btn btn-ghost btn-small" onClick={check} disabled={checking} aria-busy={checking}>
                     {checking ? t("ai.checking") : t("ai.check")}
@@ -183,6 +184,7 @@ export function AiSettings({
             )}
             <TextSetting
               label={t("ai.model")}
+              maxLength={TEXT_MAX.ai_model}
               hint={st ? t("ai.modelHint", { model: st.defaultModel }) : undefined}
               value={settings[`ai_model_${p}`]}
               placeholder={st?.defaultModel}
@@ -198,6 +200,7 @@ export function AiSettings({
       <fieldset className="crit-group ai-common">
         <TextSetting
           label={t("ai.limit")}
+          maxLength={TEXT_MAX.ai_daily_limit}
           hint={t("ai.limitHint")}
           value={settings.ai_daily_limit}
           inputMode="numeric"

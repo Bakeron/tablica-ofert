@@ -7,6 +7,7 @@ import { IconWarning } from "./Icons";
  */
 export function TextSetting({
   label,
+  maxLength,
   hint,
   value,
   placeholder,
@@ -15,6 +16,7 @@ export function TextSetting({
   onSave,
 }: {
   label: string;
+  maxLength: number;
   hint?: string;
   value: string;
   placeholder?: string;
@@ -38,7 +40,7 @@ export function TextSetting({
         spellCheck={false}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
-        maxLength={254}
+        maxLength={maxLength}
         value={draft}
         placeholder={placeholder}
         onChange={(e) => {

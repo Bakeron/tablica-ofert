@@ -58,7 +58,7 @@ export function FirstSteps({
         <header className="sheet-head">
           <h2 id="first-title">{t("first.title")}</h2>
           <span className="first-head-side">
-            <span className="first-count">{t("first.step", { n: step + 1 })}</span>
+            <span className="first-count">{t("first.step", { n: step + 1, total: STEPS.length })}</span>
             <CloseButton onClick={onFinish} label={saved ? t("settings.close") : t("first.skip")} />
           </span>
         </header>

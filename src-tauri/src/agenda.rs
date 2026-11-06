@@ -15,6 +15,8 @@ const MAX_NOTE: usize = 2_000;
 const MAX_FIELD: usize = 200;
 /// Offers scored at least this high by AI get a notification.
 pub const HIGH_SCORE: i64 = 80;
+/// Days after "applied" with no later stage before a follow-up reminder.
+pub const FOLLOW_UP_DAYS: i64 = 7;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -360,7 +362,7 @@ fn sent(conn: &Connection, kind: &str, subject: i64, mark: &str) -> AppResult<bo
 
 /// Reminders due at `now`; each is returned once and then remembered.
 /// Interviews and deadlines: a day before (from 24 h before) and an hour before;
-/// follow-up: 7 days after "applied" with no later stage; new offers scored 80+ by AI.
+/// follow-up: `FOLLOW_UP_DAYS` after "applied" with no later stage; new offers scored 80+ by AI.
 pub fn due(conn: &Connection, now: OffsetDateTime) -> AppResult<Vec<Reminder>> {
     let mut out = Vec::new();
     let now_s = utc(now);
@@ -384,7 +386,7 @@ pub fn due(conn: &Connection, now: OffsetDateTime) -> AppResult<Vec<Reminder>> {
             out.push(Reminder { kind: which, title, company, at: Some(at), event_kind: Some(kind), score: None });
         }
     }
-    let week_ago = utc(now - Duration::days(7));
+    let week_ago = utc(now - Duration::days(FOLLOW_UP_DAYS));
     let mut stmt = conn.prepare(
         "SELECT id, title, company, stage_changed_at FROM offers
          WHERE stage = 'applied' AND stage_changed_at <= ?1 AND deleted_at IS NULL",
@@ -431,8 +433,8 @@ pub fn reminder_text(r: &Reminder, pl: bool, local_time: impl Fn(&str) -> String
             if interview { "Interview tomorrow" } else { "Date tomorrow" }.into(),
             format!("{what}, {}", r.at.as_deref().map(&local_time).unwrap_or_default()),
         ),
-        ("followup", true) => ("Brak odpowiedzi od 7 dni".into(), format!("{what} - może czas napisać follow-up?")),
-        ("followup", false) => ("No reply for 7 days".into(), format!("{what} - time for a follow-up?")),
+        ("followup", true) => (format!("Brak odpowiedzi od {FOLLOW_UP_DAYS} dni"), format!("{what} - może czas napisać follow-up?")),
+        ("followup", false) => (format!("No reply for {FOLLOW_UP_DAYS} days"), format!("{what} - time for a follow-up?")),
         (_, true) => ("Oferta z wysoką oceną".into(), format!("{what} ({})", r.score.unwrap_or_default())),
         (_, false) => ("Highly scored offer".into(), format!("{what} ({})", r.score.unwrap_or_default())),
     }

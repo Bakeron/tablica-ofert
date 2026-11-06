@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import { fullDate } from "../lib/format";
 import { onBack } from "../lib/back";
 import { cancelScan, isPhone, openAppSettings, scanSyncKey } from "../lib/platform";
+import { TEXT_MAX } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { IconArrowOut, IconWarning } from "./Icons";
 import { SecretField } from "./SecretField";
@@ -215,6 +216,7 @@ export function SyncSettings({
               <div className="mail-grid">
                 <TextSetting
                   label={t("sync.clientId")}
+                  maxLength={TEXT_MAX.google_client_id}
                   value={settings.google_client_id}
                   onSave={async (raw) => {
                     // The same cleaning as in Rust (settings::without_spaces), so the field shows what was saved.

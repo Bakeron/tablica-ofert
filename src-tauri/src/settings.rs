@@ -261,6 +261,30 @@ mod tests {
     use super::*;
     use crate::db::tests::test_db;
 
+    /// TypeScript cannot read Rust constants, so `limits.ts` holds its own copy of these numbers.
+    #[test]
+    fn limits_match_the_interface() {
+        let numbers: BTreeMap<&str, usize> = include_str!("../../src/lib/limits.ts")
+            .lines()
+            .filter_map(|line| {
+                let (name, value) = line.trim().trim_start_matches("export const ").split_once([':', '='])?;
+                Some((name.trim(), value.trim().trim_end_matches([';', ',']).parse().ok()?))
+            })
+            .collect();
+        assert_eq!(numbers["JOOBLE_KEY_CALLS"] as i64, crate::sources::jooble::KEY_CALLS);
+        assert_eq!(numbers["FOLLOW_UP_DAYS"] as i64, crate::agenda::FOLLOW_UP_DAYS);
+        assert_eq!(numbers["SECRET_MAX"], crate::secrets::MAX_SECRET);
+        for (key, rule) in ALLOWED {
+            // The list of providers comes from check boxes, not from a text field.
+            let Rule::Text { max, .. } = rule else { continue };
+            if *key == "ai_providers" {
+                continue;
+            }
+            let name = if key.starts_with("ai_model_") { "ai_model" } else { key };
+            assert_eq!(numbers.get(name), Some(max), "{key}");
+        }
+    }
+
     #[test]
     fn a_copied_client_id_loses_spaces_and_invisible_marks() {
         let conn = test_db();
