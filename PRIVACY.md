@@ -33,7 +33,7 @@ Aplikacja nie ma reklam ani własnej analityki. Jedyny wyjątek to ML Kit w skan
 
 Telefon nie zbiera ofert i nie pyta AI - robi to komputer, a telefon dostaje wyniki przez synchronizację. Łączy się z Google Dyskiem (gdy włączysz synchronizację) i otwiera w przeglądarce strony, które sam wybierzesz, a poza tym:
 
-- **Dane** - zaszyfrowana baza w prywatnym folderze aplikacji, obok niej 5 ostatnich kopii bazy i dziennik zdarzeń. Inne aplikacje nie mają tam dostępu.
+- **Dane** - zaszyfrowana baza w prywatnym folderze aplikacji, obok niej 5 ostatnich kopii bazy i dziennik zdarzeń. Inne aplikacje nie mają tam dostępu, a kopia zapasowa Androida jest dla tej aplikacji wyłączona.
 - **Klucze** - klucz bazy, klucz synchronizacji, logowanie do Dysku i dane klienta Google są w sejfie Androida (Android Keystore).
 - **Aparat** - tylko do skanowania kodu QR z komputera, gdy sam je włączysz. Aplikacja nie zapisuje obrazu z aparatu. Kod QR niesie klucz synchronizacji i dane klienta Google (przy własnym projekcie Google także jego sekret), więc nie pokazuj go innym.
 - **Powiadomienia** - przypomnienia o terminach planuje sam telefon, bez żadnego serwera. Android pyta o zgodę, a odmowa wyłącza tylko przypomnienia.
@@ -81,7 +81,7 @@ The app has no ads and no analytics of its own. The only exception is ML Kit in 
 
 The phone does not collect offers and does not ask AI - the computer does that, and the phone gets the results through sync. It connects to Google Drive (when you turn on sync) and opens pages you choose in the browser, and beyond that:
 
-- **Data** - an encrypted database in the app's private folder, next to it the 5 newest copies of the database and the event log. Other apps have no access there.
+- **Data** - an encrypted database in the app's private folder, next to it the 5 newest copies of the database and the event log. Other apps have no access there, and Android backup is turned off for this app.
 - **Keys** - the database key, the sync key, the Drive login and the Google client details are in the Android vault (Android Keystore).
 - **Camera** - only to scan the QR code from the computer, when you start it yourself. The app does not save the camera image. The QR code carries the sync key and the Google client details (with your own Google project also its secret), so do not show it to others.
 - **Notifications** - reminders about dates are planned by the phone itself, with no server. Android asks for consent, and refusing only turns off the reminders.

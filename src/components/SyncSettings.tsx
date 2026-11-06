@@ -377,7 +377,11 @@ export function SyncSettings({
                 <button
                   type="button"
                   className="btn btn-ghost btn-small"
-                  onClick={() => onConfirm(t("sync.newKeyConfirm"), () => act(() => api.syncNewKey(), t("sync.newKeyDone")), t("sync.newKey"))}
+                  onClick={() =>
+                    connected
+                      ? onConfirm(t("sync.newKeyConfirm"), () => act(() => api.syncNewKey(), t("sync.newKeyDone")), t("sync.newKey"))
+                      : onToast(t("sync.newKeyLogin"))
+                  }
                 >
                   {t("sync.newKey")}
                 </button>

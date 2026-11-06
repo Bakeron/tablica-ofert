@@ -848,6 +848,7 @@ export const en: Record<keyof typeof pl, string> = {
   "sync.newKey": "Disconnect devices (new key)",
   "sync.newKeyConfirm": "Create a new key? The phone will stop reading the data until it scans the new QR code.",
   "sync.newKeyDone": "New key created - scan the new QR code on the phone",
+  "sync.newKeyLogin": "Connect to Google Drive first - the file on Drive must get the new key together with this device.",
 
   "sync.scanTitle": "Key from the computer",
   "sync.scanText": "On the computer: Settings → Sync → “Show the QR code for the phone”. Then scan the code here - the key stays in the phone's vault (Android Keystore).",

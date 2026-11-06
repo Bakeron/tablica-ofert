@@ -848,6 +848,7 @@ export const pl = {
   "sync.newKey": "Odłącz urządzenia (nowy klucz)",
   "sync.newKeyConfirm": "Utworzyć nowy klucz? Telefon przestanie odczytywać dane, dopóki nie zeskanuje nowego kodu QR.",
   "sync.newKeyDone": "Utworzono nowy klucz - zeskanuj nowy kod QR na telefonie",
+  "sync.newKeyLogin": "Najpierw połącz się z Google Dyskiem - plik na Dysku musi dostać nowy klucz razem z tym urządzeniem.",
 
   "sync.scanTitle": "Klucz z komputera",
   "sync.scanText": "Na komputerze: Ustawienia → Synchronizacja → „Pokaż kod QR dla telefonu”. Potem zeskanuj kod tutaj - klucz zostanie w sejfie telefonu (Android Keystore).",

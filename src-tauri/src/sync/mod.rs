@@ -135,14 +135,22 @@ async fn run_inner(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
     Ok(SyncOutcome::Done { changed: stats.changed, removed: stats.removed })
 }
 
+/// A key in use can change only with a login: the file on Drive must get the new key too.
+fn may_change_key(has_key: bool, connected: bool) -> bool {
+    !has_key || connected
+}
+
 /// "Disconnect devices": a new key - an old phone can no longer read the file.
 /// The file on Drive is re-encrypted with the new key right away. When Google cannot be
-/// reached (no network, expired login), the old key stays: a new one would lock this
-/// computer out of its own file on Drive.
+/// reached (no network, expired or missing login), the old key stays: a new one would lock
+/// this computer out of its own file on Drive.
 pub async fn new_key(state: &AppState) -> AppResult<()> {
     let old = key()?;
-    let fresh = crypto::new_key()?;
     let connected = secrets::get(drive::REFRESH_SECRET)?.is_some();
+    if !may_change_key(old.is_some(), connected) {
+        return Err(AppError::Missing("google login".into()));
+    }
+    let fresh = crypto::new_key()?;
     if let (Some(old), true) = (old, connected) {
         let (http, access) = token(state).await?;
         if let Some(file) = drive::find(&http, &access).await? {
@@ -246,6 +254,13 @@ mod tests {
     use super::*;
 
     const ID: &str = "123456789012-abc.apps.googleusercontent.com";
+
+    #[test]
+    fn a_key_in_use_changes_only_with_a_login() {
+        assert!(may_change_key(false, false));
+        assert!(may_change_key(true, true));
+        assert!(!may_change_key(true, false));
+    }
 
     #[test]
     fn the_qr_code_carries_the_key_and_the_own_project() {
