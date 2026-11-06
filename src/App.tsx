@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createApi, type Api } from "./api";
 import {
   DEFAULT_SETTINGS,
@@ -31,7 +31,7 @@ import { Board, sortRows, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
 import { ErrorContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
-import { IconBriefcase, IconDownload, IconGear, IconPlus, IconWarning } from "./components/Icons";
+import { IconBoard, IconBriefcase, IconDownload, IconFilter, IconGear, IconNoEntry, IconPlus, IconQuestion, IconTrash, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
@@ -48,6 +48,13 @@ import { csvCells, csvName } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
 
 const VIEWS: View[] = ["board", "review", "rejected", "declined", "trash"];
+const TAB_ICONS: Record<View, ReactNode> = {
+  board: <IconBoard />,
+  review: <IconQuestion />,
+  rejected: <IconFilter />,
+  declined: <IconNoEntry />,
+  trash: <IconTrash />,
+};
 
 const TOPBAR_FIT = ["", "is-compact", "is-stacked", "is-stacked is-compact"];
 
@@ -67,7 +74,10 @@ export default function App() {
   const listScroll = useRef<number[]>([]);
   const [sort, setSort] = useState<Sort>({ key: "added", dir: "desc" });
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
-  const [toast, setToast] = useState<Toast | null>(null);
+  const [toast, showToast] = useState<Toast | null>(null);
+  const toastCount = useRef(0);
+  /** Each message counts as new - the same text twice in a row is still read out and takes its own "Undo". */
+  const setToast = useCallback((next: Toast | null) => showToast(next && { ...next, id: ++toastCount.current }), []);
   const [error, setError] = useState<{ text: string; detail?: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -118,7 +128,7 @@ export default function App() {
 
   // The tabs scroll sideways on a phone - the chosen one must not stay out of sight.
   useEffect(() => {
-    topbarRef.current?.querySelector(".tab[aria-current]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    topbarRef.current?.querySelector(".tab[aria-current]")?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [view]);
 
   // ----- language, theme, motion -----
@@ -555,6 +565,20 @@ export default function App() {
         }),
     );
   };
+  /** A stage or a star keeps a filtered-out offer, so it can leave this tab like with interest. */
+  const changeKept = (id: number, change: Partial<Pick<OfferRow, "stage" | "favorite">>, save: () => Promise<unknown>, back: () => Promise<unknown>) => {
+    const row = rows.find((r) => r.id === id);
+    const target = row ? viewFor({ ...row, ...change }) : view;
+    if (!row || target === view) return run(save);
+    selectNeighbour(id);
+    return run(save, () => setToast({ text: t("board.movedTo", { tab: t(`tabs.${target}`) }), undo: () => run(back) }));
+  };
+  const setStage = (id: number, next: Stage) => {
+    const before = rows.find((r) => r.id === id)?.stage ?? next;
+    return changeKept(id, { stage: next }, () => api!.setStage(id, next), () => api!.setStage(id, before));
+  };
+  const setFavorite = (id: number, next: boolean) =>
+    changeKept(id, { favorite: next }, () => api!.setFavorite(id, next), () => api!.setFavorite(id, !next));
   const toggleInterest = (id: number, interest: Interest) => {
     const row = rows.find((r) => r.id === id);
     return setInterest(id, row?.interest === interest ? null : interest);
@@ -578,6 +602,20 @@ export default function App() {
         setToast({
           text: t("trash.done"),
           undo: () => run(() => api!.restoreOffer(id)),
+        }),
+    );
+  };
+
+  const restore = (id: number) => {
+    const row = rows.find((r) => r.id === id);
+    selectNeighbour(id);
+    return run(
+      () => api!.restoreOffer(id),
+      () =>
+        row &&
+        setToast({
+          text: t("board.movedTo", { tab: t(`tabs.${viewFor(row)}`) }),
+          undo: () => run(() => api!.trashOffer(id)),
         }),
     );
   };
@@ -727,7 +765,12 @@ export default function App() {
           <nav className="tabs" aria-label={t("tabs.label")} data-own-row>
             {shownViews.map((v) => (
               <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
-                {t(`tabs.${v}`)}
+                {/* The phone's bottom bar: a pictogram and a short name (the full one stays for a screen reader). */}
+                <span className="tab-icon">{TAB_ICONS[v]}</span>
+                <span className="tab-name">{t(`tabs.${v}`)}</span>
+                <span className="tab-short" aria-hidden="true">
+                  {t(`tabs.short.${v}`)}
+                </span>
                 {counts && v === "board" && <span className="tab-count tab-count-narrow">{view === "board" ? rows.length : counts.board}</span>}
                 {counts && (v === "review" || v === "rejected" || v === "declined") && counts[v] > 0 && (
                   <span className="tab-count">{counts[v]}</span>
@@ -879,18 +922,21 @@ export default function App() {
           <OfferCard
             ref={cardHeading}
             offer={detail}
-            onStage={(stage: Stage) => selectedId !== null && run(() => api!.setStage(selectedId, stage))}
+            onStage={(stage: Stage) => selectedId !== null && setStage(selectedId, stage)}
             onInterest={(i) => selectedId !== null && setInterest(selectedId, i)}
-            onFavorite={(f) => selectedId !== null && run(() => api!.setFavorite(selectedId, f))}
+            onFavorite={(f) => selectedId !== null && setFavorite(selectedId, f)}
             onNotes={(n) => selectedId !== null && run(() => api!.setNotes(selectedId, n), () => setToast({ text: t("card.notesSaved") }))}
             onOpenLink={openLink}
             onTrash={() => selectedId !== null && trash(selectedId)}
-            onRestore={() => selectedId !== null && run(() => api!.restoreOffer(selectedId))}
+            onRestore={() => selectedId !== null && restore(selectedId)}
             onPurge={() =>
               selectedId !== null &&
               setConfirm({
                 message: t("trash.confirmOne"),
-                action: () => run(() => api!.purgeOffers(selectedId), () => setToast({ text: t("trash.purged") })),
+                action: () => {
+                  selectNeighbour(selectedId);
+                  return run(() => api!.purgeOffers(selectedId), () => setToast({ text: t("trash.purged") }));
+                },
               })
             }
             aiOn={aiOn(settings)}

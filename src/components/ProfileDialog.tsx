@@ -21,6 +21,7 @@ import { Help } from "./Help";
 import { IconPlus, IconTrash } from "./Icons";
 import { CloseButton, Modal } from "./Modal";
 import { Reveal } from "./Reveal";
+import { FieldError, FieldErrorsProvider, useField, useFieldErrors } from "./FieldError";
 
 const RADII = [0, 10, 20, 30, 50, 100];
 const MODES: Remote[] = ["yes", "hybrid", "no"];
@@ -133,6 +134,7 @@ export function ProfileDialog({
   onDelete: (profile: Profile) => void;
 }) {
   const { t } = useI18n();
+  const { errors, formProps } = useFieldErrors(open);
   const [form, setForm] = useState<Form>(() => toForm(profile, experience));
   const [initial, setInitial] = useState<Form>(form);
   const [busy, setBusy] = useState(false);
@@ -161,7 +163,8 @@ export function ProfileDialog({
       className="modal-wide"
       dirty={JSON.stringify(form) !== JSON.stringify(initial)}
     >
-      <form onSubmit={submit} className="sheet">
+      <FieldErrorsProvider value={errors}>
+      <form onSubmit={submit} className="sheet" {...formProps}>
         <header className="sheet-head">
           <h2 id="profile-title">{profile ? t("profile.titleEdit", { name: profile.name }) : t("profile.titleNew")}</h2>
           <CloseButton onClick={onClose} label={t("add.cancel")} />
@@ -192,6 +195,7 @@ export function ProfileDialog({
           </button>
         </footer>
       </form>
+      </FieldErrorsProvider>
     </Modal>
   );
 }
@@ -290,6 +294,7 @@ export function ProfileFields({
   }
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const nameField = useField("profile-name");
   const setHard = (key: keyof HardFlags, value: boolean) => setForm((f) => ({ ...f, hard: { ...f.hard, [key]: value } }));
   const setSalary = (which: "uop" | "b2b", patch: Partial<SalaryForm>) =>
     setForm((f) => ({ ...f, [which]: { ...f[which], ...patch } }));
@@ -311,7 +316,9 @@ export function ProfileFields({
           value={form.name}
           onChange={(e) => set("name", e.target.value)}
           data-autofocus
+          {...nameField}
         />
+        <FieldError name="profile-name" />
       </label>
 
       <DescriptionField value={form.description} onChange={(v) => set("description", v)} />
@@ -457,26 +464,28 @@ export function ProfileFields({
               <input type="radio" name="commute" checked={form.commute === null} onChange={() => set("commute", null)} />
               <span>{t("profile.commuteNo")}</span>
             </label>
-            <label className="choice-item">
+            <span className="commute-some">
+              <label className="choice-item">
+                <input
+                  type="radio"
+                  name="commute"
+                  checked={form.commute !== null}
+                  onChange={() => set("commute", form.commute ?? 1)}
+                />
+                <span>{t("profile.commuteSome")}</span>
+              </label>
               <input
-                type="radio"
-                name="commute"
-                checked={form.commute !== null}
-                onChange={() => set("commute", form.commute ?? 1)}
+                type="number"
+                min={1}
+                max={31}
+                className="commute-count"
+                aria-label={`${t("profile.commuteSome")} ... ${t("profile.commuteUnit")}`}
+                value={form.commute ?? 1}
+                disabled={form.commute === null}
+                onChange={(e) => set("commute", Math.max(1, Math.min(31, Math.round(Number(e.target.value) || 1))))}
               />
-              <span>{t("profile.commuteSome")}</span>
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={31}
-              className="commute-count"
-              aria-label={`${t("profile.commuteSome")} ... ${t("profile.commuteUnit")}`}
-              value={form.commute ?? 1}
-              disabled={form.commute === null}
-              onChange={(e) => set("commute", Math.max(1, Math.min(31, Math.round(Number(e.target.value) || 1))))}
-            />
-            <span>{t("profile.commuteUnit")}</span>
+              <span>{t("profile.commuteUnit")}</span>
+            </span>
           </div>
         </fieldset>
       </Section>

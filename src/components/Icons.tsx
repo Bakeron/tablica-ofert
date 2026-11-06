@@ -106,3 +106,34 @@ export const IconDownload = () => (
     <path d="M12 3v12M7 10l5 5 5-5M4 20h16" />
   </Icon>
 );
+
+/** "Offers": a departures board - rows on a panel. */
+export const IconBoard = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" />
+    <path d="M7 9h10M7 13h10M7 17h6" />
+  </Icon>
+);
+
+/** "To check": a question mark on a sign. */
+export const IconQuestion = () => (
+  <Icon>
+    <rect x="3" y="3" width="18" height="18" />
+    <path d="M9 9.5a3 3 0 1 1 4.5 2.6c-1 .6-1.5 1.2-1.5 2.4M12 17v1" />
+  </Icon>
+);
+
+/** "Rejected by filter": a funnel. */
+export const IconFilter = () => (
+  <Icon>
+    <path d="M3 4h18l-7 9v6l-4 2v-8z" />
+  </Icon>
+);
+
+/** "Not for me": the no-entry sign. */
+export const IconNoEntry = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M7 12h10" />
+  </Icon>
+);

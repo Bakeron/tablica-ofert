@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { isPhone } from "../lib/platform";
 import { CloseButton, Modal } from "./Modal";
 import { Reveal } from "./Reveal";
+import { FieldError, FieldErrorsProvider, useFieldErrors } from "./FieldError";
 
 const EMPTY = {
   title: "",
@@ -51,6 +52,7 @@ export function AddOfferDialog({
   onFill: (text: string, title: string | null) => Promise<Draft | null>;
 }) {
   const { t } = useI18n();
+  const { errors, formProps, field } = useFieldErrors(open);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState("");
@@ -148,7 +150,8 @@ export function AddOfferDialog({
 
   return (
     <Modal open={open} onClose={onClose} labelledBy="add-title" className="modal-wide">
-      <form onSubmit={submit} className="sheet">
+      <FieldErrorsProvider value={errors}>
+      <form onSubmit={submit} className="sheet" autoComplete="off" {...formProps}>
         <header className="sheet-head">
           <h2 id="add-title">{t("add.title")}</h2>
           <CloseButton onClick={onClose} label={t("add.cancel")} />
@@ -197,13 +200,15 @@ export function AddOfferDialog({
             <span>
               {t("add.fieldTitle")} <em className="req">({t("add.required")})</em>
             </span>
-            <input required maxLength={300} value={form.title} onChange={(e) => set("title", e.target.value)} data-autofocus={!isPhone() || undefined} />
+            <input required maxLength={300} value={form.title} onChange={(e) => set("title", e.target.value)} data-autofocus={!isPhone() || undefined} {...field("offer-title")} />
+            <FieldError name="offer-title" />
           </label>
           <label className="field span-2">
             <span>
               {t("add.fieldCompany")} <em className="req">({t("add.required")})</em>
             </span>
-            <input required maxLength={300} value={form.company} onChange={(e) => set("company", e.target.value)} />
+            <input required maxLength={300} value={form.company} onChange={(e) => set("company", e.target.value)} {...field("offer-company")} />
+            <FieldError name="offer-company" />
           </label>
           <label className="field span-2">
             <span>{t("add.fieldUrl")}</span>
@@ -214,7 +219,10 @@ export function AddOfferDialog({
               placeholder="https://"
               value={form.url}
               onChange={(e) => set("url", e.target.value)}
+              data-error={t("form.url")}
+              {...field("offer-url")}
             />
+            <FieldError name="offer-url" />
           </label>
           <label className="field">
             <span>{t("add.fieldCity")}</span>
@@ -242,10 +250,14 @@ export function AddOfferDialog({
             <span>{t("add.fieldCurrency")}</span>
             <input
               maxLength={3}
+              autoCapitalize="characters"
               pattern="[A-Za-z]{3}"
               value={form.salaryCurrency}
               onChange={(e) => set("salaryCurrency", e.target.value.toUpperCase())}
+              data-error={t("form.currency")}
+              {...field("offer-currency")}
             />
+            <FieldError name="offer-currency" />
           </label>
           <label className="field">
             <span>{t("add.fieldPeriod")}</span>
@@ -296,6 +308,7 @@ export function AddOfferDialog({
           </button>
         </footer>
       </form>
+      </FieldErrorsProvider>
     </Modal>
   );
 }

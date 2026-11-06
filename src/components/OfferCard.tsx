@@ -77,9 +77,13 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   return (
     <aside className="pass" aria-labelledby="pass-title" ref={passRef}>
       {/* Only where the card is a screen of its own (CSS shows it there). */}
-      <button type="button" className="btn btn-ghost btn-small pass-back" onClick={onBackToList}>
-        <IconArrowLeft /> {t("card.backToList")}
-      </button>
+      <div className="pass-back-bar">
+        <button type="button" className="btn btn-ghost btn-small" onClick={onBackToList}>
+          <IconArrowLeft /> {t("card.backToList")}
+        </button>
+        {/* The swipe is done on the list, so its tip stands by the way back to it. */}
+        {isPhone() && <Help text={t("interest.swipeHelp")} />}
+      </div>
       {/* Stub - the part you would tear off */}
       <section className="pass-stub">
         <div className="pass-field pass-field-wide">
@@ -142,66 +146,6 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </span>
         </div>
 
-        {!inTrash && (
-          <>
-            <div className="pass-controls">
-              <label className="field field-inline">
-                <span className="pass-label">{t("card.stage")}</span>
-                <select value={offer.stage} onChange={(e) => onStage(e.target.value as Stage)}>
-                  {STAGES.map((s) => (
-                    <option key={s} value={s}>
-                      {t(`stage.${s}`)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <fieldset className="interest-set">
-                <legend className="pass-label">
-                  {t("interest.label")} {isPhone() && <Help text={t("interest.swipeHelp")} />}
-                </legend>
-                {(["high", "maybe", "no"] as Interest[]).map((value, i) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className="seg"
-                    aria-pressed={offer.interest === value}
-                    onClick={() => onInterest(offer.interest === value ? null : value)}
-                  >
-                    {!isPhone() && <kbd aria-hidden="true">{i + 1}</kbd>} {t(`interest.${value}`)}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="seg seg-icon"
-                  aria-pressed={offer.favorite}
-                  aria-label={offer.favorite ? t("favorite.remove") : t("favorite.add")}
-                  title={offer.favorite ? t("favorite.remove") : t("favorite.add")}
-                  onClick={() => onFavorite(!offer.favorite)}
-                >
-                  <IconStar filled={offer.favorite} />
-                </button>
-              </fieldset>
-            </div>
-
-            <div className="pass-actions">
-              {isWebUrl(offer.url) && (
-                <button type="button" className="btn btn-sign" onClick={() => onOpenLink(offer.url!)}>
-                  <IconArrowOut /> {t("card.open")}
-                </button>
-              )}
-              <button type="button" className="btn btn-ghost" onClick={onTrash}>
-                <IconTrash /> {t("card.trash")}
-              </button>
-              {isWebUrl(offer.url) && !isPhone() && (
-                <button type="button" className="btn btn-ghost" onClick={onFullText} title={t("full.hint")}>
-                  {t("full.button")}
-                </button>
-              )}
-            </div>
-          </>
-        )}
-
         {inTrash && (
           <div className="pass-actions">
             <button type="button" className="btn btn-sign" onClick={onRestore}>
@@ -213,9 +157,69 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </div>
         )}
 
-        {!inTrash && <AgendaPart agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />}
-
+        {/* What one comes to the card for goes first: AI's reading, then the offer's own text. */}
         <AiPart offer={offer} aiOn={aiOn && !inTrash} aiOff={!aiOn && !inTrash && !isPhone()} onRateAgain={onRateAgain} onAssist={onAssist} onOpenAiSettings={onOpenAiSettings} />
+
+        {/* The job closed on a source whose terms ask to drop it - only the user's own record is left. */}
+        {offer.contentRemoved === "himalayas" && (
+          <section className="pass-text">
+            <h3 className="pass-label">{t("card.description")}</h3>
+            <p>{t("card.contentRemoved.himalayas")}</p>
+          </section>
+        )}
+        {offer.requirements && (
+          <section className="pass-text">
+            <h3 className="pass-label">{t("card.requirements")}</h3>
+            <p>{offer.requirements}</p>
+          </section>
+        )}
+        {offer.description && (
+          <section className="pass-text">
+            <h3 className="pass-label">{t("card.description")}</h3>
+            <p lang={translated && descriptionTr ? lang : (foreign ?? undefined)}>
+              {translated && descriptionTr ? descriptionTr : offer.description}
+            </p>
+          </section>
+        )}
+        {!inTrash && isWebUrl(offer.url) && !isPhone() && (
+          <div className="pass-actions">
+            <button type="button" className="btn btn-ghost" onClick={onFullText} title={t("full.hint")}>
+              {t("full.button")}
+            </button>
+          </div>
+        )}
+
+        {!inTrash && (
+          <>
+            <label className="field field-inline">
+              <span className="pass-label">{t("card.stage")}</span>
+              <select value={offer.stage} onChange={(e) => onStage(e.target.value as Stage)}>
+                {STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {t(`stage.${s}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <AgendaPart agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />
+
+            <label className="field">
+              <span className="pass-label">{t("card.notes")}</span>
+              <textarea
+                rows={3}
+                value={notes}
+                maxLength={20000}
+                aria-describedby="notes-hint"
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={() => notes !== offer.notes && onNotes(notes)}
+              />
+              <span id="notes-hint" className="hint">
+                {t("card.notesHint")}
+              </span>
+            </label>
+          </>
+        )}
 
         <FilterResults filters={offer.filters} />
 
@@ -280,45 +284,6 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </div>
         </dl>
 
-        {!inTrash && (
-          <label className="field">
-            <span className="pass-label">{t("card.notes")}</span>
-            <textarea
-              rows={3}
-              value={notes}
-              maxLength={20000}
-              aria-describedby="notes-hint"
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => notes !== offer.notes && onNotes(notes)}
-            />
-            <span id="notes-hint" className="hint">
-              {t("card.notesHint")}
-            </span>
-          </label>
-        )}
-
-        {/* The job closed on a source whose terms ask to drop it - only the user's own record is left. */}
-        {offer.contentRemoved === "himalayas" && (
-          <section className="pass-text">
-            <h3 className="pass-label">{t("card.description")}</h3>
-            <p>{t("card.contentRemoved.himalayas")}</p>
-          </section>
-        )}
-        {offer.requirements && (
-          <section className="pass-text">
-            <h3 className="pass-label">{t("card.requirements")}</h3>
-            <p>{offer.requirements}</p>
-          </section>
-        )}
-        {offer.description && (
-          <section className="pass-text">
-            <h3 className="pass-label">{t("card.description")}</h3>
-            <p lang={translated && descriptionTr ? lang : (foreign ?? undefined)}>
-              {translated && descriptionTr ? descriptionTr : offer.description}
-            </p>
-          </section>
-        )}
-
         <section className="pass-text">
           <h3 className="pass-label">{t("card.history")}</h3>
           <ol className="history">
@@ -329,7 +294,52 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             ))}
           </ol>
         </section>
+
+        {/* Far from the main button, so a slip of the thumb never throws the offer away. */}
+        {!inTrash && (
+          <div className="pass-actions">
+            <button type="button" className="btn btn-ghost" onClick={onTrash}>
+              <IconTrash /> {t("card.trash")}
+            </button>
+          </div>
+        )}
       </section>
+
+      {/* The everyday decisions stay under the thumb all the way down the card, like the stub of a pass. */}
+      {!inTrash && (
+        <div className="pass-dock">
+          <fieldset className="interest-set">
+            <legend className="sr-only">{t("interest.label")}</legend>
+            {(["high", "maybe", "no"] as Interest[]).map((value, i) => (
+              <button
+                key={value}
+                type="button"
+                className="seg"
+                aria-pressed={offer.interest === value}
+                onClick={() => onInterest(offer.interest === value ? null : value)}
+              >
+                {!isPhone() && <kbd aria-hidden="true">{i + 1}</kbd>} {t(`interest.${value}`)}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="seg seg-icon"
+              aria-pressed={offer.favorite}
+              aria-label={offer.favorite ? t("favorite.remove") : t("favorite.add")}
+              title={offer.favorite ? t("favorite.remove") : t("favorite.add")}
+              onClick={() => onFavorite(!offer.favorite)}
+            >
+              <IconStar filled={offer.favorite} />
+            </button>
+          </fieldset>
+          {isWebUrl(offer.url) && (
+            <button type="button" className="btn btn-sign pass-open" aria-label={t("card.open")} onClick={() => onOpenLink(offer.url!)}>
+              <IconArrowOut /> <span className="pass-open-long">{t("card.open")}</span>
+              <span className="pass-open-short">{t("card.openShort")}</span>
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   );
 });

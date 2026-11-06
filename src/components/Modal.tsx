@@ -57,7 +57,9 @@ export function Modal({
   }, [open, mounted]);
 
   function softClose() {
-    if (dirty) setAsking(true);
+    // Back or Esc on the question itself: stay in the window.
+    if (asking) setAsking(false);
+    else if (dirty) setAsking(true);
     else onClose();
   }
 

@@ -3,6 +3,7 @@ import type { ProfileInput } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowRight } from "./Icons";
 import { CloseButton, Modal } from "./Modal";
+import { FieldErrorsProvider, useFieldErrors } from "./FieldError";
 import { ProfileFields, toForm, toInput, type Form } from "./ProfileDialog";
 
 const STEPS: TextKey[] = ["first.s1", "first.s2", "first.s3"];
@@ -22,6 +23,7 @@ export function FirstSteps({
   onFinish: () => void;
 }) {
   const { t } = useI18n();
+  const { errors, formProps } = useFieldErrors(open);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Form>(() => toForm(null, "", "Plan A"));
   const [saved, setSaved] = useState(false);
@@ -54,7 +56,8 @@ export function FirstSteps({
       className="modal-wide"
       dirty={!saved && JSON.stringify(form) !== initial}
     >
-      <form className="sheet" onSubmit={next}>
+      <FieldErrorsProvider value={errors}>
+      <form className="sheet" onSubmit={next} {...formProps}>
         <header className="sheet-head">
           <h2 id="first-title">{t("first.title")}</h2>
           <span className="first-head-side">
@@ -103,6 +106,7 @@ export function FirstSteps({
           </button>
         </footer>
       </form>
+      </FieldErrorsProvider>
     </Modal>
   );
 }

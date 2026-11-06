@@ -266,12 +266,6 @@ function SettingsBody({
       {section === "ai" && api && (
         <AiSettings api={api} settings={settings} onChange={onChange} onOpenLink={onOpenLink} onError={onError} onToast={onToast} onRated={onLoaded} />
       )}
-
-      <footer className="sheet-foot">
-        <button type="button" className="btn btn-sign" onClick={onClose}>
-          {closeLabel}
-        </button>
-      </footer>
     </div>
     </ConfirmContext.Provider>
   );

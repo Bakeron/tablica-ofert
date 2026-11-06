@@ -1,6 +1,7 @@
 import { useI18n, type TextKey } from "../i18n";
 import { isPhone } from "../lib/platform";
 import { IconWarning } from "./Icons";
+import { FieldError, useField } from "./FieldError";
 
 const QUESTIONS: TextKey[] = ["profile.q1", "profile.q2", "profile.q3", "profile.q4", "profile.q5"];
 
@@ -15,6 +16,7 @@ export function DescriptionField({
   autoFocus?: boolean;
 }) {
   const { t } = useI18n();
+  const field = useField("profile-description", "describe-questions");
   return (
     <div className="describe">
       <label className="field">
@@ -26,10 +28,11 @@ export function DescriptionField({
           rows={6}
           maxLength={10000}
           value={value}
-          aria-describedby="describe-questions"
           onChange={(e) => onChange(e.target.value)}
           data-autofocus={autoFocus ? "" : undefined}
+          {...field}
         />
+        <FieldError name="profile-description" />
       </label>
       <div id="describe-questions" className="describe-questions">
         <p>{t("profile.descriptionHint")}</p>

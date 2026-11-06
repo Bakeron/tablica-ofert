@@ -173,7 +173,7 @@ export function AgendaPart({
         </ul>
         <Reveal show={contactForm !== null}>
           {contactForm && (
-          <form className="agenda-form" onSubmit={submitContact}>
+          <form className="agenda-form" onSubmit={submitContact} autoComplete="off">
             {(["name", "role", "email", "phone", "linkedin"] as const).map((key) => (
               <label key={key} className="field">
                 <span>
@@ -182,7 +182,7 @@ export function AgendaPart({
                 </span>
                 <input
                   required={key === "name"}
-                  type={key === "email" ? "email" : key === "linkedin" ? "url" : "text"}
+                  type={key === "email" ? "email" : key === "linkedin" ? "url" : key === "phone" ? "tel" : "text"}
                   maxLength={200}
                   value={contactForm[key]}
                   onChange={(e) => setContactForm({ ...contactForm, [key]: e.target.value })}

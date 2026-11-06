@@ -153,13 +153,14 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
         tabIndex={0}
         onKeyDown={onKeyDown}
       >
-        <thead>
-          <tr>
+        <thead role="rowgroup">
+          <tr role="row">
             {COLUMNS.map((col) => {
               const active = sort.key === col.key;
               return (
                 <th
                   key={col.key}
+                  role="columnheader"
                   className={col.className}
                   scope="col"
                   aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
@@ -175,7 +176,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
             })}
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {rows.map((o, i) => {
             const fresh = freshIds.has(o.id);
             const selected = o.id === selectedId;
@@ -183,13 +184,14 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
             return (
               <Fragment key={o.id}>
               {i === firstClosed && (
-                <tr className="board-group">
-                  <th colSpan={COLUMNS.length} scope="colgroup">
+                <tr role="row" className="board-group">
+                  <th role="columnheader" colSpan={COLUMNS.length} scope="colgroup">
                     {t("board.closed", { count: closedCount })}
                   </th>
                 </tr>
               )}
               <tr
+                role="row"
                 id={`offer-${o.id}`}
                 aria-selected={selected}
                 className={[
@@ -227,11 +229,11 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   }
                 }}
               >
-                <td className="c-added">
+                <td role="gridcell" className="c-added">
                   <CellName text={t("col.added")} />
                   <Flap className="mono" text={addedLabel(o.addedAt, lang, t)} fresh={fresh} />
                 </td>
-                <td className="c-offer">
+                <td role="gridcell" className="c-offer">
                   <span className="offer-line">
                     {o.favorite && (
                       <span className="fav">
@@ -245,6 +247,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     <span className="offer-company">{o.company}</span>
                     {o.interest && (
                       <span key={o.interest} className={`interest interest-${o.interest}${flipped === o.id ? " flap-in" : ""}`}>
+                        <span className="sr-only">{t("interest.label")}: </span>
                         {t(`interest.${o.interest}`)}
                       </span>
                     )}
@@ -261,15 +264,15 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   )}
                   {(view === "review" || view === "rejected") && <RowReasons row={o} />}
                 </td>
-                <td className="c-place">
+                <td role="gridcell" className="c-place">
                   <CellName text={t("cell.place")} />
                   <Flap text={placeLabel(o, t)} fresh={fresh} />
                 </td>
-                <td className="c-salary">
+                <td role="gridcell" className="c-salary">
                   <CellName text={t("col.salary")} />
                   <Flap className="mono" text={salaryShort(o, t)} fresh={fresh} />
                 </td>
-                <td className="c-match">
+                <td role="gridcell" className="c-match">
                   <CellName text={t("col.matchLong")} />
                   {o.score !== null && (
                     <span className="match-cap" aria-hidden="true">
@@ -277,7 +280,10 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     </span>
                   )}
                   {o.score === null ? (
-                    <span aria-label={t("card.matchNone")}>·</span>
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="sr-only">{t("card.matchNone")}</span>
+                    </>
                   ) : (
                     <span className={o.scoreSource === "keywords" ? "score score-plain" : "score"}>
                       <Flap className="mono" text={String(o.score)} fresh={fresh} />
@@ -285,7 +291,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     </span>
                   )}
                 </td>
-                <td className="c-status">
+                <td role="gridcell" className="c-status">
                   <StatusTag offer={o} fresh={fresh} />
                 </td>
               </tr>

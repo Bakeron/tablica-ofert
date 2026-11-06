@@ -6,6 +6,8 @@ import { useLastShown, usePresence } from "../lib/presence";
 import { CloseButton } from "./Modal";
 
 export interface Toast {
+  /** Set when shown - tells two messages with the same text apart. */
+  id?: number;
   text: string;
   undo?: () => void;
 }
@@ -116,7 +118,7 @@ export function ToastView({ inWindow = false }: { inWindow?: boolean }) {
       {mounted && toast && (
         <div
           // A new message replaces the old one with its own short entrance.
-          key={toast.text}
+          key={toast.id}
           className="toast fade"
           data-leaving={leaving || undefined}
           inert={leaving || undefined}

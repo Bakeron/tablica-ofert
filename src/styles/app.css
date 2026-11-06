@@ -67,6 +67,8 @@
   --font-board: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-text: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
   --pass-width: clamp(21.25rem, 34vw, 31.25rem);
+  /* The phone's bottom bar of tabs (app.css, narrowest step). */
+  --tabbar-h: max(56px, 3.5rem);
   font-family: var(--font-text);
   font-size: 16px;
   line-height: 1.45;
@@ -230,10 +232,6 @@ textarea {
   letter-spacing: 0.05em;
   cursor: pointer;
   border-bottom: 3px solid transparent;
-}
-
-.tab:hover {
-  border-bottom-color: rgb(0 0 0 / 0.35);
 }
 
 .tab[aria-current="page"] {
@@ -759,7 +757,18 @@ details[open]::details-content {
   cursor: pointer;
 }
 
-.board tbody tr:hover {
+/* A touch screen has no hover: a row must not stay lit after a finger - it answers while pressed. */
+@media (hover: hover) {
+  .tab:hover {
+    border-bottom-color: rgb(0 0 0 / 0.35);
+  }
+
+  .board tbody tr:hover {
+    background: var(--row-hover);
+  }
+}
+
+.board tbody tr:active {
   background: var(--row-hover);
 }
 
@@ -769,7 +778,7 @@ details[open]::details-content {
 }
 
 /* The selected row has the tiles' colour - its flaps go darker, like on the board, not to vanish. */
-.board tbody tr.is-selected :is(.c-added .flap, .c-salary .flap, .score:not(.score-plain) .flap, .tag:not(.tag-new, .tag-flag)) {
+.board tbody tr.is-selected :is(.c-added .flap, .c-salary .flap, .score:not(.score-plain) .flap, .tag:not(.tag-new, .tag-flag, .tag-today)) {
   background-color: var(--hall);
 }
 
@@ -787,7 +796,8 @@ details[open]::details-content {
   cursor: default;
 }
 
-.board tbody tr.board-group:hover {
+.board tbody tr.board-group:hover,
+.board tbody tr.board-group:active {
   background: none;
 }
 
@@ -843,6 +853,7 @@ details[open]::details-content {
 .offer-title {
   font-weight: 600;
   font-size: 1.15rem;
+  line-height: 1.2;
 }
 
 .offer-company {
@@ -999,7 +1010,7 @@ details[open]::details-content {
   color: var(--danger);
 }
 
-.board-empty {
+.board.board-empty {
   flex: 1;
   display: grid;
   place-items: center;
@@ -1014,6 +1025,7 @@ details[open]::details-content {
   width: var(--pass-width);
   flex: none;
   position: relative;
+  container: pass / inline-size;
   margin: 0.9rem;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1088,6 +1100,7 @@ details[open]::details-content {
 
 .pass-value {
   font-weight: 700;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -1196,8 +1209,13 @@ details[open]::details-content {
   color: var(--paper-ink);
 }
 
-.pass .tag-new {
+.pass .tag-new,
+.pass .tag-today {
   color: var(--signal-ink);
+}
+
+.pass .tag-flag {
+  color: var(--danger);
 }
 
 .pass-meta {
@@ -1220,16 +1238,70 @@ details[open]::details-content {
   border: 1.5px dashed var(--paper-dim);
 }
 
-.pass-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
 .pass-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* "Very | Maybe | No", the star and "Open" - the stub of the pass, pinned under the card's text
+   and pulled along the whole way down. */
+.pass-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.5rem 0.6rem;
+  padding: 0.6rem 1.2rem;
+  border-top: 2px dashed var(--perf);
+  background: var(--paper);
+}
+
+.pass-dock .interest-set {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+}
+
+.pass-dock .seg:not(.seg-icon) {
+  flex: 1 1 auto;
+  justify-content: center;
+  padding-inline: 0.55rem;
+}
+
+.pass-open {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.pass-open-short {
+  display: none;
+}
+
+/* A narrow card (a phone, the card beside the list): the whole stub in one row (it wraps only at 320 px or with big text). */
+@container pass (max-width: 34rem) {
+  .pass-dock {
+    gap: 0.5rem 0.4rem;
+    padding-inline: 1rem;
+  }
+
+  .pass-dock .seg:not(.seg-icon) {
+    padding-inline: 0.4rem;
+  }
+
+  .pass-dock .seg-icon {
+    margin-left: 0.4rem;
+  }
+
+  .pass-open svg,
+  .pass-open-long {
+    display: none;
+  }
+
+  .pass-open-short {
+    display: inline;
+  }
 }
 
 .pass .btn-ghost {
@@ -1239,7 +1311,7 @@ details[open]::details-content {
 .interest-set {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
   border: 0;
   padding: 0;
@@ -1247,6 +1319,7 @@ details[open]::details-content {
 }
 
 .interest-set legend {
+  padding: 0;
   margin-bottom: 0.25rem;
 }
 
@@ -1319,7 +1392,7 @@ details[open]::details-content {
 .pass-details a {
   color: inherit;
   text-decoration-thickness: 2px;
-  text-decoration-color: var(--signal);
+  text-decoration-color: var(--accent-text);
 }
 
 .pass-text p {
@@ -1345,6 +1418,30 @@ details[open]::details-content {
   min-width: 0;
 }
 
+/* A field to fix: red edge plus the reason in words under it (never colour alone). */
+.field [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* Not while focused: the light theme's dark focus edge is a box-shadow too. */
+.field [aria-invalid="true"]:not(:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.field-error svg {
+  flex: none;
+  margin-top: 0.15em;
+}
+
 .field input,
 .field select,
 .field textarea {
@@ -1357,6 +1454,12 @@ details[open]::details-content {
 .field > .secret-head > label {
   font-weight: 700;
   font-size: 0.92rem;
+}
+
+/* On the card a field's name looks like every other name there. */
+.pass .field > .pass-label {
+  font-size: 0.82rem;
+  font-weight: 500;
 }
 
 /* An input with something beside it (e.g. "hard filter" switch): on the input's line,
@@ -1387,10 +1490,20 @@ textarea {
   color: var(--paper-ink);
 }
 
+::placeholder {
+  color: var(--paper-dim);
+  opacity: 1;
+}
+
 /* One height for every one-line field, so a select, a date and a text box in a row line up. */
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
 select {
   block-size: 2.55rem;
+}
+
+/* A select draws its text 4 px further in than a text box - both start at one line in a row. */
+select {
+  padding-inline-start: calc(0.55rem - 4px);
 }
 
 input::-webkit-datetime-edit {
@@ -1449,6 +1562,35 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* A big window's title is a yellow sign pinned on top, so its "X" never scrolls away.
+   Short questions keep their plain head. */
+.sheet:not(.sheet-narrow) .sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  gap: 1rem;
+  margin: -1.1rem -1.3rem 0;
+  padding: 0.5rem 0.8rem 0.5rem 1.3rem;
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+.sheet:not(.sheet-narrow) .sheet-head :focus-visible {
+  outline-color: var(--signal-ink);
+}
+
+/* Its buttons are the stub of the window: pinned at the bottom under a perforation, so saving
+   is always one tap away, not at the end of a long form. */
+.sheet:not(.sheet-narrow) > .sheet-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 0 -1.3rem -1.3rem;
+  padding: 0.75rem 1.3rem;
+  border-top: 2px dashed var(--perf);
+  background: var(--paper);
 }
 
 .sheet-head h2,
@@ -1589,6 +1731,7 @@ textarea {
 
 .choice-item input {
   flex: none;
+  margin: 0;
   width: 1.1rem;
   height: 1.1rem;
   accent-color: var(--signal);
@@ -2026,6 +2169,13 @@ fieldset.plain {
   gap: 0.5rem 1rem;
 }
 
+/* "yes, up to [2] times a month" is one sentence - it stays on one line. */
+.commute-some {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .commute .choice-item input {
   width: 1.1rem;
   height: 1.1rem;
@@ -2254,8 +2404,14 @@ fieldset.plain {
   flex-direction: column;
   gap: 0.7rem;
   margin: -1.1rem -1.3rem 0;
-  padding: 1.1rem 1.3rem 0;
+  padding: 0 1.3rem;
   background: var(--paper);
+}
+
+/* The yellow sign is already pinned with the whole top part. */
+.sheet .settings-top .sheet-head {
+  position: static;
+  margin: 0 -1.3rem;
 }
 
 .settings-nav {
@@ -2944,7 +3100,12 @@ fieldset.plain {
 
 .agenda-tools {
   display: flex;
+  align-items: stretch;
   gap: 0.3rem;
+}
+
+.agenda-tools .icon-btn {
+  height: auto;
 }
 
 .agenda-sub-title {
@@ -3158,7 +3319,7 @@ fieldset.plain {
 
 @container app (max-width: 37.5rem) {
   .topbar {
-    padding: 0.4rem 0.6rem;
+    padding: 0.4rem 1rem 0.4rem 0.3rem;
   }
 
   .btn-fetch {
@@ -3191,9 +3352,8 @@ fieldset.plain {
       "place salary"
       "status added";
     gap: 0.2rem 0.6rem;
-    padding: 0.6rem 0.8rem;
+    padding: 0.6rem 1rem;
     border-bottom: 1px solid var(--row-line);
-    touch-action: pan-y;
   }
 
   .board td {
@@ -3234,7 +3394,61 @@ fieldset.plain {
   }
 
   .settings-nav .seg {
+    flex: 1 1 auto;
+    justify-content: center;
     padding-inline: 0.55rem;
+  }
+
+  /* A long list of choices takes the whole width, like every field above and below it. */
+  .field-inline {
+    max-width: none;
+  }
+
+  /* The mark must not change the width: the buttons of a strip stay equal when the choice moves. */
+  .seg-radio {
+    position: relative;
+    padding-inline: 0.35rem;
+  }
+
+  .seg-radio:has(input:checked)::before {
+    position: absolute;
+    top: 0.1rem;
+    left: 0.3rem;
+    font-size: 0.85rem;
+  }
+
+  /* The main buttons share a row, whole words only; "Delete" / "Skip" sits under them. */
+  .sheet-foot {
+    flex-wrap: wrap;
+  }
+
+  .sheet-foot .btn {
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .sheet-foot .btn:not(.sheet-foot-start) {
+    flex: 1;
+  }
+
+  .sheet-foot .sheet-foot-start {
+    order: 1;
+    flex-basis: 100%;
+    margin-right: 0;
+  }
+
+  .commute-count {
+    width: 3.5rem;
+  }
+
+  .pass-row .pass-meta {
+    flex-basis: 100%;
+  }
+
+  /* The message holds both edges of the screen, not the width of its text. */
+  .toast-zone {
+    right: 1rem;
+    align-items: stretch;
   }
 
   .form-grid {
@@ -3457,6 +3671,43 @@ fieldset.plain {
     translate: -50% -50%;
   }
 
+  /* Sideways belongs to the swipe at every width (a phone on its side too), up and down to the list. */
+  .board tbody tr {
+    touch-action: pan-y;
+  }
+
+  /* The buttons sit above the "?" square, so a tap on a button is always that button's. */
+  .interest-set .seg,
+  .hard-switch .seg {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Links in the card's text are tapped too - a line of text is too thin for a finger. */
+  .pass-details dd a:not(.adzuna-credit, .himalayas-credit) {
+    display: inline-flex;
+    align-items: center;
+    min-width: 48px;
+    min-height: max(48px, 2.75rem);
+  }
+
+  .adzuna-credit,
+  .himalayas-credit,
+  a.agenda-sub {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: max(48px, 2.75rem);
+  }
+
+  /* No drag handle: the box grows with its text, up to half of the screen. */
+  textarea {
+    resize: none;
+    field-sizing: content;
+    min-block-size: 6lh;
+    max-block-size: 50dvh;
+  }
+
   /* No hover on a touch screen to bring a closed offer back to full colour - dim the ink instead of the whole row. */
   .board tbody tr.is-closed {
     opacity: 1;
@@ -3482,7 +3733,6 @@ fieldset.plain {
 
 @supports (animation-timeline: scroll()) {
   @container app (max-width: 37.5rem) {
-    .tabs,
     .signs {
       animation: more-to-the-right linear both;
       animation-timeline: scroll(self inline);
@@ -3577,8 +3827,9 @@ html.scanning .scan-overlay * {
 }
 
 /* The list and the card are separate screens (the same step as .split). "Back to the list" stays
-   in reach all the way down a long card. */
-.pass-back {
+   in reach all the way down a long card: a bar of its own, so the card's text and buttons go
+   under it, not beside it. */
+.pass-back-bar {
   display: none;
 }
 
@@ -3596,19 +3847,36 @@ html.scanning .scan-overlay * {
     border-radius: 0;
   }
 
-  .pass-back {
-    display: inline-flex;
+  .pass-back-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
     position: sticky;
-    top: 0.5rem;
-    z-index: 1;
-    margin: 0.6rem 0 0 1.2rem;
+    top: 0;
+    z-index: 2;
+    padding: 0.5rem 1.2rem;
+    border-bottom: 1px solid var(--perf);
     background: var(--paper);
+  }
+
+  /* A field reached with "next" on the keyboard must not stop under the bar (or above the bar at the bottom). */
+  .app.is-card .pass {
+    scroll-padding-top: calc(max(48px, 2.75rem) + 1.5rem);
+    scroll-padding-bottom: calc(max(48px, 2.75rem) + 1.5rem);
+  }
+
+  /* The message stands above the pinned "Very | Maybe | No", not on it. */
+  .app.is-card:has(.pass-dock) .toast-zone {
+    bottom: calc(max(48px, 2.75rem) + 2.2rem);
   }
 }
 
 /* ---------- phone: more of the list, less around it ---------- */
 
 .tab-count-narrow,
+.tab-icon,
+.tab-short,
 .match-cap,
 .cell-name {
   display: none;
@@ -3693,23 +3961,107 @@ html.scanning .scan-overlay * {
     display: inline;
   }
 
-  /* One row: the tabs scroll between the edge and the two square buttons. The app's name
-     stays for a screen reader - on a phone the list matters more than the sign. */
+  /* At the top only the sign: the app's name, "+" and the gear. */
   .topbar {
     gap: 0.5rem;
   }
 
-  .topbar .brand {
+  .topbar .brand h1 {
+    font-size: 1.3rem;
+    letter-spacing: 0.04em;
+  }
+
+  /* The tabs are a yellow bar under the thumb: one field per list, all of them in view - a
+     pictogram, a short name and the count. The chosen one is turned inside out, like a lit sign. */
+  /* (.app is the container itself, so the room for the bar is kept under the list.) */
+  .app:not(.is-card) .split {
+    margin-bottom: calc(var(--tabbar-h) + 2px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .topbar .tabs,
+  .topbar.is-stacked .tabs {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 5;
+    order: 0;
+    width: auto;
+    display: flex;
+    gap: 0;
+    overflow: visible;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--signal);
+    border-top: 2px solid var(--signal-ink);
+    animation: none;
+    mask-image: none;
+  }
+
+  .topbar .tab,
+  .topbar.is-compact .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: var(--tabbar-h);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.3rem 0.15rem;
+    border-bottom: 0;
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+    line-height: 1.1;
+  }
+
+  .topbar .tab[aria-current="page"] {
+    background: var(--signal-ink);
+    color: var(--signal);
+  }
+
+  .tab-icon {
+    position: relative;
+    display: block;
+    line-height: 0;
+  }
+
+  .tab-short {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tab-name {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
-  .topbar .tabs {
-    flex: 1 1 0;
-    min-width: 0;
+  /* The count sits on the pictogram's corner, so a long name never pushes it out. */
+  .topbar .tab .tab-count {
+    position: absolute;
+    top: 0.2rem;
+    left: calc(50% + 0.45rem);
+    margin: 0;
+    padding: 0 0.25rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .topbar .tab[aria-current="page"] .tab-count {
+    background: var(--signal);
+    color: var(--signal-ink);
+  }
+
+  .topbar .tab {
+    position: relative;
+  }
+
+  /* A message stands above the bar, not on it. */
+  .app:not(.is-card) .toast-zone {
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 1rem);
   }
 
   /* "Add offer" as a square "+" next to the gear - the name stays for a screen reader. */
