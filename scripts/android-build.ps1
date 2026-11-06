@@ -25,7 +25,21 @@ $env:JAVA_OPTS = "-Djavax.net.ssl.trustStoreType=Windows-ROOT"
 $env:GRADLE_OPTS = $env:JAVA_OPTS
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
-$log = npx tauri android build --debug --target $Target --apk 2>&1 | ForEach-Object { "$_" }
+# Install number: every build is 0.1 higher (1.0, 1.1, ... 1.9, 2.0). The last built number lives in
+# scripts/numer-instalki.txt and is saved only after a successful build. It becomes the Android
+# versionName (and versionCode, so the phone accepts the update) and the APK file name.
+$numberFile = Join-Path $PSScriptRoot "numer-instalki.txt"
+if (Test-Path $numberFile) {
+    $last = (Get-Content $numberFile -Raw).Trim()
+    if ($last -notmatch '^\d+\.\d$') { throw "Bad scripts/numer-instalki.txt - expected e.g. 1.0" }
+    $tenths = [int]($last -replace '\.', '') + 1
+    $number = "$([math]::Floor($tenths / 10)).$($tenths % 10)"
+} else { $number = "1.0" }
+$versionConfig = "$root\src-tauri\target\android-version.json"
+New-Item -ItemType Directory -Force (Split-Path $versionConfig) | Out-Null
+[IO.File]::WriteAllText($versionConfig, "{ `"version`": `"$number.0`" }")
+"Install number: $number"
+$log = npx tauri android build --debug --target $Target --apk --config $versionConfig 2>&1 | ForEach-Object { "$_" }
 $log
 $code = $LASTEXITCODE
 # Without Windows Developer Mode the CLI cannot symlink the .so into jniLibs. The library is
@@ -41,5 +55,12 @@ if ($code -ne 0 -and ($log -match "symbolic link")) {
     "Symlink not allowed - copied the library, running Gradle directly"
     .\gradlew.bat "assemble${flavor}Debug" -x "rustBuild${flavor}Debug" --console=plain 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
+}
+if ($code -eq 0) {
+    $apkAbi = @{ aarch64 = "arm64"; x86_64 = "x86_64" }[$Target]
+    New-Item -ItemType Directory -Force "$root\apk" | Out-Null
+    Copy-Item "$root\src-tauri\gen\android\app\build\outputs\apk\$apkAbi\debug\app-$apkAbi-debug.apk" "$root\apk\TablicaOfert-$number.apk" -Force
+    [IO.File]::WriteAllText($numberFile, "$number`n")
+    "APK: apk\TablicaOfert-$number.apk"
 }
 "exit=$code"

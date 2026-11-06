@@ -64,3 +64,6 @@ client_secret*.json
 *.bundle
 *.orig
 *.bak
+
+# Built phone installers (scripts/android-build.ps1)
+/apk/
