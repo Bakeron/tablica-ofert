@@ -395,11 +395,20 @@ pub struct Progress {
     pub source: Option<String>,
     pub done: usize,
     pub total: usize,
+    /// While offers are fetched: which of the turned-on sources is asked now (1-based) and how
+    /// many there are - "Source 3 of 7" on the left of the line. 0 = not part of a fetch.
+    pub part: usize,
+    pub parts: usize,
 }
 
 impl Progress {
     pub fn new(step: &str, source: Option<&str>, done: usize, total: usize) -> Self {
-        Self { step: step.into(), source: source.map(Into::into), done, total }
+        Self { step: step.into(), source: source.map(Into::into), done, total, part: 0, parts: 0 }
+    }
+
+    /// The same step as source `part` of `parts` in a fetch.
+    pub fn of(self, part: usize, parts: usize) -> Self {
+        Self { part, parts, ..self }
     }
 }
 

@@ -359,16 +359,30 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
         return Err(AppError::Busy);
     }
     let _running = Running(state);
-    let say = |step: &str, done: usize, total: usize| progress(Some(Progress::new(step, None, done, total)));
     let snap = with_db(state, |c| snapshot(c))?;
     let now = OffsetDateTime::now_utc();
     let mut report = FetchReport::default();
     let on = |key: &str| snap.settings.get(key).is_some_and(|v| v == "on");
+    // "Source 3 of 7" on the line at the bottom: every turned-on source counts, also one that
+    // is skipped this time (it goes by in a moment).
+    let parts = ["source_adzuna", "source_remotive", "source_himalayas", "source_jooble", "source_mail"]
+        .into_iter()
+        .filter(|key| on(key))
+        .count()
+        + FEEDS.iter().filter(|source| on(&format!("source_{source}"))).count();
+    // Atomic, not a Cell - the future must stay `Send` across the awaits.
+    let part = std::sync::atomic::AtomicUsize::new(0);
+    let next_part = || {
+        part.fetch_add(1, Ordering::Relaxed);
+    };
+    let tell = |step: Progress| progress(Some(step.of(part.load(Ordering::Relaxed), parts)));
+    let say = |step: &str, done: usize, total: usize| tell(Progress::new(step, None, done, total));
     let search_words = settings::search_words(snap.settings.get("search_words").map_or("", String::as_str));
     let client = net::client()?;
 
     // Adzuna
     if on("source_adzuna") {
+        next_part();
         let every: i64 = snap.settings.get("fetch_every").and_then(|v| v.parse().ok()).unwrap_or(6);
         let limits = adzuna_limits(every);
         let last = snap.runs.get(adzuna::SOURCE).cloned().unwrap_or_default();
@@ -441,6 +455,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
 
     // Remotive
     if on("source_remotive") {
+        next_part();
         let limits = REMOTIVE_LIMITS;
         let last = snap.runs.get(remotive::SOURCE).cloned().unwrap_or_default();
         let mut run = SourceRun { source: remotive::SOURCE.into(), ..Default::default() };
@@ -462,7 +477,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
             let total = list.len();
             for (i, word) in list.into_iter().enumerate() {
                 if i > 0 {
-                    progress(Some(Progress::new("wait", Some(remotive::SOURCE), i + 1, total)));
+                    tell(Progress::new("wait", Some(remotive::SOURCE), i + 1, total));
                     tokio::time::sleep(std::time::Duration::from_secs(REMOTIVE_PAUSE_SECS)).await;
                 }
                 calls += 1;
@@ -488,6 +503,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
 
     // Himalayas - a few keyword searches a day, then the check of closed jobs (their terms).
     if on("source_himalayas") {
+        next_part();
         let limits = HIMALAYAS_LIMITS;
         let last = snap.runs.get(himalayas::SOURCE).cloned().unwrap_or_default();
         let mut run = SourceRun { source: himalayas::SOURCE.into(), ..Default::default() };
@@ -547,6 +563,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
         if !on(&format!("source_{source}")) {
             continue;
         }
+        next_part();
         let limits = FEED_LIMITS;
         let last = snap.runs.get(source).cloned().unwrap_or_default();
         let mut run = SourceRun { source: source.into(), ..Default::default() };
@@ -584,6 +601,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
 
     // Jooble - one search a day; the keywords take turns day after day.
     if on("source_jooble") {
+        next_part();
         let limits = JOOBLE_LIMITS;
         let last = snap.runs.get(jooble::SOURCE).cloned().unwrap_or_default();
         let mut run = SourceRun { source: jooble::SOURCE.into(), ..Default::default() };
@@ -625,6 +643,7 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
 
     // E-mail alerts
     if on("source_mail") {
+        next_part();
         let every: i64 = snap.settings.get("fetch_every").and_then(|v| v.parse().ok()).unwrap_or(6);
         let limits = Limits { every_hours: every, forced_hours: 0, calls_a_day: i64::MAX, calls_a_run: 1 };
         let last = snap.runs.get(mail::SOURCE).cloned().unwrap_or_default();

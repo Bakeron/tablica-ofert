@@ -410,6 +410,7 @@ export const en: Record<keyof typeof pl, string> = {
   "work.aiWait": "AI: {name} asks for a short break (a limit per minute), then offer {done} of {total}",
   "work.label": "What is happening now",
   "work.now": "Now",
+  "work.part": "Source {part} of {parts}",
   "src.auto": "Fetch new offers automatically - at start and every few hours while the app is open",
   "src.every": "Every how many hours",
   "src.every.value": "every {count} h",

@@ -1877,14 +1877,13 @@ textarea {
   border-left-color: var(--danger);
 }
 
-/* "Today": AI's one sentence why the score - a quiet line under the company, at most two lines. */
+/* "Today": AI's one sentence why the score - a quiet line under the company, always whole: on a
+ *  narrow screen the row grows instead of cutting the sentence. */
 .offer-why {
-  display: -webkit-box;
+  display: block;
   margin-top: 0.2rem;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   font-family: var(--font-text);
+  line-height: 1.35;
   font-size: 0.8rem;
   color: var(--ink-dim);
 }
@@ -3642,6 +3641,15 @@ fieldset.plain {
   font-family: var(--font-board);
   font-size: 1.05rem;
   letter-spacing: 0.03em;
+}
+
+/* "Source 3 of 7" - the whole fetch at a glance, left of the step in work. */
+.work-part {
+  display: flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-right: 1px solid rgb(242 240 232 / 0.3);
+  white-space: nowrap;
 }
 
 .work-now {

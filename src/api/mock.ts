@@ -465,10 +465,11 @@ export function createMockApi(): Api {
     async fetchOffers() {
       // A few made-up steps, slow enough to see the line at the bottom.
       const steps: WorkProgress[] = [
-        { step: "remotive", source: null, done: 1, total: 2 },
-        { step: "wait", source: "remotive", done: 2, total: 2 },
-        { step: "check", source: "himalayas", done: 3, total: 12 },
-        { step: "mail", source: null, done: 1, total: 1 },
+        { step: "remotive", source: null, done: 1, total: 2, part: 1, parts: 2 },
+        { step: "wait", source: "remotive", done: 2, total: 2, part: 1, parts: 2 },
+        { step: "mail", source: null, done: 1, total: 1, part: 2, parts: 2 },
+        // The check of Himalayas offers goes after every source - not one of them.
+        { step: "check", source: "himalayas", done: 3, total: 12, part: 0, parts: 0 },
       ];
       for (const step of steps) {
         tellProgress(step);
@@ -637,7 +638,7 @@ export function createMockApi(): Api {
     },
     async ollamaPull(model) {
       for (let done = 0; done <= 100; done += 20) {
-        tellProgress({ step: "pull", source: model, done, total: 100 });
+        tellProgress({ step: "pull", source: model, done, total: 100, part: 0, parts: 0 });
         await new Promise((r) => setTimeout(r, 400));
       }
       tellProgress(null);
@@ -645,10 +646,10 @@ export function createMockApi(): Api {
     },
     async ollamaInstall() {
       for (let done = 0; done <= 100; done += 25) {
-        tellProgress({ step: "ollama-download", source: null, done, total: 100 });
+        tellProgress({ step: "ollama-download", source: null, done, total: 100, part: 0, parts: 0 });
         await new Promise((r) => setTimeout(r, 300));
       }
-      tellProgress({ step: "ollama-run", source: null, done: 0, total: 0 });
+      tellProgress({ step: "ollama-run", source: null, done: 0, total: 0, part: 0, parts: 0 });
       await new Promise((r) => setTimeout(r, 900));
       tellProgress(null);
     },

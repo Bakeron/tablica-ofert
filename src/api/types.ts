@@ -595,6 +595,10 @@ export interface WorkProgress {
   source: string | null;
   done: number;
   total: number;
+  /** While offers are fetched: which turned-on source is asked now (1-based) of how many -
+   *  "Source 3 of 7" on the left of the line. 0 = not part of a fetch. */
+  part: number;
+  parts: number;
 }
 
 /** Error shape sent by the Rust side (`AppError`). */

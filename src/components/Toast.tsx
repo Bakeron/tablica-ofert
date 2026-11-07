@@ -106,6 +106,9 @@ function WorkLine() {
   const share = stepShare(work);
   return (
     <div className="work-line fade" aria-live="off" aria-label={t("work.label")} data-leaving={leaving || undefined}>
+      {work.part > 0 && work.parts > 0 && (
+        <span className="work-part">{t("work.part", { part: Math.min(work.part, work.parts), parts: work.parts })}</span>
+      )}
       <span className="work-now">{t("work.now")}</span>
       <span className="work-text">{workText(work, t)}</span>
       <span className="work-bar" data-unknown={share === null || undefined} style={{ "--share": share ?? 0 } as CSSProperties} aria-hidden="true" />

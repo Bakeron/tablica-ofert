@@ -410,6 +410,7 @@ export const pl = {
   "work.aiWait": "AI: {name} prosi o krótką przerwę (limit na minutę), potem oferta {done} z {total}",
   "work.label": "Co się teraz dzieje",
   "work.now": "Teraz",
+  "work.part": "Źródło {part} z {parts}",
   "src.auto": "Pobieraj nowe oferty automatycznie - przy starcie i co kilka godzin, gdy aplikacja jest otwarta",
   "src.every": "Co ile godzin",
   "src.every.value": "co {count} h",
