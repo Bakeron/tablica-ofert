@@ -1,5 +1,6 @@
 import { Fragment, useId, useMemo, useState } from "react";
 import { useI18n } from "../i18n";
+import { unwrapNotices } from "../lib/notices";
 import { isPhone } from "../lib/platform";
 import { privacyBlocks, type Inline } from "../lib/privacy";
 import { IconWarning } from "./Icons";
@@ -93,7 +94,7 @@ export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink
     try {
       const resp = await fetch("/third-party-notices.txt");
       if (!resp.ok) throw new Error(String(resp.status));
-      setNotices(await resp.text());
+      setNotices(unwrapNotices(await resp.text()));
       setNoticesFailed(false);
     } catch {
       setNoticesFailed(true);
