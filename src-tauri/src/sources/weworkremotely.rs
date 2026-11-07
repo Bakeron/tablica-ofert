@@ -42,7 +42,7 @@ fn tag(item: &str, name: &str) -> Option<String> {
 
 fn utc(rfc2822: Option<String>) -> Option<String> {
     let t = OffsetDateTime::parse(rfc2822?.trim(), &Rfc2822).ok()?;
-    t.to_offset(time::UtcOffset::UTC).format(&Rfc3339).ok()
+    t.checked_to_offset(time::UtcOffset::UTC)?.format(&Rfc3339).ok()
 }
 
 pub fn parse(xml: &str) -> Vec<OfferInput> {

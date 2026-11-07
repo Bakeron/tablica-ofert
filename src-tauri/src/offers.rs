@@ -79,11 +79,12 @@ fn utc_time(value: Option<String>) -> AppResult<Option<String>> {
     let Some(value) = text(value, 64, "date")? else { return Ok(None) };
     let parsed = OffsetDateTime::parse(&value, &Rfc3339)
         .map_err(|_| AppError::Invalid("date has a wrong format".into()))?;
+    // Checked: a date at the very end of the calendar with an offset falls off it.
     parsed
-        .to_offset(time::UtcOffset::UTC)
-        .format(&Rfc3339)
+        .checked_to_offset(time::UtcOffset::UTC)
+        .and_then(|t| t.format(&Rfc3339).ok())
         .map(Some)
-        .map_err(|_| AppError::Invalid("date has a wrong format".into()))
+        .ok_or_else(|| AppError::Invalid("date has a wrong format".into()))
 }
 
 /// The date a source published the offer, in any of the forms the sources use: RFC 3339,
@@ -108,7 +109,7 @@ pub fn published(value: Option<&str>, now: &str) -> Option<String> {
         .ok()
         .or_else(|| naive(v))
         .or_else(|| v.parse::<i64>().ok().and_then(|n| OffsetDateTime::from_unix_timestamp(n).ok()))?;
-    let date = parsed.to_offset(time::UtcOffset::UTC).replace_nanosecond(0).ok()?.format(&Rfc3339).ok()?;
+    let date = parsed.checked_to_offset(time::UtcOffset::UTC)?.replace_nanosecond(0).ok()?.format(&Rfc3339).ok()?;
     // Before 2000 is no job offer anyone looks for - a broken date.
     if date.as_str() < "2000" {
         return None;
@@ -1163,6 +1164,8 @@ mod tests {
         assert_eq!(p("jutro"), None);
         assert_eq!(p("0"), None);
         assert_eq!(published(None, now), None);
+        // The very end of the calendar with an offset: dropped, not a crash.
+        assert_eq!(p("9999-12-31T23:59:59-23:59"), None);
     }
 
     /// An offer with its publication date `days` ago.
