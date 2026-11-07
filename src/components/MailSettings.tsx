@@ -79,7 +79,7 @@ export function MailSettings({
   jooble: SourceStatus | undefined;
   hints: SecretHints;
   profiles: Profile[];
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
   onSaveSecret: (name: SecretName, value: string) => Promise<boolean>;
   onDeleteSecret: (name: SecretName) => Promise<boolean>;
   /** The mailbox answered, so the source's status has just changed. */
@@ -176,12 +176,6 @@ export function MailSettings({
                         {t("mail.gmailAuthOpen")} <IconArrowOut />
                       </button>
                     </div>
-                  )}
-                  {result.detail && (
-                    <details>
-                      <summary>{t("error.details")}</summary>
-                      <code>{result.detail}</code>
-                    </details>
                   )}
                 </div>
               </div>

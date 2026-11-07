@@ -12,7 +12,6 @@ import {
   type Draft,
   type Criteria,
   type FetchReport,
-  type RateReport,
   type Interest,
   type OfferDetail,
   type OfferInput,
@@ -46,6 +45,8 @@ import { onBack } from "./lib/back";
 import { leavesView, viewFor } from "./lib/profile";
 import { csvCells, csvName } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
+import { rateSummary } from "./lib/aiProblem";
+import { sourceProblem } from "./lib/sourceProblem";
 
 const VIEWS: View[] = ["today", "board", "review", "rejected", "declined", "archive", "trash"];
 const TAB_ICONS: Record<View, ReactNode> = {
@@ -791,13 +792,19 @@ export default function App() {
     changeSetting("onboarding", "done");
   }
 
-  function changeSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
+  /** Saves at once; the answer says whether it really got saved (a text field shows "Saved"). */
+  function changeSetting<K extends keyof Settings>(key: K, value: Settings[K]): Promise<boolean> {
     setSettings((s) => ({ ...s, [key]: value }));
-    api?.setSetting(key, value).catch((e) => {
-      fail(e);
-      // Refused by Rust (wrong value) - show what is really saved.
-      api.getSettings().then(setSettings, fail);
-    });
+    if (!api) return Promise.resolve(false);
+    return api.setSetting(key, value).then(
+      () => true,
+      (e) => {
+        fail(e);
+        // Refused by Rust (wrong value) - show what is really saved.
+        api.getSettings().then(setSettings, fail);
+        return false;
+      },
+    );
   }
 
   const changeSettingRef = useRef(changeSetting);
@@ -1134,9 +1141,9 @@ export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Rec
   }
   if (failed.length > 0) {
     const names = failed.map((r) => t(`source.${r.source}` as TextKey)).join(", ");
-    const code = failed[0].error?.code;
-    const known = ["net", "auth", "limit", "missing", "busy"];
-    const why = code && known.includes(code) ? ` ${t(`error.${code}` as TextKey)}` : "";
+    // What happened and what to do, in plain words (the technical text is in the source's settings).
+    const error = failed[0].error;
+    const why = error ? ` ${t(`src.problem.${sourceProblem(error.detail)}` as TextKey)}` : "";
     parts.push(`${t("fetch.failed", { list: names })}.${why}`);
   }
   if (parts.length > 0) return parts.join(" · ");
@@ -1147,13 +1154,4 @@ export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Rec
   return t("fetch.none");
 }
 
-/** One sentence about an AI run. */
-export function rateSummary(report: RateReport, t: (key: TextKey, params?: Record<string, string | number>) => string): string {
-  if (report.error) {
-    const known = ["net", "auth", "limit", "missing", "busy"];
-    const why = known.includes(report.error.code) ? t(`error.${report.error.code}` as TextKey) : report.error.detail;
-    return `${t("ai.stopped")} ${why}`;
-  }
-  return t("ai.rated", { count: report.rated, waiting: report.waiting });
-}
 

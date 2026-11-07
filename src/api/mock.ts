@@ -5,7 +5,7 @@
 
 import { shownScore } from "../lib/format";
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
-import { AI_PROVIDERS, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type OfferAi, type WorkProgress } from "./types";
+import { AI_PROVIDERS, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type OfferAi, type RateReport, type WorkProgress } from "./types";
 import { bestResult, isKept, viewFor } from "../lib/profile";
 import { JOOBLE_KEY_CALLS } from "../lib/limits";
 import type { Api } from "./index";
@@ -457,6 +457,11 @@ export function createMockApi(): Api {
       if (!settings.mail_user || !secrets["mail-password"]) throw { code: "missing", detail: "mailbox" };
       return 42;
     },
+    async sourceTest(source) {
+      await new Promise((r) => setTimeout(r, 600));
+      const run = sourceRuns[source];
+      if (run) run.lastError = null;
+    },
     async fetchOffers() {
       // A few made-up steps, slow enough to see the line at the bottom.
       const steps: WorkProgress[] = [
@@ -497,8 +502,8 @@ export function createMockApi(): Api {
     },
     async aiStatus(): Promise<AiStatus> {
       const defaults: Record<AiProvider, string> = {
-        gemini: "gemini-2.5-flash", groq: "openai/gpt-oss-120b", openrouter: "openai/gpt-oss-20b:free",
-        ollama: "llama3.1:8b", anthropic: "claude-opus-5-5", openai: "gpt-5-mini",
+        gemini: "gemini-3.5-flash-lite", groq: "openai/gpt-oss-120b", openrouter: "openrouter/free",
+        ollama: "llama3.1:8b", anthropic: "claude-opus-5-5", openai: "gpt-6-luna",
       };
       const on = settings.ai_providers.split(",");
       return {
@@ -530,7 +535,11 @@ export function createMockApi(): Api {
           aiCalls++;
         }
       }
-      return { rated, failed: 0, waiting: 0, error: null };
+      // Made up: Gemini without a model for this account, Groq took over.
+      const problems: RateReport["problems"] = settings.ai_providers.includes("gemini")
+        ? [{ provider: "gemini", model: settings.ai_model_gemini || "gemini-3.5-flash-lite", kind: "model", message: "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0" }]
+        : [];
+      return { rated, failed: 0, waiting: 0, noProfile: 2, error: null, problems };
     },
     async aiRateAllAgain() {
       for (const o of offers.values()) {
@@ -544,7 +553,28 @@ export function createMockApi(): Api {
       await new Promise((r) => setTimeout(r, 700));
       o.ai = { ...o.ai, status: "done", summary: o.ai.summary ?? "Przykładowe streszczenie z podglądu - tu pisze AI." };
       aiCalls++;
-      return { rated: 1, failed: 0, waiting: 0, error: null };
+      return { rated: 1, failed: 0, waiting: 0, noProfile: 0, error: null, problems: [] };
+    },
+    async aiCheck(provider) {
+      await new Promise((r) => setTimeout(r, 600));
+      aiCalls++;
+      const model = (await this.aiStatus()).providers.find((x) => x.provider === provider)?.model ?? "";
+      if (provider === "ollama") return { model, problem: { provider, model, kind: "offline", message: "error sending request" } };
+      if (!secrets[`ai-key-${provider}` as keyof typeof secrets]) return { model, problem: { provider, model, kind: "no_key", message: "" } };
+      if (provider === "gemini" && model.startsWith("gemini-2")) {
+        return { model, problem: { provider, model, kind: "model", message: "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0, model: " + model } };
+      }
+      return { model, problem: null };
+    },
+    async aiFreeModels(provider) {
+      await new Promise((r) => setTimeout(r, 400));
+      const saved: Partial<Record<AiProvider, string[]>> = {
+        groq: ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3.8-27b"],
+        openrouter: ["openrouter/free", "google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3.5-super-vl:free"],
+      };
+      const models = saved[provider] ?? [];
+      if (provider === "openrouter") return { models: [...models, "liquid/lfm-3-1.7b:free"].sort(), fromProvider: true, problem: null };
+      return { models, fromProvider: false, problem: { provider, model: "", kind: "key", message: "API key not valid. Please pass a valid API key." } };
     },
     async aiAssist(id, kind) {
       const o = find(id);

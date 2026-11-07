@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Api } from "../api";
-import { ADZUNA_COUNTRIES, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type TaskStatus } from "../api/types";
+import { ADZUNA_COUNTRIES, describeError, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type TaskStatus } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate } from "../lib/format";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
@@ -9,8 +9,19 @@ import { IconArrowOut, IconArrowRight, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import { MailSettings } from "./MailSettings";
 import { SecretField } from "./SecretField";
+import { sourceProblem } from "../lib/sourceProblem";
 
 const ADZUNA_SIGNUP = "https://developer.adzuna.com/signup";
+
+/** The result of the last "Check connection" of a source: green when it works, red with the reason when not. */
+type CheckResult = { ok: boolean; text: string };
+
+/** "Check connection" for every source (given by the offer sources part of the settings). The results
+ *  live here, above the boxes, so a box that folds or loses its error keeps showing them. */
+const SourceCheckContext = createContext<{
+  check: (source: string) => Promise<void>;
+  results: Partial<Record<string, CheckResult>>;
+} | null>(null);
 
 /** Settings → "Offer sources": automatic fetching, Adzuna (with its keys), Remotive, e-mail alerts (with Jooble among the portals). */
 export function SourcesSettings({
@@ -25,7 +36,7 @@ export function SourcesSettings({
   api: Api;
   settings: Settings;
   profiles: Profile[];
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
@@ -89,7 +100,28 @@ export function SourcesSettings({
   const wwr = of("weworkremotely");
   const remoteok = of("remoteok");
 
+  // One small request; when it works, the error goes away (the status is read again).
+  const [checks, setChecks] = useState<Partial<Record<string, CheckResult>>>({});
+  const checkSource = useCallback(
+    async (source: string) => {
+      let result: CheckResult;
+      try {
+        await api.sourceTest(source);
+        result = { ok: true, text: t("src.testOk") };
+      } catch (e) {
+        const { key, detail } = describeError(e);
+        // The service's own failure gets the sentence of its kind; anything else the general one.
+        const why = key === "error.generic" || key === "error.invalid" ? t(key as TextKey) : t(`src.problem.${sourceProblem(detail)}` as TextKey);
+        result = { ok: false, text: `${t("src.testFailed")} ${why}` };
+      }
+      setChecks((c) => ({ ...c, [source]: result }));
+      await load();
+    },
+    [api, load, t],
+  );
+
   return (
+    <SourceCheckContext.Provider value={{ check: checkSource, results: checks }}>
     <div className="settings-part">
       <fieldset className="crit-group">
         <label className="choice-item">
@@ -194,6 +226,36 @@ export function SourcesSettings({
         onToast={onToast}
       />
     </div>
+    </SourceCheckContext.Provider>
+  );
+}
+
+/** "Check connection" of a source: the button always, the result of the last check on its right. */
+function SourceCheck({ source }: { source: string }) {
+  const { t } = useI18n();
+  const ctx = useContext(SourceCheckContext);
+  const [busy, setBusy] = useState(false);
+  if (!ctx) return null;
+  const result = ctx.results[source];
+
+  async function run() {
+    setBusy(true);
+    try {
+      await ctx!.check(source);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="source-check">
+      <button type="button" className="btn btn-ghost btn-small" onClick={run} disabled={busy} aria-busy={busy}>
+        {busy ? t("src.testing") : t("src.test")}
+      </button>
+      <p className={result ? (result.ok ? "source-ok" : "source-warn") : "hint"} role="status">
+        {result && !result.ok && <IconWarning />} {result ? result.text : t("src.testHint")}
+      </p>
+    </div>
   );
 }
 
@@ -215,7 +277,7 @@ export function SourceBox({
 }: {
   id: string;
   name: string;
-  short: string;
+  short: ReactNode;
   on: boolean;
   onToggle: (on: boolean) => void;
   state?: SourceStatus;
@@ -278,7 +340,9 @@ export function SourceState({
   const failed = !noProblems && s.lastError && s.lastTry;
   const noKey = !noProblems && !s.ready && s.enabled;
   const prefix = name ? `${name}: ` : "";
-  if (onlyProblems && !failed && !noKey) return null;
+  const checked = useContext(SourceCheckContext)?.results[s.source];
+  // A folded box keeps the result of a check made in it (the error going away does not fold anything).
+  if (onlyProblems && !failed && !noKey && !checked) return null;
   return (
     <div className="source-state">
       {/* A missing key is a problem only for a source that is on - "not set" under the field says the rest. */}
@@ -298,11 +362,16 @@ export function SourceState({
         </p>
       )}
       {failed && (
-        <p className="source-warn">
-          <IconWarning /> {prefix}
-          {t("src.status.error", { when: fullDate(s.lastTry!, lang), detail: s.lastError! })}
-        </p>
+        <div className="source-warn">
+          <IconWarning />
+          <div>
+            {prefix}
+            {t("src.status.error", { when: fullDate(s.lastTry!, lang) })} {t(`src.problem.${sourceProblem(s.lastError!)}` as TextKey)}
+          </div>
+        </div>
       )}
+      {/* Always in an unfolded box; folded - with an error or a result. The mailbox has its own button by its fields. */}
+      {!noProblems && s.source !== "mail" && (failed || !onlyProblems || checked) && <SourceCheck source={s.source} />}
     </div>
   );
 }

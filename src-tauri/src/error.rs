@@ -36,6 +36,9 @@ pub enum AppError {
     /// The text is also matched in `SyncSettings.tsx` (a past sync keeps only the text).
     #[error("data from a newer app version")]
     Outdated,
+    /// An AI provider answered with an error; `kind` says in plain words what is wrong.
+    #[error("{status}: {message}")]
+    Provider { kind: crate::ai::client::Problem, status: u16, message: String },
 }
 
 impl AppError {
@@ -53,6 +56,14 @@ impl AppError {
             AppError::Missing(_) => "missing",
             AppError::Busy => "busy",
             AppError::Outdated => "outdated",
+            AppError::Provider { kind, .. } => {
+                use crate::ai::client::Problem;
+                match kind {
+                    Problem::Key | Problem::ApiOff | Problem::NoFreeTier | Problem::Verify | Problem::Denied => "auth",
+                    Problem::Limit => "limit",
+                    _ => "net",
+                }
+            }
         }
     }
 }

@@ -36,6 +36,12 @@ pub fn add_calls(conn: &Connection, key: &str, calls: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// Today's count starts again from zero (e.g. the mark "the provider said: limit").
+pub fn clear_today(conn: &Connection, key: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM api_usage WHERE key = ?1 AND day = ?2", params![key, today()])?;
+    Ok(())
+}
+
 /// Calls in the last 30 days (for limits counted per month).
 pub fn calls_month(conn: &Connection, key: &str) -> AppResult<i64> {
     Ok(conn.query_row(

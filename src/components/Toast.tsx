@@ -67,6 +67,8 @@ function workText(p: WorkProgress, t: (key: TextKey, params?: Record<string, str
       return t("work.check", { source: name(p.source), ...count });
     case "ai":
       return t("work.ai", count);
+    case "ai-wait":
+      return t("work.aiWait", { name: t(`ai.p.${p.source ?? ""}` as TextKey), ...count });
     case "mail":
       return t("work.mail");
     case "pull":

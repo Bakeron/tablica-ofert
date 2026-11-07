@@ -114,7 +114,7 @@ pub async fn search(client: &Client, keys: &Keys, country: &str, q: &Query, max_
             params.push(("distance", q.radius_km.to_string()));
         }
     }
-    let resp = client.get(url).query(&params).send().await.map_err(net::net_error)?;
+    let resp = net::send_retry(client.get(url).query(&params)).await?;
     let answer: Answer = net::json(resp).await?;
     Ok(to_page(answer, country))
 }

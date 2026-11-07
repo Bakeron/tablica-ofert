@@ -1,6 +1,9 @@
 import type {
   AddOutcome,
+  AiCheck,
+  AiProvider,
   AiStatus,
+  FreeModels,
   AppStatus,
   AssistKind,
   Contact,
@@ -76,6 +79,8 @@ export interface Api {
   sourceStatus(): Promise<SourceStatus[]>;
   /** Logs in to the alert mailbox (read-only) and returns the number of messages. */
   mailTest(): Promise<number>;
+  /** "Check connection" next to a source: one small request, nothing saved; the old error goes. */
+  sourceTest(source: string): Promise<void>;
   /** "Fetch now" - every enabled source that may run. */
   fetchOffers(): Promise<FetchReport>;
   /** Background fetch finished (the app collects at start and every few hours). Returns "stop listening". */
@@ -87,6 +92,10 @@ export interface Api {
   aiRateAllAgain(): Promise<RateReport>;
   /** "Rate again" for one offer. */
   aiRateOffer(id: number): Promise<RateReport>;
+  /** One tiny question with the model from the settings (one call of the day). */
+  aiCheck(provider: AiProvider): Promise<AiCheck>;
+  /** Free models of the provider for the "Model" field. */
+  aiFreeModels(provider: AiProvider): Promise<FreeModels>;
   /** Text written by AI on a click (message, questions, gaps) - never sent anywhere. */
   aiAssist(id: number, kind: AssistKind): Promise<string>;
   /** Filters proposed from a description - the user picks what to keep. */
@@ -201,6 +210,7 @@ async function tauriApi(): Promise<Api> {
     revealSecret: (name) => invoke("reveal_secret", { name }),
     sourceStatus: () => invoke("source_status"),
     mailTest: () => invoke("mail_test"),
+    sourceTest: (source) => invoke("source_test", { source }),
     fetchOffers: () => invoke("fetch_offers"),
     onFetched: async (listener) => {
       const { listen } = await import("@tauri-apps/api/event");
@@ -210,6 +220,8 @@ async function tauriApi(): Promise<Api> {
     aiRateNow: () => invoke("ai_rate_now"),
     aiRateAllAgain: () => invoke("ai_rate_all_again"),
     aiRateOffer: (id) => invoke("ai_rate_offer", { id }),
+    aiCheck: (provider) => invoke("ai_check", { provider }),
+    aiFreeModels: (provider) => invoke("ai_free_models", { provider }),
     aiAssist: (id, kind) => invoke("ai_assist", { id, kind }),
     aiSuggestCriteria: (description) => invoke("ai_suggest_criteria", { description }),
     aiSuggestCareers: (description, experience) => invoke("ai_suggest_careers", { description, experience }),

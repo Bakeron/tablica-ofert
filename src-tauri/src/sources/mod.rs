@@ -716,6 +716,51 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
 /// State of every source for the settings window.
 /// `adzuna_ready` = both Adzuna keys are in the credential store, `jooble_ready` = the
 /// Jooble key is, `mail_ready` = mailbox address, server and password are set.
+/// "Check connection" next to a source: one small request (counted like any other), nothing is
+/// saved. When the service answers, the error of an earlier run goes - it says nothing true any more.
+pub async fn test(state: &AppState, source: &str) -> AppResult<()> {
+    let s = with_db(state, |c| settings::all(c))?;
+    let country = s.get("adzuna_country").cloned().unwrap_or_else(|| "pl".into());
+    let client = net::client()?;
+    // A word that finds something on every portal.
+    const WORD: &str = "developer";
+    let calls = match source {
+        adzuna::SOURCE => {
+            let keys = adzuna::keys()?.ok_or_else(|| AppError::Missing("adzuna key".into()))?;
+            let q = Query { keyword: WORD.into(), city: None, radius_km: 0 };
+            let result = adzuna::search(&client, &keys, &country, &q, 1, 1).await;
+            with_db(state, |c| usage::add_calls(c, adzuna::SOURCE, 1))?;
+            result.map(|_| ())?;
+            0
+        }
+        remotive::SOURCE => remotive::search(&client, WORD).await.map(|_| 1)?,
+        himalayas::SOURCE => himalayas::search(&client, WORD, &country).await.map(|_| 1)?,
+        weworkremotely::SOURCE => weworkremotely::fetch(&client, &[WORD.to_string()]).await.map(|_| 1)?,
+        remoteok::SOURCE => remoteok::fetch(&client, &[WORD.to_string()]).await.map(|_| 1)?,
+        jooble::SOURCE => {
+            let key = jooble::key()?.ok_or_else(|| AppError::Missing("jooble key".into()))?;
+            let q = Query { keyword: WORD.into(), city: None, radius_km: 0 };
+            let mut sent = false;
+            let result = jooble::search(&client, &key, &q, &mut sent).await;
+            with_db(state, |c| usage::add_calls(c, jooble::SOURCE, sent as i64))?;
+            result.map(|_| ())?;
+            0
+        }
+        mail::SOURCE => {
+            let config = mail::config(&s)?.ok_or_else(|| AppError::Missing("mailbox".into()))?;
+            tauri::async_runtime::spawn_blocking(move || mail::test(&config))
+                .await
+                .map_err(|e| AppError::Net(e.to_string()))??;
+            0
+        }
+        _ => return Err(AppError::Invalid("source".into())),
+    };
+    with_db(state, |c| {
+        usage::add_calls(c, source, calls)?;
+        clear_error(c, source)
+    })
+}
+
 pub fn status(conn: &Connection, adzuna_ready: bool, jooble_ready: bool, mail_ready: bool) -> AppResult<Vec<SourceStatus>> {
     let s = settings::all(conn)?;
     let mut stmt = conn.prepare("SELECT last_try, last_ok, last_error, added, merged FROM source_runs WHERE source = ?1")?;

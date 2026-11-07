@@ -197,6 +197,7 @@ pub async fn set_setting(state: State<'_, AppState>, key: String, value: String)
         if key == "learn_scores" {
             learn::refresh(c)?;
         }
+        ai::model_changed(c, &key)?;
         Ok(())
     })
 }
@@ -286,6 +287,12 @@ pub async fn mail_test(state: State<'_, AppState>) -> AppResult<u32> {
     // The mailbox answered, so an error from an earlier run says nothing true any more.
     with_db(&state, |c| sources::clear_error(c, sources::mail::SOURCE))?;
     Ok(count)
+}
+
+/// "Check connection" next to a source (one small request, nothing saved).
+#[tauri::command]
+pub async fn source_test(state: State<'_, AppState>, source: String) -> AppResult<()> {
+    sources::test(&state, &source).await
 }
 
 /// "Fetch now": every enabled source that may run (daily limits still apply).
@@ -386,6 +393,20 @@ pub async fn ai_rate_offer(state: State<'_, AppState>, id: i64) -> AppResult<Rat
     with_db(&state, |c| ai::reset(c, id))?;
     // One offer - the message "AI is working" is enough, no line at the bottom.
     ai::process(&state, Some(id), &|_| {}).await
+}
+
+/// "Check connection" next to an AI provider (one call of the day).
+#[tauri::command]
+pub async fn ai_check(state: State<'_, AppState>, provider: String) -> AppResult<ai::AiCheck> {
+    let p = ai::client::Provider::parse(&provider).ok_or_else(|| AppError::Invalid("provider".into()))?;
+    ai::check(&state, p).await
+}
+
+/// Free models of an AI provider for the "Model" field.
+#[tauri::command]
+pub async fn ai_free_models(state: State<'_, AppState>, provider: String) -> AppResult<ai::FreeModels> {
+    let p = ai::client::Provider::parse(&provider).ok_or_else(|| AppError::Invalid("provider".into()))?;
+    ai::free_models(&state, p).await
 }
 
 #[tauri::command]

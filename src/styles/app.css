@@ -1385,12 +1385,6 @@ details[open]::details-content {
   color: var(--signal-ink);
 }
 
-/* Never colour alone: the chosen one also gets a check mark (as the profile switches do). */
-.seg[aria-pressed="true"]:not(.seg-icon, .seg-small)::before,
-.seg-radio:has(input:checked)::before {
-  content: "✓";
-}
-
 .seg kbd {
   font-family: var(--font-board);
   font-size: 0.75rem;
@@ -2151,15 +2145,11 @@ fieldset.plain {
   text-transform: uppercase;
 }
 
-/* Ticked = yellow sign with a check mark - never colour alone. */
+/* Ticked = the filled yellow sign (outline vs fill, not only a colour; no check mark - as on the phone). */
 .chip input:checked + span {
   background: var(--signal);
   border-color: var(--signal);
   color: var(--signal-ink);
-}
-
-.chip input:checked + span::before {
-  content: "✓";
 }
 
 .chip input:focus-visible + span {
@@ -2848,12 +2838,6 @@ fieldset.plain {
     flex-basis: 100%;
   }
 
-  /* No room for the check mark on a narrow screen - the chosen one is the filled one. */
-  .seg[aria-pressed="true"]:not(.seg-icon, .seg-small)::before,
-  .seg-radio:has(input:checked)::before {
-    content: none;
-  }
-
   /* A name that breaks into two lines still reads as one. */
   .seg-radio {
     line-height: 1.15;
@@ -2884,7 +2868,7 @@ fieldset.plain {
     padding: 0.35rem 0.7rem;
   }
 
-  /* The choices share the whole width; the filled one needs no check mark here either. */
+  /* The choices share the whole width. */
   .crit-row .chips {
     flex: 1 1 100%;
   }
@@ -2898,9 +2882,6 @@ fieldset.plain {
     justify-content: center;
   }
 
-  .chip input:checked + span::before {
-    content: none;
-  }
 }
 
 /* ---------- AI ---------- */
@@ -3791,6 +3772,32 @@ fieldset.plain {
   color: var(--paper-dim);
 }
 
+/* "Check connection" of a source: the result on the right of the button, centred on it;
+   on a narrow screen it goes under the button. */
+.source-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+}
+
+.source-check > p {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+/* A working connection: green words (the words say it too, not only the colour). */
+.source-ok {
+  color: var(--hue-offer);
+  font-weight: 700;
+}
+
+/* "Paid" stands out from the grey line - the strongest ink of the theme (white on the dark one). */
+.source-paid {
+  color: var(--paper-ink);
+  font-weight: 800;
+}
+
 .source-more {
   display: flex;
   flex-direction: column;
@@ -3811,6 +3818,66 @@ fieldset.plain {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+/* AI provider: free models, "Check connection" and the last run - each a small stack. */
+.model-picker,
+.ai-run {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.model-chips {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.model-chips legend {
+  margin-bottom: 0.35rem;
+  padding: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+/* Model names are written exactly as the provider wants them - no capitals, no tracking. */
+.model-chips .chip span {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+/* The place for "Saved" (see .field-saved). */
+.field-text {
+  position: relative;
+}
+
+/* "Saved" at the right end of a text setting's name: it never moves what is under the field
+   (a click on the next button lands where it was aimed). */
+.field-saved {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--paper-dim);
+}
+
+.field-saved:not(:empty)::before {
+  content: "✓ ";
+}
+
+.field-saved:empty {
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ---------- touch screens: a finger needs bigger targets (about 44 px) ---------- */

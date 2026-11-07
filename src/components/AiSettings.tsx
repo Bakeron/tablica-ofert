@@ -1,10 +1,26 @@
 import { useCallback, useContext, useEffect, useState } from "react";
 import type { Api } from "../api";
-import { AI_PROVIDERS, type AiProvider, type AiProviderStatus, type AiStatus, type Machine, type SecretHints, type SecretName, type Settings } from "../api/types";
+import {
+  AI_PROVIDERS,
+  describeError,
+  type AiCheck,
+  type AiProblem,
+  type AiProvider,
+  type AiProviderStatus,
+  type AiStatus,
+  type FreeModels,
+  type Machine,
+  type RateReport,
+  type SecretHints,
+  type SecretName,
+  type Settings,
+} from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
 import { TEXT_MAX, LEARN_MAX_POINTS, LEARN_MIN_RATINGS } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
+import { problemLine, rateSummary } from "../lib/aiProblem";
+import { Reveal } from "./Reveal";
 import { ConfirmContext, SecretField } from "./SecretField";
 import { SourceBox } from "./SourcesSettings";
 import { TextSetting } from "./TextSetting";
@@ -19,7 +35,10 @@ const KEY_PAGES: Partial<Record<AiProvider, string>> = {
   openai: "https://platform.openai.com/api-keys",
 };
 
-const FREE: AiProvider[] = ["gemini", "groq", "openrouter", "ollama"];
+const FREE: AiProvider[] = ["groq", "openrouter", "ollama"];
+
+/** Steps of "How to get a key" (texts `ai.how.<provider>.<n>`); Ollama has its own steps. */
+const KEY_STEPS: Partial<Record<AiProvider, number>> = { groq: 3, openrouter: 3, anthropic: 3, openai: 3, gemini: 3 };
 
 const EVERY: Settings["ai_every"][] = ["30", "60", "180", "1440"];
 
@@ -36,7 +55,7 @@ export function AiSettings({
 }: {
   api: Api;
   settings: Settings;
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
@@ -49,6 +68,8 @@ export function AiSettings({
   const [machine, setMachine] = useState<Machine | null>(null);
   const [checking, setChecking] = useState(false);
   const [rating, setRating] = useState(false);
+  // The last "Rate now" - its reason stays under the button, not only in a toast.
+  const [report, setReport] = useState<RateReport | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -105,9 +126,11 @@ export function AiSettings({
 
   async function rate(ask: () => ReturnType<Api["aiRateNow"]>) {
     setRating(true);
+    setReport(null);
     try {
-      const report = await ask();
-      onToast(t("ai.rated", { count: report.rated, waiting: report.waiting }));
+      const done = await ask();
+      setReport(done);
+      onToast(rateSummary(done, t));
       await load();
       onRated();
     } catch (e) {
@@ -139,17 +162,29 @@ export function AiSettings({
             key={p}
             id={`ai-${p}`}
             name={t(`ai.p.${p}` as TextKey)}
-            short={`${FREE.includes(p) ? t("ai.free") : t("ai.paid")} - ${t(`ai.p.${p}.hint` as TextKey)}`}
+            short={
+              FREE.includes(p) ? (
+                `${t("ai.free")} - ${t(`ai.p.${p}.hint` as TextKey)}`
+              ) : (
+                <>
+                  <strong className="source-paid">{t("ai.paid")}</strong> - {t(`ai.p.${p}.hint` as TextKey)}
+                </>
+              )
+            }
             on={turnedOn.includes(p)}
             onToggle={(on) => toggle(p, on)}
             alert={st && <ProviderAlert st={st} limit={status?.dailyLimit ?? 0} />}
           >
-            {KEY_PAGES[p] && (
-              <div>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[p]!)}>
-                  {p === "ollama" ? t("ai.getOllama") : t("ai.getKey")} <IconArrowOut />
-                </button>
-              </div>
+            {KEY_STEPS[p] ? (
+              <KeySteps provider={p} steps={KEY_STEPS[p]!} open={st !== undefined && !st.ready} onOpenLink={onOpenLink} />
+            ) : (
+              KEY_PAGES[p] && (
+                <div>
+                  <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[p]!)}>
+                    {p === "ollama" ? t("ai.getOllama") : t("ai.getKey")} <IconArrowOut />
+                  </button>
+                </div>
+              )
             )}
             {keyName && (
               <SecretField name={keyName} label={t("ai.key")} hint={hints[keyName]} onSave={saveSecret} onDelete={deleteSecret} onReveal={api.revealSecret} />
@@ -172,6 +207,8 @@ export function AiSettings({
                 <OllamaModels
                   api={api}
                   want={machine?.model ?? settings.ai_model_ollama ?? ""}
+                  current={st?.model ?? ""}
+                  onPick={(model) => onChange("ai_model_ollama", model)}
                   url={settings.ollama_url}
                   onReady={(model) => {
                     onChange("ai_model_ollama", model);
@@ -190,6 +227,10 @@ export function AiSettings({
               placeholder={st?.defaultModel}
               onSave={(v) => onChange(`ai_model_${p}`, v)}
             />
+            {FREE.includes(p) && p !== "ollama" && (
+              <ModelPicker api={api} provider={p} current={st?.model ?? ""} onPick={(model) => onChange(`ai_model_${p}`, model)} />
+            )}
+            <ConnectionCheck api={api} provider={p} ready={st?.ready ?? false} onChecked={load} />
             {st && (
               <p className="source-state">{t("ai.usage", { today: st.callsToday, limit: status?.dailyLimit ?? 0, month: st.callsMonth })}</p>
             )}
@@ -243,6 +284,9 @@ export function AiSettings({
             {rating ? t("ai.rating") : t(again ? "ai.rateAllAgain" : "ai.rateNow")}
           </button>
         </div>
+        <div aria-live="polite">
+          <Reveal show={report !== null}>{report && <RunResult report={report} />}</Reveal>
+        </div>
       </fieldset>
 
       <p className="hint">{t("ai.orderHint")}</p>
@@ -265,12 +309,17 @@ export function AiSettings({
 function OllamaModels({
   api,
   want,
+  current,
+  onPick,
   url,
   onReady,
   onError,
 }: {
   api: Api;
   want: string;
+  /** The model AI uses now (the default one when the field is empty). */
+  current: string;
+  onPick: (model: string) => void;
   url: string;
   onReady: (model: string) => void;
   onError: (e: unknown) => void;
@@ -308,7 +357,12 @@ function OllamaModels({
           <IconWarning /> {t("ai.ollamaOff")}
         </p>
       )}
-      {Array.isArray(models) && <p className="source-state">{models.length > 0 ? t("ai.ollamaHas", { list: models.join(", ") }) : t("ai.ollamaEmpty")}</p>}
+      {Array.isArray(models) &&
+        (models.length > 0 ? (
+          <ModelChips name="ollama" label={t("ai.ollamaPick")} models={models} current={current} onPick={onPick} />
+        ) : (
+          <p className="source-state">{t("ai.ollamaEmpty")}</p>
+        ))}
       <div className="source-row">
         <button type="button" className="btn btn-ghost btn-small" onClick={look} disabled={busy}>
           {t("ai.ollamaLook")}
@@ -408,6 +462,176 @@ function OllamaInstall({ api, onError, onToast }: { api: Api; onError: (e: unkno
         </button>
       </div>
     </details>
+  );
+}
+
+/** "How to get a key" with the link to the provider's page - unfolded while no key is saved. */
+function KeySteps({
+  provider,
+  steps,
+  open,
+  onOpenLink,
+}: {
+  provider: AiProvider;
+  steps: number;
+  /** No key yet - the steps are the next thing to do. */
+  open: boolean;
+  onOpenLink: (url: string) => void;
+}) {
+  const { t } = useI18n();
+  const id = `ai-how-${provider}`;
+  return (
+    <details className="howto" open={open || settingsMemory.unfolded.has(id)} onToggle={(e) => rememberUnfolded(id, e.currentTarget.open)}>
+      <summary>{t("ai.howKey")}</summary>
+      <div>
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[provider]!)}>
+          {t("ai.getKey")} <IconArrowOut />
+        </button>
+      </div>
+      <ol className="ollama-steps">
+        {Array.from({ length: steps }, (_, i) => (
+          <li key={i}>{t(`ai.how.${provider}.${i + 1}` as TextKey)}</li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+/** What went wrong and what to do, in plain words (no technical text on the screen). */
+function ProblemView({ problem }: { problem: AiProblem }) {
+  const { t } = useI18n();
+  return (
+    <p className="source-warn">
+      <IconWarning /> {problemLine(problem, t)}
+    </p>
+  );
+}
+
+/** The last "Rate now": how many were rated and every provider that failed, with the reason. */
+function RunResult({ report }: { report: RateReport }) {
+  const { t } = useI18n();
+  const known = ["net", "auth", "limit", "missing", "busy"];
+  return (
+    <div className="ai-run">
+      {report.error ? (
+        <p className="source-warn">
+          <IconWarning /> {t("ai.stopped")}
+          {report.problems.length === 0 &&
+            ` ${t((known.includes(report.error.code) ? `error.${report.error.code}` : "error.generic") as TextKey)}`}
+        </p>
+      ) : (
+        <p className="source-state">{t("ai.rated", { count: report.rated, waiting: report.waiting })}</p>
+      )}
+      {report.problems.map((p) => (
+        <ProblemView key={`${p.provider}-${p.kind}`} problem={p} />
+      ))}
+      {report.noProfile > 0 && <p className="source-state">{t("ai.noProfile", { count: report.noProfile })}</p>}
+    </div>
+  );
+}
+
+/** "Check connection": one tiny question with the model from the settings. */
+function ConnectionCheck({ api, provider, ready, onChecked }: { api: Api; provider: AiProvider; ready: boolean; onChecked: () => void }) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<AiCheck | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function check() {
+    setBusy(true);
+    setResult(null);
+    setFailed(null);
+    try {
+      setResult(await api.aiCheck(provider));
+      // The call counts in today's usage, and a working provider loses its "limit" mark.
+      onChecked();
+    } catch (e) {
+      setFailed(t(describeError(e).key as TextKey));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="source-check">
+      <button type="button" className="btn btn-ghost btn-small" onClick={check} disabled={busy || !ready} aria-busy={busy}>
+        {busy ? t("ai.testing") : t("ai.test")}
+      </button>
+      {result?.problem ? (
+        <p className="source-warn" role="status">
+          <IconWarning /> {problemLine(result.problem, t)}
+        </p>
+      ) : result ? (
+        <p className="source-ok" role="status">
+          {t("ai.testOk", { model: result.model })}
+        </p>
+      ) : failed ? (
+        <p className="source-warn" role="status">
+          <IconWarning /> {failed}
+        </p>
+      ) : (
+        <p className="hint" role="status">
+          {t("ai.testHint")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Model names to choose with one click; the one AI uses now is ticked. */
+function ModelChips({ name, label, models, current, onPick }: { name: string; label: string; models: string[]; current: string; onPick: (model: string) => void }) {
+  return (
+    <fieldset className="model-chips">
+      <legend>{label}</legend>
+      <div className="chips">
+        {models.map((m) => (
+          <label key={m} className="chip">
+            <input type="radio" name={`model-${name}`} checked={m === current} onChange={() => onPick(m)} />
+            <span>{m}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Free models of a provider - asked only on a click (its own list with the key, or the saved one). */
+function ModelPicker({ api, provider, current, onPick }: { api: Api; provider: AiProvider; current: string; onPick: (model: string) => void }) {
+  const { t } = useI18n();
+  const [list, setList] = useState<FreeModels | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function look() {
+    setBusy(true);
+    try {
+      setList(await api.aiFreeModels(provider));
+    } catch {
+      setList({ models: [], fromProvider: false, problem: null });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="model-picker" aria-live="polite">
+      <div>
+        <button type="button" className="btn btn-ghost btn-small" onClick={look} disabled={busy} aria-busy={busy}>
+          {busy ? t("ai.freeModelsFetching") : t("ai.freeModelsFetch")}
+        </button>
+      </div>
+      {list && (
+        <>
+          {list.problem ? (
+            <p className="source-warn">
+              <IconWarning /> {t("ai.freeModelsFailed", { why: t(`ai.problem.${list.problem.kind}` as TextKey) })}
+            </p>
+          ) : (
+            <p className="hint">{t(list.fromProvider ? "ai.freeModelsLive" : "ai.freeModelsSaved")}</p>
+          )}
+          {list.models.length > 0 && <ModelChips name={provider} label={t("ai.freeModels")} models={list.models} current={current} onPick={onPick} />}
+        </>
+      )}
+    </div>
   );
 }
 

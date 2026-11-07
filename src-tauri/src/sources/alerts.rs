@@ -46,6 +46,7 @@ const NOT_OFFER: &[&str] = &[
 const NOISE: &[&str] = &[
     "nowa", "nowe", "new", "aplikuj", "apply", "zobacz", "zobacz oferte", "view job", "see job", "sprawdz",
     "szczegoly", "details", "promowana", "promoted", "polecana", "featured", "easy apply", "latwa aplikacja",
+    "sugerowane", "suggested", "aktywnie rekrutuje", "actively recruiting",
 ];
 
 const REMOTE_WORDS: &[&str] = &["zdalnie", "zdalna", "praca zdalna", "remote", "fully remote", "100% zdalnie"];
@@ -84,6 +85,9 @@ fn attr(tag: &str, name: &str) -> Option<String> {
     None
 }
 
+/// A block tag inside a link (a control character, so it never comes from the mail text itself).
+const LINE_BREAK: char = '\u{1f}';
+
 const BLOCK: &[&str] = &[
     "br", "p", "div", "tr", "td", "th", "li", "ul", "ol", "table", "h1", "h2", "h3", "h4", "h5", "h6", "section",
     "article", "header", "footer", "hr", "tbody", "center",
@@ -95,6 +99,14 @@ pub fn segments(html: &str) -> Vec<Seg> {
     let mut line = String::new();
     let mut link: Option<(String, String)> = None;
     let mut rest = html;
+
+    // A link that holds a whole card (LinkedIn: title, company and place in one <a>): its first
+    // line is the link text, the other lines follow as plain lines.
+    fn push_link(out: &mut Vec<Seg>, href: String, text: &str) {
+        let mut parts = text.split(LINE_BREAK).map(|p| one_line(&decode_entities(p), 300)).filter(|p| !p.is_empty());
+        out.push(Seg::Link { href, text: parts.next().unwrap_or_default() });
+        out.extend(parts.map(Seg::Line));
+    }
 
     fn flush(line: &mut String, out: &mut Vec<Seg>) {
         let text = one_line(&decode_entities(line), 500);
@@ -138,12 +150,12 @@ pub fn segments(html: &str) -> Vec<Seg> {
         if name == "a" {
             if closing {
                 if let Some((href, text)) = link.take() {
-                    out.push(Seg::Link { href, text: one_line(&decode_entities(&text), 300) });
+                    push_link(&mut out, href, &text);
                 }
             } else {
                 flush(&mut line, &mut out);
                 if let Some((href, text)) = link.take() {
-                    out.push(Seg::Link { href, text: one_line(&decode_entities(&text), 300) });
+                    push_link(&mut out, href, &text);
                 }
                 link = Some((attr(tag, "href").unwrap_or_default(), String::new()));
             }
@@ -152,7 +164,7 @@ pub fn segments(html: &str) -> Vec<Seg> {
         if name == "img" {
             // An image link (logo) has no text; its description may name the company.
             if let (Some((_, t)), Some(alt)) = (link.as_mut(), attr(tag, "alt")) {
-                if t.trim().is_empty() {
+                if t.chars().all(|c| c.is_whitespace() || c == LINE_BREAK) {
                     t.push_str(&alt);
                 }
             }
@@ -160,13 +172,13 @@ pub fn segments(html: &str) -> Vec<Seg> {
         }
         if BLOCK.contains(&name.as_str()) {
             match link.as_mut() {
-                Some((_, t)) => t.push(' '),
+                Some((_, t)) => t.push(LINE_BREAK),
                 None => flush(&mut line, &mut out),
             }
         }
     }
     if let Some((href, text)) = link.take() {
-        out.push(Seg::Link { href, text: one_line(&decode_entities(&text), 300) });
+        push_link(&mut out, href, &text);
     }
     line.push_str(rest);
     flush(&mut line, &mut out);
@@ -303,7 +315,10 @@ fn clean_url(url: &Url) -> String {
 fn title_like(text: &str) -> bool {
     let n = normalize(text);
     let len = text.chars().count();
+    // The description of a company logo ("logo firmy", "Firma X logo") is never a job title.
+    let logo = n == "logo" || n.starts_with("logo ") || n.ends_with(" logo");
     (3..=150).contains(&len)
+        && !logo
         && text.chars().any(char::is_alphabetic)
         && !blocked(text)
         && !NOISE.contains(&n.as_str())
@@ -508,6 +523,9 @@ pub fn offers_in_mail(sender: &str, html: Option<&str>, text: Option<&str>) -> V
 }
 
 fn finish(mut d: Draft) -> Option<OfferInput> {
+    // "Company • City" and "✅ Suggested" / "💼 Hybrid" (LinkedIn): one fact per line, no icons in front.
+    d.details = d.details.iter().flat_map(|l| l.split(['•', '·'])).map(without_marks).filter(|l| !l.is_empty()).collect();
+    d.title = without_marks(&d.title);
     if d.title.is_empty() {
         let pos = d.details.iter().position(|l| title_like(l))?;
         d.title = d.details.remove(pos);
@@ -564,6 +582,12 @@ fn finish(mut d: Draft) -> Option<OfferInput> {
     })
 }
 
+/// Icons and marks in front of a line ("! AI Engineer", "✅ Sugerowane") go; a line that starts
+/// with a letter, a digit, a bracket or a quote stays as it is.
+fn without_marks(line: &str) -> String {
+    line.trim_start_matches(|c: char| !(c.is_alphanumeric() || "([„\"".contains(c))).trim().to_string()
+}
+
 fn short_id(url: &str) -> String {
     // FNV-1a - stable between runs, no extra dependency.
     let mut h: u32 = 0x811c9dc5;
@@ -577,6 +601,26 @@ fn short_id(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_card_in_one_link_and_a_logo_description_are_read_right() {
+        // LinkedIn: the whole card is one link; the lines inside are title, "company • city", marks.
+        let html = r#"<a href="https://www.linkedin.com/comm/jobs/view/777/?trk=eml"><table><tr><td><p>AI Engineer (freelance)</p><p>Przykładowa Firma • Gdańsk</p><p>✅ Sugerowane</p><p>💼 Praca hybrydowa</p></td></tr></table></a>"#;
+        let offers = offers_in_mail("jobs-noreply@linkedin.com", Some(html), None);
+        assert_eq!(offers.len(), 1);
+        assert_eq!(offers[0].title, "AI Engineer (freelance)");
+        assert_eq!(offers[0].company, "Przykładowa Firma");
+        assert_eq!(offers[0].city.as_deref(), Some("Gdańsk"));
+        assert_eq!(offers[0].remote, Some(Remote::Hybrid));
+        // A logo link first ("logo firmy"), then the title with a mark in front.
+        let html = r#"<a href="https://www.pracuj.pl/praca/x,oferta,1234"><img alt="logo firmy"></a>
+            <a href="https://www.pracuj.pl/praca/x,oferta,1234">! AI Software Engineer</a><br>20 000-24 000 zł netto (+ VAT) / mies.<br>Zmyślona Sp. z o.o.<br>Warszawa, Śródmieście"#;
+        let offers = offers_in_mail("noreply@pracuj.pl", Some(html), None);
+        assert_eq!(offers.len(), 1);
+        assert_eq!(offers[0].title, "AI Software Engineer");
+        assert_eq!(offers[0].company, "Zmyślona Sp. z o.o.");
+        assert_eq!(offers[0].salary_min, Some(20000));
+    }
 
     #[test]
     fn salaries_in_many_shapes() {

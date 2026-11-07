@@ -64,7 +64,7 @@ export function SettingsDialog({
   /** Opened from a place that needs this section; without it the window comes back as it was left. */
   initialSection?: SettingsSection;
   onClose: () => void;
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
@@ -118,7 +118,7 @@ function SettingsBody({
   profiles: Profile[];
   initialSection?: SettingsSection;
   onClose: () => void;
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;

@@ -289,7 +289,7 @@ export interface OfferAi {
 
 export type AiProvider = "gemini" | "groq" | "openrouter" | "ollama" | "anthropic" | "openai";
 /** In the order AI is asked (the same as `ai::ORDER` in Rust). */
-export const AI_PROVIDERS: AiProvider[] = ["gemini", "groq", "openrouter", "ollama", "anthropic", "openai"];
+export const AI_PROVIDERS: AiProvider[] = ["groq", "openrouter", "ollama", "anthropic", "openai", "gemini"];
 
 export interface AiProviderStatus {
   provider: AiProvider;
@@ -322,7 +322,48 @@ export interface RateReport {
   rated: number;
   failed: number;
   waiting: number;
+  /** Offers left out: no profile they fit any more. */
+  noProfile: number;
   error: { code: AppError["code"]; detail: string } | null;
+  /** Every provider that could not be asked in this run and why (also when the next one took over). */
+  problems: AiProblem[];
+}
+
+/** What went wrong with an AI provider (`client::Problem` in Rust). */
+export type AiProblemKind =
+  | "key"
+  | "api_off"
+  | "no_free_tier"
+  | "verify"
+  | "denied"
+  | "model"
+  | "limit"
+  | "busy"
+  | "cap"
+  | "no_key"
+  | "offline"
+  | "answer"
+  | "other";
+
+export interface AiProblem {
+  provider: AiProvider;
+  model: string;
+  kind: AiProblemKind;
+  /** The provider's own words (may be empty). */
+  message: string;
+}
+
+/** "Check connection" next to a provider: `problem` null = it works, `model` answered. */
+export interface AiCheck {
+  model: string;
+  problem: AiProblem | null;
+}
+
+/** Free models for the "Model" field: from the provider today, or the list saved in the app. */
+export interface FreeModels {
+  models: string[];
+  fromProvider: boolean;
+  problem: AiProblem | null;
 }
 
 export type AssistKind = "message" | "questions" | "gaps";

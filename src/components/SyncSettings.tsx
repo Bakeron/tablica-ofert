@@ -46,7 +46,7 @@ export function SyncSettings({
 }: {
   api: Api;
   settings: Settings;
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
   onOpenLink: (url: string) => void;
   onError: (e: unknown) => void;
   onToast: (text: string) => void;
@@ -279,15 +279,9 @@ export function SyncSettings({
                   <IconWarning /> {t("sync.expired")}
                 </p>
               ) : (
-                <div className="source-warn">
-                  <p>
-                    <IconWarning /> {t(status.lastError.includes(OUTDATED) ? "error.outdated" : "sync.failed")}
-                  </p>
-                  <details>
-                    <summary>{t("error.details")}</summary>
-                    <code>{status.lastError}</code>
-                  </details>
-                </div>
+                <p className="source-warn">
+                  <IconWarning /> {t(status.lastError.includes(OUTDATED) ? "error.outdated" : "sync.failed")}
+                </p>
               ))}
             {ownProject && !expired && <p className="hint">{t("sync.ownProject")}</p>}
             <div className="ai-row">
