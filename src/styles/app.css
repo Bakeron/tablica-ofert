@@ -1257,6 +1257,29 @@ details[open]::details-content {
   gap: 0.5rem;
 }
 
+.pass-learned {
+  margin: 0;
+}
+
+/* A small direction sign on the card: a proposal, with the decision left to the person. */
+.pass-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-left: 6px solid var(--signal);
+  background: var(--tile);
+  color: var(--paper-ink);
+}
+
+.pass-proposal p {
+  margin: 0;
+}
+
+.pass-proposal svg {
+  vertical-align: -0.15em;
+}
+
 /* "Very | Maybe | No", the star and "Open" - the stub of the pass, pinned under the card's text
    and pulled along the whole way down. */
 .pass-dock {

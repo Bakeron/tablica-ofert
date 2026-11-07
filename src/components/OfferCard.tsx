@@ -1,9 +1,9 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { useI18n } from "../i18n";
-import { fullDate, isWebUrl, placeLabel, salaryFull, translatedTitle } from "../lib/format";
+import { fullDate, isWebUrl, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
-import { LOW_KEYWORD_SCORE } from "../lib/limits";
+import { LEARN_MAX_POINTS, LOW_KEYWORD_SCORE } from "../lib/limits";
 import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { isNarrowLayout } from "../lib/fit";
@@ -31,6 +31,9 @@ interface Props {
   onPurge: () => void;
   /** "Expired" (or "Still open" when it is marked). */
   onExpired: () => void;
+  /** What the offer's own page said about being over, when it was taken a moment ago. */
+  expiredPage: string | null;
+  onKeepExpiredPage: () => void;
   /** "Bring back to the list" in the archive. */
   onUnarchive: () => void;
   /** A swipe on the card where it is a screen of its own: right = "very", left = "no", then the next offer. */
@@ -52,7 +55,7 @@ interface Props {
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, onUnarchive, onSwipe, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, expiredPage, onKeepExpiredPage, onUnarchive, onSwipe, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -185,6 +188,30 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             )}
           </span>
         </div>
+
+        {offer.score !== null && offer.learned !== 0 && !inTrash && (
+          <p className="pass-meta pass-learned">
+            {t("card.learned", { points: signedPoints(offer.learned), words: offer.learnedWords.join(", ") })}{" "}
+            <Help text={t(isPhone() ? "card.learnedHelpPhone" : "card.learnedHelp", { max: LEARN_MAX_POINTS })} />
+          </p>
+        )}
+
+        {/* Only a proposal: the page may lie or be about something else, so nothing happens by itself. */}
+        {expiredPage && !offer.expired && !inTrash && !inArchive && (
+          <div className="pass-proposal">
+            <p>
+              <IconWarning /> {t("expired.pageSays", { phrase: expiredPage })}
+            </p>
+            <div className="pass-actions">
+              <button type="button" className="btn btn-sign btn-small" onClick={onExpired}>
+                {t("expired.pageMark")}
+              </button>
+              <button type="button" className="btn btn-ghost btn-small" onClick={onKeepExpiredPage}>
+                {t("expired.pageKeep")}
+              </button>
+            </div>
+          </div>
+        )}
 
         {inArchive && (
           <div className="pass-actions">
@@ -450,7 +477,7 @@ function Stamp({ offer }: { offer: OfferDetail }) {
     return (
       <div className="stamp stamp-plain">
         <span className="stamp-label">{t("card.matchWords")}</span>
-        <span className="stamp-score">{offer.score}</span>
+        <span className="stamp-score">{shownScore(offer)}</span>
         <span className="stamp-sub">
           {t("card.matchOf100")} <Help text={t(isPhone() ? "card.matchWordsHelpPhone" : "card.matchWordsHelp", { score: LOW_KEYWORD_SCORE })} />
         </span>
@@ -460,7 +487,7 @@ function Stamp({ offer }: { offer: OfferDetail }) {
   return (
     <div className="stamp">
       <span className="stamp-label">{t("card.match")}</span>
-      <span className="stamp-score">{offer.score}</span>
+      <span className="stamp-score">{shownScore(offer)}</span>
       <span className="stamp-sub">{t("card.matchAi")}</span>
     </div>
   );

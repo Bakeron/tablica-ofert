@@ -3,6 +3,7 @@
 // Filter results are precomputed in the demo data; the real filter runs only in Rust.
 // `?firstrun` in the address starts without profiles, with "First steps".
 
+import { shownScore } from "../lib/format";
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
 import { AI_PROVIDERS, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type OfferAi, type WorkProgress } from "./types";
 import { bestResult, isKept, viewFor } from "../lib/profile";
@@ -112,6 +113,8 @@ export function createMockApi(): Api {
       manual: false,
       archivedAt: null,
       scoreWhy: null,
+      learned: demo.learned ?? 0,
+      learnedWords: demo.learnedWords ?? [],
       url: input.url ?? null,
       contract: input.contract ?? null,
       level: input.level ?? null,
@@ -210,7 +213,7 @@ export function createMockApi(): Api {
       (a, b) =>
         Number(pinned(b)) - Number(pinned(a)) ||
         Number(a.score === null) - Number(b.score === null) ||
-        (b.score ?? 0) - (a.score ?? 0) ||
+        (shownScore(b) ?? 0) - (shownScore(a) ?? 0) ||
         b.publishedAt.localeCompare(a.publishedAt),
     );
     const room = Math.max(Number(settings.today_count), rows.filter(pinned).length);
@@ -286,6 +289,8 @@ export function createMockApi(): Api {
         manual: false,
         archivedAt: null,
         scoreWhy: null,
+        learned: 0,
+        learnedWords: [],
         url: input.url ?? null,
         contract: input.contract ?? null,
         level: input.level ?? null,
@@ -662,6 +667,7 @@ export function createMockApi(): Api {
         url: "https://example.com/oferty/przyklad-tester",
         title: "Tester manualny (k/m)",
         text: "Tester manualny (k/m)\nZmyślona Firma Testowa\nWrocław · praca zdalna\n9 000 - 11 000 zł brutto\n\nTestujemy aplikację do rezerwacji. Umowa o pracę.\n\n(Przykład z podglądu - w aplikacji tu jest tekst otwartej strony.)",
+        expiredPhrase: "oferta wygasła",
       };
     },
     async closePreview() {},

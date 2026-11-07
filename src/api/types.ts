@@ -157,6 +157,10 @@ export interface OfferRow {
   archivedAt: string | null;
   /** One sentence from AI: why this score. */
   scoreWhy: string | null;
+  /** What the "Very" / "No" ratings add to `score` when shown; `score` itself stays as it is. */
+  learned: number;
+  /** The words behind `learned`. */
+  learnedWords: string[];
 }
 
 /** What "Expired" did: nobody touched the offer - archived; otherwise marked "expired". */
@@ -424,6 +428,8 @@ export interface Settings {
   fresh_days: "10" | "7" | "14" | "21" | "30";
   /** How many offers "Today" shows (the ones added by hand or starred on top). */
   today_count: "15" | "10" | "20" | "30";
+  /** "Very" and "No" move the score of similar offers. */
+  learn_scores: "on" | "off";
 }
 
 /** Defaults - the same as the first value of every rule in settings.rs, except `onboarding`:
@@ -470,6 +476,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ollama_url: "http://localhost:11434",
   fresh_days: "10",
   today_count: "15",
+  learn_scores: "on",
 };
 
 /** Countries covered by Adzuna (mirrors `ADZUNA_COUNTRIES` in settings.rs). */
@@ -594,6 +601,8 @@ export interface Captured {
   url: string;
   title: string;
   text: string;
+  /** The phrase saying the offer is over - only a proposal for the person. */
+  expiredPhrase: string | null;
 }
 
 /** The Task Scheduler task as Windows reports it. */

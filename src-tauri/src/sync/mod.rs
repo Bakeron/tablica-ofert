@@ -129,7 +129,11 @@ async fn run_inner(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
     if removing > ASK_ABOVE && !confirm {
         return Ok(SyncOutcome::Confirm { removed: removing });
     }
-    with_db(state, |c| data::apply(c, &merged, &now))?;
+    with_db(state, |c| {
+        data::apply(c, &merged, &now)?;
+        // Ratings from the other device, and offers that are new here.
+        crate::learn::refresh(c)
+    })?;
     let json = serde_json::to_vec(&merged).map_err(|e| AppError::Invalid(e.to_string()))?;
     drive::upload(&http, &access, file.as_ref(), crypto::seal(&key, &json)?).await?;
     Ok(SyncOutcome::Done { changed: stats.changed, removed: stats.removed })

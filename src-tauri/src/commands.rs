@@ -13,7 +13,7 @@ use crate::error::{AppError, AppResult};
 use crate::model::*;
 use crate::sources::{self, FetchReport, SourceStatus};
 use crate::ai::{self, AiStatus, Assist, RateReport};
-use crate::{offers, profiles, secrets, settings};
+use crate::{learn, offers, profiles, secrets, settings};
 
 pub struct AppState {
     /// `Err` = the database could not be opened safely; every call returns `Locked`.
@@ -75,7 +75,11 @@ pub async fn get_offer(state: State<'_, AppState>, id: i64) -> AppResult<OfferDe
 
 #[tauri::command]
 pub async fn add_offer(state: State<'_, AppState>, app: tauri::AppHandle, offer: OfferInput) -> AppResult<AddOutcome> {
-    let outcome = with_db(&state, |c| offers::add(c, offer))?;
+    let outcome = with_db(&state, |c| {
+        let outcome = offers::add(c, offer)?;
+        learn::refresh(c)?;
+        Ok(outcome)
+    })?;
     if matches!(outcome, AddOutcome::Added { .. }) {
         spawn_ai(app);
     }
@@ -138,12 +142,18 @@ pub async fn unset_expired(state: State<'_, AppState>, id: i64) -> AppResult<()>
 
 #[tauri::command]
 pub async fn unarchive_offer(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    with_db(&state, |c| offers::unarchive(c, id))
+    with_db(&state, |c| {
+        offers::unarchive(c, id)?;
+        learn::refresh(c)
+    })
 }
 
 #[tauri::command]
 pub async fn set_interest(state: State<'_, AppState>, id: i64, interest: Option<Interest>) -> AppResult<()> {
-    with_db(&state, |c| offers::set_interest(c, id, interest))
+    with_db(&state, |c| {
+        offers::set_interest(c, id, interest)?;
+        learn::refresh(c)
+    })
 }
 
 #[tauri::command]
@@ -163,7 +173,10 @@ pub async fn trash_offer(state: State<'_, AppState>, id: i64) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn restore_offer(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    with_db(&state, |c| offers::restore(c, id))
+    with_db(&state, |c| {
+        offers::restore(c, id)?;
+        learn::refresh(c)
+    })
 }
 
 /// `id = null` empties the whole trash.
@@ -179,7 +192,13 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<BTreeMap<Stri
 
 #[tauri::command]
 pub async fn set_setting(state: State<'_, AppState>, key: String, value: String) -> AppResult<()> {
-    with_db(&state, |c| settings::set(c, &key, &value))
+    with_db(&state, |c| {
+        settings::set(c, &key, &value)?;
+        if key == "learn_scores" {
+            learn::refresh(c)?;
+        }
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -425,7 +444,13 @@ pub async fn close_preview(app: tauri::AppHandle) -> AppResult<()> {
 /// Returns whether the description got longer (and was saved).
 #[tauri::command]
 pub async fn update_description(state: State<'_, AppState>, app: tauri::AppHandle, id: i64, text: String) -> AppResult<bool> {
-    let changed = with_db(&state, |c| offers::update_description(c, id, text))?;
+    let changed = with_db(&state, |c| {
+        let changed = offers::update_description(c, id, text)?;
+        if changed {
+            learn::refresh(c)?;
+        }
+        Ok(changed)
+    })?;
     if changed {
         spawn_ai(app);
     }

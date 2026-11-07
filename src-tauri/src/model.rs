@@ -268,6 +268,10 @@ pub struct OfferRow {
     pub archived_at: Option<String>,
     /// One sentence from AI: why this score (the best profile).
     pub score_why: Option<String>,
+    /// What the "Very" / "No" ratings add to `score` when shown; `score` itself stays as it is.
+    pub learned: i64,
+    /// The words behind `learned`.
+    pub learned_words: Vec<String>,
 }
 
 /// One offer for "Export to Excel (CSV)" - raw values; the interface turns them into words of

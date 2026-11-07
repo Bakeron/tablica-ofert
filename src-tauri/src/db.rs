@@ -30,6 +30,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/014_ai_providers.sql"),
     include_str!("migrations/015_freshness.sql"),
     include_str!("migrations/016_clean_start.sql"),
+    include_str!("migrations/017_learned.sql"),
 ];
 
 /// Schema version this app writes (copies from newer versions are refused).
@@ -209,6 +210,10 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
         crate::profiles::recheck_all(&tx)?;
         tx.commit()?;
     }
+    // Ratings given before learning came in count at once.
+    if before < 17 {
+        crate::learn::refresh(&mut conn)?;
+    }
     Ok(conn)
 }
 
@@ -380,9 +385,9 @@ pub mod tests {
     /// Fails when an existing migration is edited - a schema change must be a new file.
     #[test]
     fn existing_migrations_are_frozen() {
-        // FNV-1a over migrations 001-016, line endings normalized (Git may check out CRLF).
-        const EXISTING: usize = 16;
-        const HASH: u64 = 5_358_006_346_166_070_507;
+        // FNV-1a over migrations 001-017, line endings normalized (Git may check out CRLF).
+        const EXISTING: usize = 17;
+        const HASH: u64 = 7_133_150_456_869_224_036;
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for sql in &MIGRATIONS[..EXISTING] {
             for b in sql.bytes().filter(|&b| b != b'\r').chain([0u8]) {

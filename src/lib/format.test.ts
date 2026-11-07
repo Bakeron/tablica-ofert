@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { translate, type TextKey } from "../i18n";
-import { addedLabel, isWebUrl, needsFollowUp, placeLabel, salaryFull, salaryShort } from "./format";
+import { addedLabel, isWebUrl, needsFollowUp, placeLabel, salaryFull, salaryShort, shownScore, signedPoints } from "./format";
 
 const t = (key: TextKey, params?: Record<string, string | number>) => translate("pl", key, params);
+
+describe("score learned from ratings", () => {
+  it("adds the correction and stays between 0 and 100", () => {
+    expect(shownScore({ score: 70, learned: 8 })).toBe(78);
+    expect(shownScore({ score: 70, learned: -6 })).toBe(64);
+    expect(shownScore({ score: 95, learned: 15 })).toBe(100);
+    expect(shownScore({ score: 5, learned: -15 })).toBe(0);
+  });
+
+  it("gives no number to an offer without a score", () => {
+    expect(shownScore({ score: null, learned: 8 })).toBeNull();
+  });
+
+  it("writes the sign, also with a plain minus", () => {
+    expect(signedPoints(8)).toBe("+8");
+    expect(signedPoints(-6)).toBe("-6");
+  });
+});
 
 describe("salary", () => {
   it("shows monthly PLN in thousands", () => {

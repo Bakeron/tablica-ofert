@@ -3,7 +3,7 @@ import type { Api } from "../api";
 import { AI_PROVIDERS, type AiProvider, type AiProviderStatus, type AiStatus, type Machine, type SecretHints, type SecretName, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
-import { TEXT_MAX } from "../lib/limits";
+import { TEXT_MAX, LEARN_MAX_POINTS, LEARN_MIN_RATINGS } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { ConfirmContext, SecretField } from "./SecretField";
 import { SourceBox } from "./SourcesSettings";
@@ -223,6 +223,11 @@ export function AiSettings({
           </label>
         )}
         <p className="hint">{t(settings.ai_auto === "on" ? "ai.autoOnHint" : "ai.autoOffHint")}</p>
+        <label className="choice-item">
+          <input type="checkbox" checked={settings.learn_scores === "on"} onChange={(e) => onChange("learn_scores", e.target.checked ? "on" : "off")} />
+          <span>{t("ai.learn")}</span>
+        </label>
+        <p className="hint">{t("ai.learnHint", { min: LEARN_MIN_RATINGS, max: LEARN_MAX_POINTS })}</p>
         {usedUp.length > 0 && (
           <p className="source-warn">
             <IconWarning />{" "}

@@ -57,6 +57,9 @@ export interface DemoOffer {
   favorite?: boolean;
   score?: number;
   scoreSource?: "ai" | "keywords";
+  /** What the ratings would add, with the words behind it. */
+  learned?: number;
+  learnedWords?: string[];
   hoursAgo: number;
   notes?: string;
   /** One entry per DEMO_PROFILES item. */
@@ -77,6 +80,8 @@ export const DEMO_OFFERS: DemoOffer[] = [
     hoursAgo: 1,
     score: 87,
     scoreSource: "ai",
+    learned: 8,
+    learnedWords: ["React", "TypeScript"],
     extraSources: ["jjit", "nfj"],
     filters: [fit, fit],
     ai: {

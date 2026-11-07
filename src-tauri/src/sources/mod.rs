@@ -708,6 +708,8 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
         }
     }
 
+    // New offers and new texts get what the ratings taught.
+    with_db(state, crate::learn::refresh)?;
     Ok(report)
 }
 

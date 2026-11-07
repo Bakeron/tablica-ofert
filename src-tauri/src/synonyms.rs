@@ -6,7 +6,7 @@
 use crate::dedup::normalize;
 
 /// Groups of normalized phrases (lowercase, no Polish letters) that mean the same.
-const GROUPS: &[&[&str]] = &[
+pub(crate) const GROUPS: &[&[&str]] = &[
     &["programista", "programistka", "developer", "deweloper", "programmer"],
     &["tester", "testerka", "qa", "quality assurance"],
     &["testy automatyczne", "test automation", "automated testing"],

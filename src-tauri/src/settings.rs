@@ -91,6 +91,8 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("fresh_days", Rule::One(&["10", "7", "14", "21", "30"])),
     // How many offers "Today" shows (the ones added by hand or starred come on top of that).
     ("today_count", Rule::One(&["15", "10", "20", "30"])),
+    // "Very" and "No" move the score of similar offers (see `learn`).
+    ("learn_scores", Rule::One(&["on", "off"])),
 ];
 
 pub(crate) fn is_client_id(v: &str) -> bool {
@@ -280,6 +282,8 @@ mod tests {
         assert_eq!(numbers["LOW_KEYWORD_SCORE"] as i64, crate::profiles::LOW_KEYWORD_SCORE);
         assert_eq!(numbers["SALARY_FAR_ABOVE"] as f64, crate::filter::FAR_ABOVE);
         assert_eq!(numbers["PASSWORD_MIN"], crate::backup::MIN_PASSWORD);
+        assert_eq!(numbers["LEARN_MIN_RATINGS"] as i64, crate::learn::MIN_RATINGS);
+        assert_eq!(numbers["LEARN_MAX_POINTS"] as i64, crate::learn::MAX_POINTS);
         for (key, rule) in ALLOWED {
             // The list of providers comes from check boxes, not from a text field.
             let Rule::Text { max, .. } = rule else { continue };

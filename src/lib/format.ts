@@ -17,6 +17,16 @@ export function addedLabel(iso: string, lang: Lang, t: T, now = new Date()): str
   return date.toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
 }
 
+/** The score as shown: with what the ratings taught, always 0-100 (`SHOWN_SCORE` in offers.rs). */
+export function shownScore(offer: Pick<OfferRow, "score" | "learned">): number | null {
+  return offer.score === null ? null : Math.min(100, Math.max(0, offer.score + offer.learned));
+}
+
+/** "+8" or "-6". */
+export function signedPoints(points: number): string {
+  return points > 0 ? `+${points}` : String(points);
+}
+
 export function fullDate(iso: string, lang: Lang): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";

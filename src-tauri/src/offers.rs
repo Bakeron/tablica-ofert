@@ -497,10 +497,15 @@ const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_
     (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
     o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr,
     {fresh}, ({fresh} < '{old}' AND NOT {recruit}), {recruit}, {manual}, o.archived_at,
-    (SELECT sc.why FROM offer_scores sc WHERE sc.offer_id = o.id AND sc.source = 'ai' ORDER BY sc.score DESC LIMIT 1)";
+    (SELECT sc.why FROM offer_scores sc WHERE sc.offer_id = o.id AND sc.source = 'ai' ORDER BY sc.score DESC LIMIT 1),
+    COALESCE((SELECT l.points FROM offer_learned l WHERE l.offer_id = o.id), 0),
+    (SELECT l.words FROM offer_learned l WHERE l.offer_id = o.id)";
 
 /// Number of columns in `ROW_COLUMNS` - the offer card reads its own after them.
-const ROW_LEN: usize = 29;
+const ROW_LEN: usize = 31;
+
+/// The score as shown: with what the ratings taught (`learn`). NULL stays NULL.
+const SHOWN_SCORE: &str = "MIN(100, MAX(0, o.score + COALESCE((SELECT l.points FROM offer_learned l WHERE l.offer_id = o.id), 0)))";
 
 /// The nearest date of an offer from 3 hours ago on (an interview that just started still counts).
 const NEXT_EVENT: &str = "(SELECT e.at || '|' || e.kind FROM events e WHERE e.offer_id = o.id
@@ -586,6 +591,11 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         manual: r.get(26)?,
         archived_at: r.get(27)?,
         score_why: r.get(28)?,
+        learned: r.get(29)?,
+        learned_words: r
+            .get::<_, Option<String>>(30)?
+            .and_then(|w| serde_json::from_str(&w).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -617,7 +627,7 @@ pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Ve
     let (result, _) = filter_sql(profile);
     let old = cutoff_now(conn)?;
     let order = match view {
-        View::Today => format!("{PINNED} DESC, o.score IS NULL, o.score DESC, {FRESH_AT} DESC, o.id DESC"),
+        View::Today => format!("{PINNED} DESC, o.score IS NULL, {SHOWN_SCORE} DESC, {FRESH_AT} DESC, o.id DESC"),
         View::Archive => format!("o.archived_at DESC, {FRESH_AT} DESC, o.id DESC"),
         _ => format!("{FRESH_AT} DESC, o.id DESC"),
     };
@@ -745,16 +755,16 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         .query_row(&sql, [id], |r| {
             Ok(OfferDetail {
                 row: row_from(r)?,
-                url: r.get(29)?,
-                contract: r.get(30)?,
-                level: r.get(31)?,
-                language: r.get(32)?,
-                requirements: r.get(33)?,
-                description: r.get(34)?,
-                notes: r.get(35)?,
-                expires_at: r.get(36)?,
-                deleted_at: r.get(37)?,
-                content_removed: r.get(38)?,
+                url: r.get(ROW_LEN)?,
+                contract: r.get(ROW_LEN + 1)?,
+                level: r.get(ROW_LEN + 2)?,
+                language: r.get(ROW_LEN + 3)?,
+                requirements: r.get(ROW_LEN + 4)?,
+                description: r.get(ROW_LEN + 5)?,
+                notes: r.get(ROW_LEN + 6)?,
+                expires_at: r.get(ROW_LEN + 7)?,
+                deleted_at: r.get(ROW_LEN + 8)?,
+                content_removed: r.get(ROW_LEN + 9)?,
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),

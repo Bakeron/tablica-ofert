@@ -14,12 +14,51 @@ use tauri::{AppHandle, Manager};
 use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 
+use crate::dedup::normalize;
 use crate::error::{AppError, AppResult};
 use crate::text::{cut, one_line, squeeze};
 
 pub const LABEL: &str = "preview";
 const CAPTURE_HOST: &str = "capture.tablica-ofert.invalid";
 const MAX_TEXT: usize = 60_000;
+/// Only the top of a page counts: further down come "similar offers", with their own marks.
+const EXPIRED_TOP: usize = 1_500;
+
+/// What a page says when its offer is over (Polish and English), written as a card shows them.
+const EXPIRED_PHRASES: &[&str] = &[
+    "oferta wygasła",
+    "ogłoszenie wygasło",
+    "oferta jest nieaktualna",
+    "oferta nieaktualna",
+    "oferta jest już nieaktualna",
+    "oferta nie jest już aktualna",
+    "ogłoszenie jest nieaktualne",
+    "ogłoszenie nieaktualne",
+    "ogłoszenie nie jest już aktualne",
+    "oferta archiwalna",
+    "ogłoszenie archiwalne",
+    "oferta nie jest już dostępna",
+    "ogłoszenie nie jest już dostępne",
+    "oferta jest nieaktywna",
+    "rekrutacja zakończona",
+    "rekrutacja została zakończona",
+    "rekrutacja się zakończyła",
+    "zakończyliśmy rekrutację",
+    "nie przyjmujemy już zgłoszeń",
+    "nie przyjmujemy już aplikacji",
+    "no longer accepting applications",
+    "job is no longer available",
+    "position is no longer available",
+    "this job has expired",
+    "job has expired",
+    "job posting has expired",
+    "this posting has expired",
+    "this offer has expired",
+    "this job is closed",
+    "position has been filled",
+    "applications are closed",
+    "applications have closed",
+];
 
 /// Waiting for the text of the page: one-time code and where to send the answer.
 #[derive(Default)]
@@ -31,6 +70,16 @@ pub struct Captured {
     pub url: String,
     pub title: String,
     pub text: String,
+    /// The phrase saying the offer is over - only a proposal for the person, nothing happens by itself.
+    pub expired_phrase: Option<String>,
+}
+
+/// A phrase from `EXPIRED_PHRASES` in the title or near the top of the page. Whole words only,
+/// without looking at letter case or Polish letters ("OFERTA WYGASLA" counts too).
+pub fn expired_phrase(title: &str, text: &str) -> Option<String> {
+    let top: String = text.chars().take(EXPIRED_TOP).collect();
+    let page = format!(" {} ", normalize(&format!("{title}\n{top}")));
+    EXPIRED_PHRASES.iter().find(|p| page.contains(&format!(" {} ", normalize(p)))).map(|p| p.to_string())
 }
 
 /// The phone has no separate windows - "Share" from the browser does this job there.
@@ -95,7 +144,9 @@ pub fn parse_capture(json: &str) -> Option<Captured> {
     }
     let raw: Raw = serde_json::from_str(json).ok()?;
     let url = crate::offers::safe_url(Some(raw.u)).ok().flatten()?;
-    Some(Captured { url, title: one_line(&raw.h, 300), text: cut(&squeeze(&raw.t), MAX_TEXT) })
+    let (title, text) = (one_line(&raw.h, 300), cut(&squeeze(&raw.t), MAX_TEXT));
+    let expired_phrase = expired_phrase(&title, &text);
+    Some(Captured { url, title, text, expired_phrase })
 }
 
 #[cfg_attr(mobile, allow(dead_code))]
@@ -157,8 +208,41 @@ mod tests {
         let ok = parse_capture(r#"{"u":"https://example.com/oferta/1","h":"  Frontend\nDeveloper ","t":"Opis\n\n\n\noferty\u0007"}"#).unwrap();
         assert_eq!(ok.title, "Frontend Developer");
         assert_eq!(ok.text, "Opis\n\noferty");
+        assert_eq!(ok.expired_phrase, None);
         assert!(parse_capture(r#"{"u":"javascript:alert(1)","h":"x","t":"y"}"#).is_none());
         assert!(parse_capture("not json").is_none());
+    }
+
+    #[test]
+    fn a_page_saying_the_offer_is_over_gives_a_proposal() {
+        let said = |title: &str, text: &str| expired_phrase(title, text);
+        assert_eq!(said("Frontend Developer", "Ta oferta wygasła 3 dni temu"), Some("oferta wygasła".into()));
+        assert_eq!(said("OGŁOSZENIE JEST NIEAKTUALNE", "Opis"), Some("ogłoszenie jest nieaktualne".into()));
+        assert_eq!(said("Tester", "Zmyślona Firma\nOferta\nnieaktualna"), Some("oferta nieaktualna".into()));
+        assert_eq!(said("Tester", "Rekrutacja zakończona. Dziękujemy."), Some("rekrutacja zakończona".into()));
+        assert_eq!(said("Dev", "Example Corp · 2 weeks ago · No longer accepting applications"), Some("no longer accepting applications".into()));
+        assert_eq!(said("Dev", "Sorry, this job has expired."), Some("this job has expired".into()));
+        // A capture goes through the same check.
+        let page = parse_capture(r#"{"u":"https://example.com/oferta/2","h":"Oferta wygasła","t":"Tekst"}"#).unwrap();
+        assert_eq!(page.expired_phrase.as_deref(), Some("oferta wygasła"));
+    }
+
+    #[test]
+    fn a_living_offer_gives_no_false_alarm() {
+        // Only in the listing of other offers, far down the page.
+        let long = "Opis stanowiska i obowiązki w zespole. ".repeat(60);
+        assert_eq!(expired_phrase("Frontend Developer", &format!("{long}\nPodobne oferty:\nTester - oferta wygasła")), None);
+        // Similar words that say something else.
+        assert_eq!(expired_phrase("Dev", "Oferta wygasa 30.11.2026. Oferta nie wygasła."), None);
+        assert_eq!(expired_phrase("Dev", "We are accepting applications"), None);
+        assert_eq!(expired_phrase("", ""), None);
+    }
+
+    #[test]
+    fn every_phrase_can_be_found() {
+        for phrase in EXPIRED_PHRASES {
+            assert_eq!(expired_phrase(phrase, "").as_deref(), Some(*phrase));
+        }
     }
 
     #[test]

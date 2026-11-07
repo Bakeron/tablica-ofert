@@ -2,7 +2,7 @@ import { Fragment, useRef, useState } from "react";
 import type { KeyboardEvent, TouchEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { addedLabel, placeLabel, salaryShort, translatedTitle } from "../lib/format";
+import { addedLabel, placeLabel, salaryShort, translatedTitle, shownScore } from "../lib/format";
 import { isNarrowLayout } from "../lib/fit";
 import { isPhone } from "../lib/platform";
 import { motionReduced } from "../lib/presence";
@@ -49,7 +49,7 @@ export function sortRows(rows: OfferRow[], sort: Sort): OfferRow[] {
       case "salary":
         return o.salaryMax ?? o.salaryMin ?? -1;
       case "match":
-        return o.score ?? -1;
+        return shownScore(o) ?? -1;
       case "status":
         return STAGES.indexOf(o.stage);
     }
@@ -311,7 +311,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     </>
                   ) : (
                     <span className={o.scoreSource === "keywords" ? "score score-plain" : "score"}>
-                      <Flap className="mono" text={String(o.score)} fresh={fresh} />
+                      <Flap className="mono" text={String(shownScore(o))} fresh={fresh} />
                       {o.scoreSource === "keywords" && <span className="sr-only"> ({t("card.matchKeywords")})</span>}
                     </span>
                   )}

@@ -106,6 +106,8 @@ export default function App() {
   /** The preview window shows the page of this offer ("Fill in the full description"). */
   const [fullFor, setFullFor] = useState<{ id: number; title: string } | null>(null);
   const [capturing, setCapturing] = useState(false);
+  /** The page just taken says its offer is over - the card proposes "Mark as expired". */
+  const [expiredPage, setExpiredPage] = useState<{ id: number; phrase: string } | null>(null);
   /** "Share" from the phone's browser - opens "Add offer" with the shared text. */
   const [shared, setShared] = useState<{ id: number; text: string } | null>(null);
   /** Goes up when the phone's notifications get allowed - the reminders are planned again. */
@@ -221,7 +223,7 @@ export default function App() {
     },
     // The freshness settings are read by Rust - a new value must reload the board at once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, status, view, profileId, fail, settings.fresh_days, settings.today_count],
+    [api, status, view, profileId, fail, settings.fresh_days, settings.today_count, settings.learn_scores],
   );
 
   useEffect(() => {
@@ -442,6 +444,7 @@ export default function App() {
     const page = await capturePage();
     setCapturing(false);
     if (!page) return;
+    setExpiredPage(page.expiredPhrase ? { id: fullFor.id, phrase: page.expiredPhrase } : null);
     try {
       const changed = await api.updateDescription(fullFor.id, page.text);
       await reload();
@@ -1007,7 +1010,12 @@ export default function App() {
             onOpenLink={openLink}
             onTrash={() => selectedId !== null && trash(selectedId)}
             onRestore={() => selectedId !== null && restore(selectedId)}
-            onExpired={() => selectedId !== null && expire(selectedId)}
+            onExpired={() => {
+              setExpiredPage(null);
+              return selectedId !== null && expire(selectedId);
+            }}
+            expiredPage={expiredPage?.id === selectedId ? expiredPage.phrase : null}
+            onKeepExpiredPage={() => setExpiredPage(null)}
             onUnarchive={() => selectedId !== null && unarchive(selectedId)}
             onSwipe={(value) => selectedId !== null && swipeCard(selectedId, value)}
             onPurge={() =>
