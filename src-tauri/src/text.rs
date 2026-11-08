@@ -9,6 +9,12 @@ pub fn html_to_text(html: &str) -> String {
     while let Some(start) = rest.find('<') {
         out.push_str(&decode_entities(&rest[..start]));
         rest = &rest[start..];
+        // "doświadczenie <2 lata, stawka > 100 zł" in plain text: a tag starts with a letter, "/" or "!".
+        if !rest[1..].starts_with(|c: char| c.is_ascii_alphabetic() || c == '/' || c == '!') {
+            out.push('<');
+            rest = &rest[1..];
+            continue;
+        }
         let Some(end) = rest.find('>') else {
             // A lone "<" is text.
             out.push_str(&decode_entities(rest));
@@ -116,6 +122,8 @@ fn entity(name: &str) -> Option<char> {
         "Oacute" => 'Ó',
         "rsquo" | "lsquo" => '\'',
         "rdquo" | "ldquo" | "bdquo" => '"',
+        "raquo" => '»',
+        "laquo" => '«',
         _ => return None,
     })
 }
@@ -197,6 +205,8 @@ mod tests {
         assert_eq!(html_to_text("a < b and <unclosed"), "a < b and <unclosed");
         assert_eq!(html_to_text("&unknown; &amp"), "&unknown; &amp");
         assert_eq!(html_to_text("<script>never closed"), "");
+        // Plain text with "<" and ">" keeps its words.
+        assert_eq!(html_to_text("doświadczenie <2 lata, stawka > 100 zł"), "doświadczenie <2 lata, stawka > 100 zł");
         // Multi-byte letters right after "&" (found in a real feed - used to panic).
         assert_eq!(decode_entities("A &amp; B •••• C & żółć ąę"), "A & B •••• C & żółć ąę");
         assert_eq!(decode_entities("&ą;&łódź"), "&ą;&łódź");

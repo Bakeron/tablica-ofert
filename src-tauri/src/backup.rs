@@ -95,6 +95,17 @@ pub fn load_copy(db_path: &Path, key_hex: &str, source: &Path, password: &str) -
     Ok(backup.unwrap_or_else(|| db_path.to_path_buf()))
 }
 
+/// After "Load a copy" the copy wins over sync: what it holds counts as changed now, so the
+/// sync file's older versions and its deletions (made after the copy was saved) do not undo the
+/// restore on the next sync. Runs on the migrated database.
+pub fn copy_wins(conn: &Connection, now: &str) -> AppResult<()> {
+    conn.execute("UPDATE offers SET updated_at = ?1, user_changed_at = ?1", [now])?;
+    for (table, column) in [("profiles", "updated_at"), ("contacts", "updated_at"), ("events", "created_at"), ("candidate", "updated_at")] {
+        conn.execute(&format!("UPDATE {table} SET {column} = ?1"), [now])?;
+    }
+    Ok(())
+}
+
 // ---------- CSV ----------
 
 /// A cell that Excel would run as a formula (`=`, `+`, `-`, `@`, tab, CR) gets a leading

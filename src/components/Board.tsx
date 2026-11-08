@@ -2,7 +2,7 @@ import { Fragment, useRef, useState } from "react";
 import type { KeyboardEvent, TouchEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { addedLabel, placeLabel, salaryShort, translatedTitle, shownScore } from "../lib/format";
+import { addedLabel, companyLabel, placeLabel, salaryShort, translatedTitle, shownScore } from "../lib/format";
 import { isNarrowLayout } from "../lib/fit";
 import { isPhone } from "../lib/platform";
 import { motionReduced } from "../lib/presence";
@@ -264,7 +264,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     <Flap className="offer-title" text={translatedTitle(o, lang) ?? o.title} fresh={fresh} />
                   </span>
                   <span className="offer-line">
-                    <span className="offer-company">{o.company}</span>
+                    <span className="offer-company">{companyLabel(o.company, t)}</span>
                     {o.interest && (
                       <span key={o.interest} className={`interest interest-${o.interest}${flipped === o.id ? " flap-in" : ""}`}>
                         <span className="sr-only">{t("interest.label")}: </span>

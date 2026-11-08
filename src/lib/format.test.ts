@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { translate, type TextKey } from "../i18n";
-import { addedLabel, isWebUrl, needsFollowUp, placeLabel, salaryFull, salaryShort, shownScore, signedPoints } from "./format";
+import { addedLabel, companyLabel, isWebUrl, linksByCity, needsFollowUp, placeLabel, salaryFull, salaryShort, shownScore, signedPoints } from "./format";
 
 const t = (key: TextKey, params?: Record<string, string | number>) => translate("pl", key, params);
 
@@ -43,6 +43,8 @@ describe("place", () => {
   it("combines city and remote work", () => {
     expect(placeLabel({ city: null, remote: "yes" }, t)).toBe("zdalnie");
     expect(placeLabel({ city: "Wrocław", remote: "hybrid" }, t)).toBe("Wrocław · hybrydowo");
+    expect(companyLabel("? (dd18b1)", t)).toBe("firma nieznana");
+    expect(companyLabel("? Firma (Polska)", t)).toBe("? Firma (Polska)");
     expect(placeLabel({ city: "Łódź", remote: "unknown" }, t)).toBe("Łódź");
   });
 });
@@ -64,6 +66,23 @@ describe("dates", () => {
 });
 
 describe("links", () => {
+  it("gives one link per city of the same job", () => {
+    const link = (city: string | null, url: string | null, source = "pracuj") => ({ source, url, firstSeen: "2026-11-08T10:00:00Z", city });
+    expect(
+      linksByCity([
+        link("Kraków", "https://example.com/1"),
+        link("Gdańsk", "https://example.com/2"),
+        link("kraków", "https://example.com/3", "jjit"),
+        link(null, "https://example.com/4"),
+        link("Łódź", "javascript:alert(1)"),
+      ]),
+    ).toEqual([
+      { city: "Kraków", url: "https://example.com/1" },
+      { city: "Gdańsk", url: "https://example.com/2" },
+    ]);
+    expect(linksByCity([link("Kraków", "https://example.com/1")])).toHaveLength(1);
+  });
+
   it("opens only http and https", () => {
     expect(isWebUrl("https://example.com/a")).toBe(true);
     expect(isWebUrl("http://example.com")).toBe(true);

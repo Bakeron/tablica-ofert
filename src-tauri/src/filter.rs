@@ -133,7 +133,9 @@ pub fn evaluate_profile(facts: &Facts, profile: &Profile) -> Evaluation {
         let wanted = levels_in_description(&profile.description);
         if !wanted.is_empty() && wanted.len() < 3 {
             let (found, shown) = offer_levels(facts);
-            if !found.is_empty() && !found.iter().any(|l| wanted.contains(l)) {
+            let other = !found.is_empty() && !found.iter().any(|l| wanted.contains(l));
+            let maybe_senior = found.is_empty() && !wanted.contains(&Level::Senior) && unclear_level(&shown);
+            if other || maybe_senior {
                 e.add(ReasonKind::Unsure, "level_not_in_profile", shown);
             }
         }
@@ -208,8 +210,12 @@ impl Text {
         let n = normalize(&word);
         // "C++", "C#", ".NET": normalizing would turn them into "c" / "net".
         let has_symbols = word.chars().any(|ch| !ch.is_alphanumeric() && ch != ' ' && ch != '-');
-        if has_symbols || n.chars().count() < 2 {
-            return !word.is_empty() && self.raw.contains(&word);
+        if has_symbols {
+            return self.raw.contains(&word);
+        }
+        // "C", "R": a single letter is a whole word, never a letter inside other words.
+        if n.chars().count() < 2 {
+            return !n.is_empty() && contains_phrase(&self.padded, &n);
         }
         crate::synonyms::variants(&n).iter().any(|v| contains_phrase(&self.padded, v))
     }
@@ -274,6 +280,12 @@ const NO_REMOTE: &[&str] = &[
     "not remote",
     "remote work is not possible",
     "remote not possible",
+    // "Remote: No", "Praca zdalna: brak" - a field with its answer.
+    "remote no",
+    "remote work no",
+    "praca zdalna brak",
+    "zdalnie brak",
+    "praca zdalna nie dotyczy",
 ];
 
 const OFFICE_ONLY: &[&str] = &[
@@ -285,11 +297,13 @@ const OFFICE_ONLY: &[&str] = &[
     "100 stacjonarnie",
     "praca stacjonarna",
     "pracy stacjonarnej",
-    "stacjonarnie",
     "fully on site",
     "100 on site",
-    "on site",
-    "onsite",
+    "fully onsite",
+    "100 onsite",
+    "on site only",
+    "onsite only",
+    // "on site", "onsite", "stacjonarnie" alone are no proof ("on-site gym", "szkolenia stacjonarnie").
     "office based",
     "100 office",
 ];
@@ -443,7 +457,9 @@ fn work_mode(f: &Facts, text: &Text) -> (Mode, Option<&'static str>) {
     if let Some(p) = first_phrase(&cleaned, STRONG_REMOTE) {
         return (Mode::Remote, quote(p));
     }
-    let freq = office_frequency(&cleaned);
+    // Five days a week in the office (20+ a month) is a full-time job, not hybrid work - "Praca
+    // zdalna, pełny etat (5 dni w tygodniu)" must not turn a remote offer into a hybrid one.
+    let freq = office_frequency(&cleaned).filter(|v| *v < 20.0);
     let hybrid_word = first_phrase(&cleaned, HYBRID);
     if field == Remote::Hybrid || hybrid_word.is_some() || freq.is_some() {
         return (Mode::Hybrid(freq), hybrid_word.and_then(quote));
@@ -459,7 +475,7 @@ fn work_mode(f: &Facts, text: &Text) -> (Mode, Option<&'static str>) {
 }
 
 /// City fields that are not a place.
-const NOT_A_PLACE: &[&str] = &["polska", "poland", "cala polska", "europa", "europe", "remote", "zdalnie", "praca zdalna"];
+pub const NOT_A_PLACE: &[&str] = &["polska", "poland", "cala polska", "europa", "europe", "remote", "zdalnie", "praca zdalna"];
 
 /// Is the offer's office in one of my cities (or close enough)?
 /// `None` = cannot tell (no city, or a city missing from the table).
@@ -577,8 +593,7 @@ const UOP: &[&str] = &[
     "employment contract",
     "contract of employment",
     "permanent contract",
-    "etat",
-    "pelny etat",
+    // "Pełny etat" is the working time (a fixed label in Jooble alerts), not the contract.
 ];
 const B2B: &[&str] = &["b2b"];
 const MANDATE: &[&str] = &[
@@ -629,8 +644,11 @@ const JUNIOR: &[&str] = &[
 ];
 const MID: &[&str] = &["mid", "regular", "middle", "medior", "mid level"];
 const SENIOR: &[&str] = &[
-    "senior", "sr", "starszy", "starsza", "lead", "leader", "principal", "staff", "head", "ekspert", "expert",
+    "senior", "sr", "starszy", "starsza", "lead", "leader", "principal",
 ];
+/// Words that may or may not mean a senior post ("Staff Accountant", "Ekspert ds. obsługi
+/// klienta", "Head Chef") - the offer goes to "To check", never rejected for them.
+const UNCLEAR_LEVEL: &[&str] = &["staff", "head", "ekspert", "expert"];
 
 /// Level words looked for in the profile description - fewer than in offers: "staż pracy"
 /// or "ekspertem" in someone's own words do not name the level they want.
@@ -680,12 +698,18 @@ fn offer_levels(f: &Facts) -> (Vec<Level>, Option<String>) {
     (levels_in(&f.title), Some(f.title.clone()))
 }
 
+fn unclear_level(shown: &Option<String>) -> bool {
+    shown.as_deref().is_some_and(|s| first_phrase(&format!(" {} ", normalize(s)), UNCLEAR_LEVEL).is_some())
+}
+
 fn level(f: &Facts, c: &Criteria, out: &mut Out) {
     if c.levels.is_empty() || c.levels.len() == 3 {
         return;
     }
     let (found, shown) = offer_levels(f);
-    if found.is_empty() {
+    if found.is_empty() && unclear_level(&shown) {
+        out.unsure("level_unclear", shown);
+    } else if found.is_empty() {
         out.unsure("level_unknown", None);
     } else if !found.iter().any(|l| c.levels.contains(l)) {
         out.fail("level_mismatch", shown);
@@ -907,6 +931,23 @@ mod tests {
     }
 
     #[test]
+    fn full_time_office_hours_loose_words_and_answers_in_fields() {
+        // "5 days a week" is the working time of a remote job, not five office days.
+        let f = offer("Tester", Some("Gdańsk"), Remote::Unknown, "Praca zdalna, pełny etat (5 dni w tygodniu). Biuro w Gdańsku.");
+        assert_eq!(result(&f, &remote_only()), FilterResult::Pass);
+        // "on-site gym" is no proof of office-only work.
+        let f = offer("Tester", Some("Gdańsk"), Remote::Unknown, "Benefits: on-site gym, szkolenia stacjonarnie.");
+        assert_eq!(result(&f, &remote_only()), FilterResult::Unsure);
+        // "Remote: No" denies remote work.
+        let f = offer("Tester", Some("Kraków"), Remote::Unknown, "Remote: No. Office in Kraków.");
+        assert_eq!(result(&f, &remote_only()), FilterResult::Fail);
+        // A one-letter keyword is a word, not a letter of every text.
+        let t = Text::new(&offer("Analityk", None, Remote::Yes, "Analiza danych w Excelu"));
+        assert!(!t.mentions("R"));
+        assert!(Text::new(&offer("Analityk", None, Remote::Yes, "Statystyka w R i Pythonie")).mentions("R"));
+    }
+
+    #[test]
     fn city_field_alone_is_unsure_for_a_remote_seeker() {
         // E-mail alert with only a city - nothing about remote work.
         let f = offer("Frontend Developer", Some("Wrocław"), Remote::Unknown, "");
@@ -1053,9 +1094,22 @@ mod tests {
     #[test]
     fn lead_and_leader_titles_are_senior() {
         let c = Criteria { levels: vec![Level::Junior, Level::Mid], ..Default::default() };
-        for title in ["Team Leader PHP", "Tech Lead (K/M)", "Principal Engineer", "Head of Development", "Staff Engineer"] {
+        for title in ["Team Leader PHP", "Tech Lead (K/M)", "Principal Engineer"] {
             assert_eq!(codes(&offer(title, None, Remote::Yes, ""), &c), vec!["level_mismatch"], "{title}");
         }
+    }
+
+    #[test]
+    fn staff_head_and_expert_titles_go_to_review() {
+        let c = Criteria { levels: vec![Level::Junior, Level::Mid], ..Default::default() };
+        for title in ["Head of Development", "Staff Accountant", "Ekspert ds. obsługi klienta", "Expert QA", "Staff Engineer"] {
+            let f = offer(title, None, Remote::Yes, "");
+            assert_eq!(codes(&f, &c), vec!["level_unclear"], "{title}");
+            assert_eq!(result(&f, &c), FilterResult::Unsure, "{title}");
+        }
+        // A clear level word still decides.
+        assert_eq!(codes(&offer("Senior Expert SAP", None, Remote::Yes, ""), &c), vec!["level_mismatch"]);
+        assert_eq!(result(&offer("Mid Expert SAP", None, Remote::Yes, ""), &c), FilterResult::Pass);
     }
 
     fn profile_with(description: &str, criteria: Criteria) -> Profile {

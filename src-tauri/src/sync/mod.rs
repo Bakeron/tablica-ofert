@@ -16,7 +16,8 @@ use crate::{clock, net, secrets, settings};
 pub const KEY_SECRET: &str = "sync-key";
 /// More offers deleted at once than this - the person confirms first.
 pub const ASK_ABOVE: usize = 3;
-const DEVICE: &str = "pc";
+/// Which device wrote the sync file - tells this device's own file apart (`merge::check_versions`).
+const DEVICE: &str = if cfg!(target_os = "android") { "phone" } else { "pc" };
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,10 +101,38 @@ async fn token(state: &AppState) -> AppResult<(reqwest::Client, String)> {
     Ok((http, access))
 }
 
+/// Saved as the last error while an automatic sync waits for "Sync now" to confirm a big deletion.
+pub const CONFIRM_WAITING: &str = "waits for confirmation";
+
+/// One sync job at a time: a new key during a sync would leave the file sealed with the old one,
+/// two first syncs would make two files on Drive.
+struct Syncing<'a>(&'a AppState);
+
+impl<'a> Syncing<'a> {
+    fn start(state: &'a AppState) -> AppResult<Self> {
+        if state.syncing.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Err(AppError::Busy);
+        }
+        Ok(Syncing(state))
+    }
+}
+
+impl Drop for Syncing<'_> {
+    fn drop(&mut self) {
+        self.0.syncing.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// "Sync now". `confirm` = the person agreed to delete several offers at once.
 pub async fn run(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
+    let _busy = Syncing::start(state)?;
     let result = run_inner(state, confirm).await;
-    let error = result.as_ref().err().map(|e| crate::text::cut(&e.to_string(), 300));
+    // A big deletion waiting for the person is no successful sync: nothing was saved or sent.
+    let error = match &result {
+        Err(e) => Some(crate::text::cut(&e.to_string(), 300)),
+        Ok(SyncOutcome::Confirm { removed }) => Some(format!("{CONFIRM_WAITING}: {removed}")),
+        Ok(_) => None,
+    };
     with_db(state, |c| record(c, error.as_deref()))?;
     result
 }
@@ -119,7 +148,7 @@ async fn run_inner(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
             let bytes = drive::download(&http, &access, f).await?;
             let plain = crypto::open(&key, &bytes)?;
             let remote = serde_json::from_slice::<merge::Snapshot>(&plain).map_err(|e| AppError::Invalid(format!("damaged sync file: {e}")))?;
-            merge::check_format(&remote)?;
+            merge::check_versions(&remote, &local)?;
             remote
         }
         None => merge::Snapshot::default(),
@@ -149,6 +178,7 @@ fn may_change_key(has_key: bool, connected: bool) -> bool {
 /// reached (no network, expired or missing login), the old key stays: a new one would lock
 /// this computer out of its own file on Drive.
 pub async fn new_key(state: &AppState) -> AppResult<()> {
+    let _busy = Syncing::start(state)?;
     let old = key()?;
     let connected = secrets::get(drive::REFRESH_SECRET)?.is_some();
     if !may_change_key(old.is_some(), connected) {
@@ -167,6 +197,7 @@ pub async fn new_key(state: &AppState) -> AppResult<()> {
 
 /// "Delete from Drive": removes the sync file (the data on this computer stays).
 pub async fn delete_remote(state: &AppState) -> AppResult<()> {
+    let _busy = Syncing::start(state)?;
     let (http, access) = token(state).await?;
     if let Some(file) = drive::find(&http, &access).await? {
         drive::delete(&http, &access, &file).await?;

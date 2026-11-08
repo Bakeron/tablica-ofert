@@ -197,18 +197,19 @@ pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
     one_of(word(d, "remote")?, Remote::parse, "remote")?;
     one_of(word(d, "interest")?, Interest::parse, "interest")?;
     Stage::parse(&word(d, "stage")?.unwrap_or_default()).ok_or_else(|| AppError::Invalid("stage has an unknown value".into()))?;
-    for key in ["favorite", "expired"] {
+    for key in ["favorite", "expired", "expired_by_user"] {
         if !matches!(number(d, key)?, None | Some(0) | Some(1)) {
             return Err(AppError::Invalid(format!("{key} must be 0 or 1")));
         }
     }
-    for key in ["stage_changed_at", "added_at", "updated_at", "expires_at", "deleted_at", "ai_at", "published_at", "archived_at", "kept_at"] {
+    for key in ["stage_changed_at", "added_at", "updated_at", "user_changed_at", "expires_at", "deleted_at", "ai_at", "published_at", "archived_at", "kept_at"] {
         utc_time(word(d, key)?)?;
     }
     let list = |key: &str| d.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
     for s in list("sources") {
         source_name(&word(&s, "source")?.unwrap_or_default())?;
         safe_url(word(&s, "url")?)?;
+        text(word(&s, "city")?, MAX_SHORT, "city")?;
         utc_time(word(&s, "first_seen")?)?;
     }
     for h in list("history") {
@@ -249,27 +250,22 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         )
         .optional()?;
 
+    if existing.is_none() && in_trash_by_link(&tx, &input)? {
+        return Ok(AddOutcome::Blocked);
+    }
     let outcome = match existing {
         // In the trash: only the user brings it back.
         Some((_, true)) => return Ok(AddOutcome::Blocked),
         Some((id, false)) => {
             let filled = merge_into(&tx, id, &input, &now)?;
-            let new_source = tx.execute(
-                "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
-                params![id, input.source, input.url, now],
-            )? > 0;
             // The source whose text was removed brings the job again (open once more): its link
             // comes back and the offer is checked against that source's terms again.
             let revived = tx.execute(
-                "UPDATE offers SET content_removed = NULL WHERE id = ?1 AND content_removed = ?2",
+                "UPDATE offers SET content_removed = NULL, expired = expired * expired_by_user
+                 WHERE id = ?1 AND content_removed = ?2",
                 params![id, input.source],
             )? > 0;
-            if revived {
-                tx.execute(
-                    "UPDATE offer_sources SET url = ?3 WHERE offer_id = ?1 AND source = ?2 AND url IS NULL",
-                    params![id, input.source, input.url],
-                )?;
-            }
+            let new_source = add_link(&tx, id, &input, &now)?;
             if !filled && !new_source && !revived {
                 // Fetched again with nothing new: the row stays exactly as it was (no sync, no recheck).
                 tx.commit()?;
@@ -283,9 +279,10 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
             tx.execute(
                 "INSERT INTO offers (uid, fingerprint, title, company, url, city, remote,
                     salary_min, salary_max, salary_currency, salary_period, contract, level, language,
-                    requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at, published_at)
+                    requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at, published_at,
+                    user_changed_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    'new', ?18, ?18, ?18, COALESCE(?19, ?18))",
+                    'new', ?18, ?18, ?18, COALESCE(?19, ?18), ?18)",
                 params![
                     uid, fingerprint, input.title, input.company, input.url, input.city,
                     input.remote.unwrap_or(Remote::Unknown), input.salary_min, input.salary_max,
@@ -307,14 +304,89 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         AddOutcome::Added { id } | AddOutcome::Merged { id } | AddOutcome::Unchanged { id } => id,
         AddOutcome::Blocked => unreachable!(),
     };
-    tx.execute(
-        "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
-        params![id, input.source, input.url, now],
-    )?;
+    add_link(&tx, id, &input, &now)?;
     // New or merged data - check it against every profile before it shows up anywhere.
     profiles::recheck_offer(&tx, id)?;
     tx.commit()?;
     Ok(outcome)
+}
+
+/// Remembers where the offer was seen. Another address of the same source is one more link (the
+/// same job in another city); the same address again - also with other tracking parameters -
+/// is not, and a link of that source without an address gets this one. Returns whether anything
+/// was added.
+fn add_link(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
+    if let Some(url) = input.url.as_deref() {
+        let key = crate::sources::alerts::link_key(url);
+        let mut stmt = tx.prepare("SELECT url FROM offer_sources WHERE offer_id = ?1 AND source = ?2 AND url IS NOT NULL")?;
+        let known = stmt.query_map(params![id, input.source], |r| r.get::<_, String>(0))?;
+        for known in known {
+            if crate::sources::alerts::link_key(&known?) == key {
+                return Ok(false);
+            }
+        }
+        let filled = tx.execute(
+            "UPDATE offer_sources SET url = ?3, city = COALESCE(city, ?4)
+             WHERE rowid = (SELECT rowid FROM offer_sources WHERE offer_id = ?1 AND source = ?2 AND url IS NULL LIMIT 1)",
+            params![id, input.source, url, input.city],
+        )?;
+        if filled > 0 {
+            return Ok(true);
+        }
+    }
+    Ok(tx.execute(
+        "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen, city) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, input.source, input.url, now, input.city],
+    )? > 0)
+}
+
+/// Takes the links of one source off an offer (its job closed - the source's terms), keeping one
+/// row: the offer was still seen there.
+pub fn drop_links(tx: &rusqlite::Transaction, id: i64, source: &str) -> AppResult<()> {
+    tx.execute(
+        "DELETE FROM offer_sources WHERE offer_id = ?1 AND source = ?2
+         AND rowid != (SELECT min(rowid) FROM offer_sources WHERE offer_id = ?1 AND source = ?2)",
+        params![id, source],
+    )?;
+    tx.execute("UPDATE offer_sources SET url = NULL WHERE offer_id = ?1 AND source = ?2", params![id, source])?;
+    Ok(())
+}
+
+/// The cities of one job seen in several places, as one list ("Kraków, Gdańsk") without repeats.
+/// "Remote" or "Poland" is no city to add; a longer form of a city already there ("Gdańsk,
+/// pomorskie") adds nothing either.
+pub fn join_cities(current: Option<&str>, new: Option<&str>) -> Option<String> {
+    let current = current.map(str::trim).filter(|c| !c.is_empty());
+    let Some(new) = new.map(str::trim).filter(|c| !c.is_empty()) else { return current.map(str::to_string) };
+    let Some(current) = current else { return Some(new.to_string()) };
+    let (have, add) = (dedup::normalize(current), dedup::normalize(new));
+    let inside = |small: &str, big: &str| format!(" {big} ").contains(&format!(" {small} "));
+    if add.is_empty() || crate::filter::NOT_A_PLACE.contains(&add.as_str()) || inside(&add, &have) {
+        return Some(current.to_string());
+    }
+    // "Gdańsk, pomorskie" after "Kraków, Gdańsk": a city of the list, written longer.
+    if current.split(',').map(dedup::normalize).any(|c| !c.is_empty() && inside(&c, &add)) {
+        return Some(current.to_string());
+    }
+    let joined = format!("{current}, {new}");
+    Some(if joined.chars().count() > MAX_SHORT { current.to_string() } else { joined })
+}
+
+/// A portal's offer that is in the trash under another company or title (a mail read better
+/// later, a placeholder "? (…)" company): the same link of the same source keeps it deleted.
+fn in_trash_by_link(tx: &rusqlite::Transaction, input: &OfferInput) -> AppResult<bool> {
+    let Some(key) = input.url.as_deref().and_then(crate::sources::alerts::same_offer_key) else { return Ok(false) };
+    let mut stmt = tx.prepare(
+        "SELECT s.url FROM offer_sources s JOIN offers o ON o.id = s.offer_id
+         WHERE o.deleted_at IS NOT NULL AND s.source = ?1 AND s.url IS NOT NULL",
+    )?;
+    let urls = stmt.query_map([&input.source], |r| r.get::<_, String>(0))?;
+    for url in urls {
+        if crate::sources::alerts::same_offer_key(&url?).as_deref() == Some(key.as_str()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Columns `merge_into` may change - compared before and after to tell whether anything was filled in.
@@ -331,11 +403,14 @@ fn merged_columns(tx: &rusqlite::Transaction, id: i64) -> AppResult<Vec<rusqlite
 /// Returns whether anything changed (the caller sets `updated_at` only then).
 fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
     let before = merged_columns(tx, id)?;
-    tx.execute(
+    let newer_date = tx.execute(
         "UPDATE offers SET published_at = ?2, archived_at = NULL
          WHERE id = ?1 AND ?2 > COALESCE(published_at, added_at)",
         params![id, input.published_at.as_deref().unwrap_or(now)],
-    )?;
+    )? > 0;
+    // The same job in another city: the city joins the list (the filter takes any of them).
+    let city: Option<String> = tx.query_row("SELECT city FROM offers WHERE id = ?1", [id], |r| r.get(0))?;
+    let city = join_cities(city.as_deref(), input.city.as_deref());
     let has_salary: bool = tx.query_row(
         "SELECT salary_min IS NOT NULL OR salary_max IS NOT NULL FROM offers WHERE id = ?1",
         [id],
@@ -351,7 +426,7 @@ fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str
     tx.execute(
         "UPDATE offers SET
             url = COALESCE(url, ?2),
-            city = COALESCE(city, ?3),
+            city = ?3,
             remote = CASE WHEN remote = 'unknown' AND ?4 IS NOT NULL THEN ?4 ELSE remote END,
             contract = COALESCE(contract, ?5),
             level = COALESCE(level, ?6),
@@ -362,18 +437,32 @@ fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str
                 THEN ?9 ELSE description END,
             expires_at = CASE WHEN expires_at IS NULL OR ?10 > expires_at THEN COALESCE(?10, expires_at)
                 ELSE expires_at END,
-            expired = 0
+            -- Only a newer date takes off the automatic expiry; the one set by the user stays.
+            expired = CASE WHEN expired_by_user = 0
+                AND (?11 OR (?10 IS NOT NULL AND (expires_at IS NULL OR ?10 > expires_at))) THEN 0 ELSE expired END
          WHERE id = ?1",
         params![
-            id, input.url, input.city, input.remote, input.contract, input.level, input.language,
-            input.requirements, input.description, input.expires_at
+            id, input.url, city, input.remote, input.contract, input.level, input.language,
+            input.requirements, input.description, input.expires_at, newer_date
         ],
     )?;
-    Ok(merged_columns(tx, id)? != before)
+    let after = merged_columns(tx, id)?;
+    // AI read a short alert ("50 or less" when facts are missing); now the full text or the salary
+    // came - it reads the offer once more.
+    let text_len = |cols: &[rusqlite::types::Value]| match &cols[7] {
+        rusqlite::types::Value::Text(t) => t.chars().count(),
+        _ => 0,
+    };
+    let salary_came = matches!(before[10], rusqlite::types::Value::Null) && matches!(before[11], rusqlite::types::Value::Null)
+        && !(matches!(after[10], rusqlite::types::Value::Null) && matches!(after[11], rusqlite::types::Value::Null));
+    if salary_came || (text_len(&after) >= 400 && text_len(&after) >= 2 * text_len(&before)) {
+        tx.execute("UPDATE offers SET ai_status = NULL, ai_error = NULL WHERE id = ?1 AND ai_status IS NOT NULL", [id])?;
+    }
+    Ok(after != before)
 }
 
 /// Offers past their expiry date are marked "expired" (greyed out on the board), from every
-/// source. Seen again in a source, an offer is open again (`merge_into`) until its date passes.
+/// source. Seen again with a newer date, an offer is open again (`merge_into`) until its date passes.
 pub fn mark_expired(conn: &Connection, now: &str) -> AppResult<usize> {
     Ok(conn.execute(
         "UPDATE offers SET expired = 1 WHERE expired = 0 AND expires_at IS NOT NULL AND expires_at < ?1",
@@ -463,10 +552,13 @@ pub fn set_expired(conn: &Connection, id: i64) -> AppResult<ExpiredBy> {
         .optional()?
         .ok_or(AppError::NotFound)?;
     if touched {
-        conn.execute("UPDATE offers SET expired = 1, updated_at = ?2 WHERE id = ?1", params![id, now])?;
+        conn.execute(
+            "UPDATE offers SET expired = 1, expired_by_user = 1, user_changed_at = ?2 WHERE id = ?1",
+            params![id, now],
+        )?;
         Ok(ExpiredBy::Marked)
     } else {
-        conn.execute("UPDATE offers SET archived_at = ?2, updated_at = ?2 WHERE id = ?1", params![id, now])?;
+        conn.execute("UPDATE offers SET archived_at = ?2, user_changed_at = ?2 WHERE id = ?1", params![id, now])?;
         Ok(ExpiredBy::Archived)
     }
 }
@@ -474,7 +566,7 @@ pub fn set_expired(conn: &Connection, id: i64) -> AppResult<ExpiredBy> {
 /// "Undo" after "Expired": the offer is back as it was.
 pub fn unset_expired(conn: &Connection, id: i64) -> AppResult<()> {
     changed(conn.execute(
-        "UPDATE offers SET expired = 0, archived_at = NULL, updated_at = ?2 WHERE id = ?1",
+        "UPDATE offers SET expired = 0, expired_by_user = 0, archived_at = NULL, user_changed_at = ?2 WHERE id = ?1",
         params![id, clock::now()],
     )?)
 }
@@ -483,7 +575,7 @@ pub fn unset_expired(conn: &Connection, id: i64) -> AppResult<()> {
 pub fn unarchive(conn: &Connection, id: i64) -> AppResult<()> {
     let now = clock::now();
     changed(conn.execute(
-        "UPDATE offers SET archived_at = NULL, kept_at = ?2, updated_at = ?2 WHERE id = ?1 AND archived_at IS NOT NULL",
+        "UPDATE offers SET archived_at = NULL, kept_at = ?2, user_changed_at = ?2 WHERE id = ?1 AND archived_at IS NOT NULL",
         params![id, now],
     )?)
 }
@@ -495,7 +587,7 @@ pub fn unarchive(conn: &Connection, id: i64) -> AppResult<()> {
 const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max,
     o.salary_currency, o.salary_period, o.stage, o.stage_changed_at, o.interest, o.favorite,
     o.score, o.score_source,
-    (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
+    (SELECT group_concat(DISTINCT s.source) FROM offer_sources s WHERE s.offer_id = o.id),
     o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr,
     {fresh}, ({fresh} < '{old}' AND NOT {recruit}), {recruit}, {manual}, o.archived_at,
     (SELECT sc.why FROM offer_scores sc WHERE sc.offer_id = o.id AND sc.source = 'ai' ORDER BY sc.score DESC LIMIT 1),
@@ -677,7 +769,7 @@ pub fn export_rows(conn: &Connection, view: Option<View>) -> AppResult<Vec<Expor
     let sql = format!(
         "SELECT o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max, o.salary_currency, o.salary_period,
                 o.contract, o.level, o.stage, o.interest, o.favorite, o.score, o.score_source,
-                (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = o.id),
+                (SELECT group_concat(DISTINCT s.source) FROM offer_sources s WHERE s.offer_id = o.id),
                 o.url, o.added_at, o.notes, {list}, {FRESH_AT}
          FROM offers o WHERE {filter} ORDER BY {FRESH_AT} DESC, o.id DESC"
     );
@@ -777,10 +869,10 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         .ok_or(AppError::NotFound)?;
 
     let mut stmt = conn.prepare(
-        "SELECT source, url, first_seen FROM offer_sources WHERE offer_id = ?1 ORDER BY first_seen, source",
+        "SELECT source, url, first_seen, city FROM offer_sources WHERE offer_id = ?1 ORDER BY first_seen, source, rowid",
     )?;
     detail.links = stmt
-        .query_map([id], |r| Ok(SourceLink { source: r.get(0)?, url: r.get(1)?, first_seen: r.get(2)? }))?
+        .query_map([id], |r| Ok(SourceLink { source: r.get(0)?, url: r.get(1)?, first_seen: r.get(2)?, city: r.get(3)? }))?
         .collect::<Result<_, _>>()?;
 
     let mut stmt = conn.prepare("SELECT stage, at FROM stage_history WHERE offer_id = ?1 ORDER BY at, id")?;
@@ -808,7 +900,7 @@ pub fn set_stage(conn: &mut Connection, id: i64, stage: Stage) -> AppResult<()> 
         .ok_or(AppError::NotFound)?;
     if current != stage {
         tx.execute(
-            "UPDATE offers SET stage = ?2, stage_changed_at = ?3, updated_at = ?3 WHERE id = ?1",
+            "UPDATE offers SET stage = ?2, stage_changed_at = ?3, user_changed_at = ?3 WHERE id = ?1",
             params![id, stage, now],
         )?;
         tx.execute(
@@ -822,14 +914,14 @@ pub fn set_stage(conn: &mut Connection, id: i64, stage: Stage) -> AppResult<()> 
 
 pub fn set_interest(conn: &Connection, id: i64, interest: Option<Interest>) -> AppResult<()> {
     changed(conn.execute(
-        "UPDATE offers SET interest = ?2, updated_at = ?3 WHERE id = ?1",
+        "UPDATE offers SET interest = ?2, user_changed_at = ?3 WHERE id = ?1",
         params![id, interest, clock::now()],
     )?)
 }
 
 pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> AppResult<()> {
     changed(conn.execute(
-        "UPDATE offers SET favorite = ?2, updated_at = ?3 WHERE id = ?1",
+        "UPDATE offers SET favorite = ?2, user_changed_at = ?3 WHERE id = ?1",
         params![id, favorite, clock::now()],
     )?)
 }
@@ -837,7 +929,7 @@ pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> AppResult<()>
 pub fn set_notes(conn: &Connection, id: i64, notes: String) -> AppResult<()> {
     let notes = text(Some(notes), MAX_NOTES, "notes")?.unwrap_or_default();
     changed(conn.execute(
-        "UPDATE offers SET notes = ?2, updated_at = ?3 WHERE id = ?1",
+        "UPDATE offers SET notes = ?2, user_changed_at = ?3 WHERE id = ?1",
         params![id, notes, clock::now()],
     )?)
 }
@@ -863,16 +955,96 @@ pub fn update_description(conn: &mut Connection, id: i64, text: String) -> AppRe
 pub fn trash(conn: &Connection, id: i64) -> AppResult<()> {
     let now = clock::now();
     changed(conn.execute(
-        "UPDATE offers SET deleted_at = ?2, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+        "UPDATE offers SET deleted_at = ?2, user_changed_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
         params![id, now],
     )?)
 }
 
 pub fn restore(conn: &Connection, id: i64) -> AppResult<()> {
     changed(conn.execute(
-        "UPDATE offers SET deleted_at = NULL, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NOT NULL",
+        "UPDATE offers SET deleted_at = NULL, user_changed_at = ?2 WHERE id = ?1 AND deleted_at IS NOT NULL",
         params![id, clock::now()],
     )?)
+}
+
+/// The keys of offers changed (8.11.2026): every offer gets its fingerprint again. Offers that
+/// turn out to be one are merged - the one in use (not in the trash, with the user's work, then
+/// the older one) stays and takes the other's sources, dates, contacts and notes; the other one
+/// goes like a purged one (a tombstone for sync). Keys of offers deleted for good are made again.
+/// Returns how many offers were merged away.
+pub fn refresh_fingerprints(conn: &mut Connection) -> AppResult<usize> {
+    let now = clock::now();
+    let tx = conn.transaction()?;
+    let mut groups: std::collections::BTreeMap<String, Vec<(i64, String)>> = std::collections::BTreeMap::new();
+    {
+        let mut stmt = tx.prepare(&format!(
+            "SELECT o.id, o.company, o.title, o.fingerprint FROM offers o
+             ORDER BY o.deleted_at IS NOT NULL, NOT {TOUCHED}, o.added_at, o.id"
+        ))?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let (id, company, title, old): (i64, String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?);
+            groups.entry(dedup::fingerprint(&company, &title)).or_default().push((id, old));
+        }
+    }
+    let mut merged = 0;
+    for (fingerprint, offers) in &groups {
+        let (keeper, old) = &offers[0];
+        for (gone, _) in &offers[1..] {
+            let (city, notes, favorite, interest, url): (Option<String>, String, bool, Option<String>, Option<String>) = tx.query_row(
+                "SELECT city, notes, favorite, interest, url FROM offers WHERE id = ?1",
+                [gone],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )?;
+            let mine: (Option<String>, String) = tx.query_row("SELECT city, notes FROM offers WHERE id = ?1", [keeper], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            let notes = match (mine.1.trim().is_empty(), notes.trim().is_empty()) {
+                (_, true) => mine.1.clone(),
+                (true, false) => notes,
+                (false, false) => crate::text::cut(&format!("{}\n\n{notes}", mine.1), MAX_NOTES),
+            };
+            tx.execute(
+                "UPDATE offers SET city = ?2, notes = ?3, favorite = MAX(favorite, ?4), interest = COALESCE(interest, ?5),
+                    url = COALESCE(url, ?6), updated_at = ?7, user_changed_at = ?7
+                 WHERE id = ?1",
+                params![keeper, join_cities(mine.0.as_deref(), city.as_deref()), notes, favorite, interest, url, now],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen, checked_on, city)
+                 SELECT ?1, source, url, first_seen, checked_on, city FROM offer_sources WHERE offer_id = ?2",
+                params![keeper, gone],
+            )?;
+            for table in ["events", "contacts", "contact_log"] {
+                tx.execute(&format!("UPDATE {table} SET offer_id = ?1 WHERE offer_id = ?2"), params![keeper, gone])?;
+            }
+            tx.execute(
+                "INSERT INTO sync_deleted (kind, uid, at) SELECT 'offers', uid, ?2 FROM offers WHERE id = ?1
+                 ON CONFLICT (kind, uid) DO UPDATE SET at = excluded.at",
+                params![gone, now],
+            )?;
+            tx.execute("DELETE FROM offers WHERE id = ?1", [gone])?;
+            merged += 1;
+        }
+        if old != fingerprint {
+            // Through a placeholder: another offer may still hold this key until its own turn.
+            tx.execute("UPDATE offers SET fingerprint = '~' || id, updated_at = ?2 WHERE id = ?1", params![keeper, now])?;
+        }
+    }
+    for (fingerprint, offers) in &groups {
+        tx.execute("UPDATE offers SET fingerprint = ?2 WHERE id = ?1 AND fingerprint = '~' || id", params![offers[0].0, fingerprint])?;
+    }
+    let removed: Vec<(String, String)> = tx
+        .prepare("SELECT fingerprint, removed_at FROM removed_offers")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (old, at) in removed {
+        let new = dedup::refresh_key(&old);
+        if new != old {
+            tx.execute("DELETE FROM removed_offers WHERE fingerprint = ?1", [&old])?;
+            tx.execute("INSERT OR IGNORE INTO removed_offers (fingerprint, removed_at) VALUES (?1, ?2)", params![new, at])?;
+        }
+    }
+    tx.commit()?;
+    Ok(merged)
 }
 
 /// Deletes offers from the trash for good. Their fingerprints are remembered,
@@ -983,6 +1155,136 @@ mod tests {
     }
 
     #[test]
+    fn only_a_newer_date_takes_off_the_automatic_expiry_and_never_the_users() {
+        let mut conn = test_db();
+        let mut first = offer("Tester", "Firma Testowa", "adzuna");
+        first.published_at = Some("2026-11-01T00:00:00Z".into());
+        first.expires_at = Some("2026-11-03T00:00:00Z".into());
+        let auto = id_of(add(&mut conn, first.clone()).unwrap());
+        mark_expired(&conn, "2026-11-04T12:00:00Z").unwrap();
+        // The same offer with the same dates: still expired.
+        add(&mut conn, first.clone()).unwrap();
+        assert!(detail(&conn, auto).unwrap().row.expired);
+        // A newer expiry date: open again.
+        let mut later = first.clone();
+        later.expires_at = Some("2026-12-01T00:00:00Z".into());
+        add(&mut conn, later).unwrap();
+        assert!(!detail(&conn, auto).unwrap().row.expired);
+
+        // "Expired" clicked by the user stays, whatever comes later.
+        let mut mine = offer("Analityk", "Firma Testowa", "jooble");
+        mine.published_at = Some("2026-11-01T00:00:00Z".into());
+        let id = id_of(add(&mut conn, mine.clone()).unwrap());
+        set_favorite(&conn, id, true).unwrap();
+        assert_eq!(set_expired(&conn, id).unwrap(), ExpiredBy::Marked);
+        mine.published_at = Some("2026-11-20T00:00:00Z".into());
+        mine.expires_at = Some("2026-12-20T00:00:00Z".into());
+        add(&mut conn, mine).unwrap();
+        assert!(detail(&conn, id).unwrap().row.expired);
+        // Until the user takes it off.
+        unset_expired(&conn, id).unwrap();
+        assert!(!detail(&conn, id).unwrap().row.expired);
+    }
+
+    #[test]
+    fn one_job_in_two_cities_keeps_both_cities_and_both_links() {
+        let mut conn = test_db();
+        let mut krakow = offer("Kasjer", "Sklep Przykładowy", "pracuj");
+        krakow.city = Some("Kraków".into());
+        krakow.url = Some("https://www.pracuj.pl/praca/kasjer-krakow,oferta,1001".into());
+        let id = id_of(add(&mut conn, krakow.clone()).unwrap());
+        let mut gdansk = krakow.clone();
+        gdansk.city = Some("Gdańsk".into());
+        gdansk.url = Some("https://www.pracuj.pl/praca/kasjer-gdansk,oferta,1002".into());
+        assert_eq!(add(&mut conn, gdansk.clone()).unwrap(), AddOutcome::Merged { id });
+        // Seen again - with a tracking parameter, and the city written longer: nothing new.
+        let mut again = gdansk.clone();
+        again.url = Some(format!("{}?utm_source=mail", gdansk.url.as_deref().unwrap()));
+        again.city = Some("Gdańsk, pomorskie".into());
+        assert_eq!(add(&mut conn, again).unwrap(), AddOutcome::Unchanged { id });
+        let d = detail(&conn, id).unwrap();
+        assert_eq!(d.row.city.as_deref(), Some("Kraków, Gdańsk"));
+        let links: Vec<(Option<&str>, Option<&str>)> = d.links.iter().map(|l| (l.url.as_deref(), l.city.as_deref())).collect();
+        assert_eq!(links, vec![(krakow.url.as_deref(), Some("Kraków")), (gdansk.url.as_deref(), Some("Gdańsk"))]);
+        assert_eq!(d.row.sources, vec!["pracuj"]);
+        // "Remote" is no city to add.
+        let mut remote = krakow.clone();
+        remote.city = Some("Remote".into());
+        add(&mut conn, remote).unwrap();
+        assert_eq!(detail(&conn, id).unwrap().row.city.as_deref(), Some("Kraków, Gdańsk"));
+    }
+
+    #[test]
+    fn the_filter_takes_any_city_of_the_list() {
+        use crate::model::{CityRule, Criteria, ProfileInput, Remote};
+        let mut conn = test_db();
+        let criteria = Criteria {
+            cities: vec![CityRule { name: "Gdańsk".into(), radius_km: 0 }],
+            work_modes: vec![Remote::No],
+            ..Default::default()
+        };
+        profiles::save(&mut conn, ProfileInput { id: None, name: "Gdańsk".into(), description: "Kasjer".into(), criteria }).unwrap();
+        let mut krakow = offer("Kasjer", "Sklep Przykładowy", "pracuj");
+        krakow.city = Some("Kraków".into());
+        krakow.remote = Some(Remote::No);
+        let id = id_of(add(&mut conn, krakow.clone()).unwrap());
+        assert_eq!(detail(&conn, id).unwrap().row.filter_result, crate::model::FilterResult::Fail);
+        let mut gdansk = krakow;
+        gdansk.city = Some("Gdańsk".into());
+        add(&mut conn, gdansk).unwrap();
+        assert_eq!(detail(&conn, id).unwrap().row.filter_result, crate::model::FilterResult::Pass);
+    }
+
+    #[test]
+    fn closed_source_keeps_one_row_without_links() {
+        let mut conn = test_db();
+        let mut a = offer("Kasjer", "Sklep Przykładowy", "himalayas");
+        a.url = Some("https://himalayas.app/companies/sklep/jobs/kasjer-1".into());
+        let id = id_of(add(&mut conn, a.clone()).unwrap());
+        a.url = Some("https://himalayas.app/companies/sklep/jobs/kasjer-2".into());
+        add(&mut conn, a).unwrap();
+        let tx = conn.transaction().unwrap();
+        drop_links(&tx, id, "himalayas").unwrap();
+        tx.commit().unwrap();
+        let links = detail(&conn, id).unwrap().links;
+        assert_eq!(links.len(), 1);
+        assert!(links[0].url.is_none());
+    }
+
+    #[test]
+    fn new_keys_merge_old_twins_and_keep_the_users_work() {
+        let mut conn = test_db();
+        // Saved with the old keys (as before 8.11.2026): two keys for one job.
+        let long = id_of(add(&mut conn, offer("Tester", "Firma Przykładowa Sp. z o.o. Sp. k.", "pracuj")).unwrap());
+        conn.execute("UPDATE offers SET fingerprint = 'firma przykladowa sp k|tester' WHERE id = ?1", [long]).unwrap();
+        let short = id_of(add(&mut conn, offer("Tester", "Firma Przykładowa", "jjit")).unwrap());
+        set_notes(&conn, short, "Zadzwonić we wtorek".into()).unwrap();
+        crate::agenda::add_event(&conn, long, crate::agenda::EventInput { kind: "interview".into(), at: "2026-11-20T10:00:00Z".into(), minutes: 60, note: String::new() }).unwrap();
+        let cpp = id_of(add(&mut conn, offer("Programista C++", "Firma Testowa", "pracuj")).unwrap());
+        conn.execute("UPDATE offers SET fingerprint = 'firma testowa|programista c' WHERE id = ?1", [cpp]).unwrap();
+        conn.execute("INSERT INTO removed_offers (fingerprint, removed_at) VALUES ('firma usunieta sp j|kasjer', '2026-11-01T00:00:00Z')", []).unwrap();
+
+        assert_eq!(refresh_fingerprints(&mut conn).unwrap(), 1);
+        // Both had the user's work (a note, a date) - the older one stays with both.
+        let d = detail(&conn, long).unwrap();
+        assert_eq!(d.notes, "Zadzwonić we wtorek");
+        assert_eq!(d.agenda.events.len(), 1);
+        let mut sources = d.row.sources.clone();
+        sources.sort();
+        assert_eq!(sources, vec!["jjit", "pracuj"]);
+        assert!(matches!(detail(&conn, short), Err(AppError::NotFound)));
+        assert_eq!(detail(&conn, cpp).unwrap().row.id, cpp);
+        // The same job fetched again joins the kept offer; a deleted one stays deleted with its new key.
+        assert_eq!(add(&mut conn, offer("Tester", "Firma Przykładowa", "adzuna")).unwrap(), AddOutcome::Merged { id: long });
+        assert_eq!(add(&mut conn, offer("Programista C++", "Firma Testowa", "adzuna")).unwrap(), AddOutcome::Merged { id: cpp });
+        assert_eq!(add(&mut conn, offer("Kasjer", "Firma Usunięta Spółka Jawna", "adzuna")).unwrap(), AddOutcome::Blocked);
+        let tombstones: i64 = conn.query_row("SELECT count(*) FROM sync_deleted WHERE kind = 'offers'", [], |r| r.get(0)).unwrap();
+        assert_eq!(tombstones, 1);
+        // Run again: nothing more to do.
+        assert_eq!(refresh_fingerprints(&mut conn).unwrap(), 0);
+    }
+
+    #[test]
     fn adds_and_lists_an_offer_with_history() {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("Frontend Developer", "Firma Testowa", "manual")).unwrap());
@@ -1030,6 +1332,39 @@ mod tests {
         let d = detail(&conn, id).unwrap();
         assert_eq!(d.row.salary_min, Some(8000));
         assert_eq!(d.description.as_deref(), Some("A long and detailed description"));
+    }
+
+    #[test]
+    fn a_deleted_portal_offer_read_better_later_stays_deleted() {
+        let mut conn = test_db();
+        let mut junk = offer("Programista PHP Firma X • Gdynia", "? (abc123)", "jooble");
+        junk.url = Some("https://pl.jooble.org/away/42?mid=a&pos=1".into());
+        let id = id_of(add(&mut conn, junk).unwrap());
+        trash(&conn, id).unwrap();
+        let mut better = offer("Programista PHP", "Firma X", "jooble");
+        better.url = Some("https://pl.jooble.org/away/42?mid=b&pos=3".into());
+        assert_eq!(add(&mut conn, better.clone()).unwrap(), AddOutcome::Blocked);
+        // Another offer of the same portal still comes in.
+        better.url = Some("https://pl.jooble.org/away/43?mid=b".into());
+        assert!(matches!(add(&mut conn, better).unwrap(), AddOutcome::Added { .. }));
+    }
+
+    #[test]
+    fn a_full_text_after_a_short_alert_is_read_by_ai_again() {
+        let mut conn = test_db();
+        let id = id_of(add(&mut conn, offer("Tester", "Firma A", "jooble")).unwrap());
+        let status = |c: &Connection| c.query_row("SELECT ai_status FROM offers WHERE id = ?1", [id], |r| r.get::<_, Option<String>>(0)).unwrap();
+        conn.execute("UPDATE offers SET ai_status = 'done'", []).unwrap();
+        // The same short text again: AI does not read it once more.
+        let mut b = offer("Tester", "Firma A", "jooble");
+        b.description = Some("Krótko.".into());
+        add(&mut conn, b).unwrap();
+        assert_eq!(status(&conn).as_deref(), Some("done"));
+        // The full description from another source: it waits for AI again.
+        let mut c = offer("Tester", "Firma A", "adzuna");
+        c.description = Some("Pełny opis oferty. ".repeat(30));
+        add(&mut conn, c).unwrap();
+        assert_eq!(status(&conn), None);
     }
 
     #[test]

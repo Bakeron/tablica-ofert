@@ -151,7 +151,9 @@ struct LastRun {
 /// of every profile when set - the keywords then only score the offers.
 pub fn plan(profiles: &[Profile], words: &[String]) -> Vec<Query> {
     let mut out: Vec<Query> = Vec::new();
-    for round in 0..8 {
+    // Every keyword (a profile has up to 50) - `for_this_run` spreads them over the runs.
+    let rounds = profiles.iter().map(|p| p.criteria.keywords.len()).chain([words.len()]).max().unwrap_or(0);
+    for round in 0..rounds {
         for p in profiles {
             let c = &p.criteria;
             let list = if words.is_empty() { &c.keywords } else { words };
@@ -209,7 +211,8 @@ pub fn remote_keywords(profiles: &[Profile]) -> Vec<String> {
         .filter(|p| p.criteria.work_modes.is_empty() || p.criteria.work_modes.contains(&Remote::Yes))
         .map(|p| &p.criteria.keywords)
         .collect();
-    for round in 0..8 {
+    let rounds = lists.iter().map(|l| l.len()).max().unwrap_or(0);
+    for round in 0..rounds {
         for list in &lists {
             if let Some(word) = list.get(round).map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()) {
                 if !words.contains(&word) {
@@ -223,17 +226,19 @@ pub fn remote_keywords(profiles: &[Profile]) -> Vec<String> {
 
 // ---------- timing ----------
 
-fn hours_since(at: Option<&str>, now: OffsetDateTime) -> Option<i64> {
+fn minutes_since(at: Option<&str>, now: OffsetDateTime) -> Option<i64> {
     let at = OffsetDateTime::parse(at?, &Rfc3339).ok()?;
-    Some((now - at).whole_hours())
+    Some((now - at).whole_minutes())
 }
 
 fn due(last: &LastRun, limits: &Limits, force: bool, now: OffsetDateTime) -> bool {
     let wait = if force { limits.forced_hours } else { limits.every_hours };
-    match hours_since(last.last_try.as_deref(), now) {
+    match minutes_since(last.last_try.as_deref(), now) {
         None => true,
-        // A clock moved back counts as "long ago".
-        Some(h) => h < 0 || h >= wait,
+        // A clock moved back counts as "long ago". The time is stamped after the network part,
+        // so the hourly task comes a little "too early" - ten minutes of slack, or a daily source
+        // would run every 25 hours.
+        Some(m) => m < 0 || m >= wait * 60 - 10,
     }
 }
 
@@ -257,6 +262,16 @@ fn last_runs(conn: &Connection) -> AppResult<BTreeMap<String, LastRun>> {
 
 fn record(conn: &Connection, run: &SourceRun, now: &str) -> AppResult<()> {
     let error = run.error.as_ref().map(|e| crate::text::cut(&e.detail, 300));
+    // No connection at all (a laptop just woken, Wi-Fi not up yet): nothing was asked, so the
+    // source is not "done for the day" - the next run tries again.
+    if run.error.as_ref().is_some_and(|e| e.detail.contains(crate::net::NO_CONNECTION)) {
+        conn.execute(
+            "INSERT INTO source_runs (source, last_error) VALUES (?1, ?2)
+             ON CONFLICT (source) DO UPDATE SET last_error = ?2",
+            params![run.source, error],
+        )?;
+        return Ok(());
+    }
     conn.execute(
         "INSERT INTO source_runs (source, last_try, last_ok, last_error, added, merged)
          VALUES (?1, ?2, CASE WHEN ?3 IS NULL THEN ?2 END, ?3, ?4, ?5)
@@ -589,8 +604,9 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
                 Vec::new()
             });
             let stamp = clock::now();
+            let reached = !run.error.as_ref().is_some_and(|e| e.detail.contains(crate::net::NO_CONNECTION));
             with_db(state, |c| {
-                usage::add_calls(c, source, 1)?;
+                usage::add_calls(c, source, i64::from(reached))?;
                 save(c, found, &mut run, &mut report)?;
                 record(c, &run, &stamp)
             })?;
@@ -703,12 +719,20 @@ pub async fn fetch(state: &AppState, force: bool, progress: OnProgress<'_>) -> A
             himalayas::finish_round(c, &round, &today)
         })?;
         report.closed += (gone.deleted + gone.kept) as i64;
-        if himalayas::suspicious(&round) {
-            let error = AppError::Net(format!(
+        let problem = if himalayas::suspicious(&round) {
+            Some(AppError::Net(format!(
                 "Himalayas reported {} of {} checked offers closed at once - none deleted, kept without the Himalayas text",
                 round.closed.len(),
                 round.answered
-            ));
+            )))
+        } else if round.checked.is_empty() {
+            // Stopped on the first offer (403, 429, no connection): closed jobs are not removed
+            // any more - their terms ask for it, so the user has to see it.
+            round.stopped.as_ref().map(|e| AppError::Net(format!("checking closed Himalayas offers stopped: {e}")))
+        } else {
+            None
+        };
+        if let Some(error) = problem {
             with_db(state, |c| {
                 c.execute(
                     "UPDATE source_runs SET last_error = ?1 WHERE source = ?2",

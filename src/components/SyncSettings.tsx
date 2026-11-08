@@ -28,6 +28,10 @@ const LOGIN_EXPIRED = "google login expired";
 const loginExpired = (text: string | null | undefined) => !!text && text.includes(LOGIN_EXPIRED);
 /** Same text as `AppError::Outdated` in Rust - the other device has a newer version of the app. */
 const OUTDATED = "newer app version";
+/** Same text as `AppError::OtherOutdated` in Rust - the other device has an older version of the app. */
+const OTHER_OUTDATED = "older app version on the other device";
+/// `CONFIRM_WAITING` in sync/mod.rs.
+const CONFIRM_WAITING = "waits for confirmation";
 
 const QR_SECONDS = 120;
 /** Asking Google again survives a short loss of network (the phone is in the browser meanwhile). */
@@ -280,7 +284,15 @@ export function SyncSettings({
                 </p>
               ) : (
                 <p className="source-warn">
-                  <IconWarning /> {t(status.lastError.includes(OUTDATED) ? "error.outdated" : "sync.failed")}
+                  <IconWarning /> {t(
+                    status.lastError.includes(OUTDATED)
+                      ? "error.outdated"
+                      : status.lastError.includes(OTHER_OUTDATED)
+                        ? "error.other_outdated"
+                        : status.lastError.startsWith(CONFIRM_WAITING)
+                        ? "sync.waitsConfirm"
+                        : "sync.failed",
+                  )}
                 </p>
               ))}
             {ownProject && !expired && <p className="hint">{t("sync.ownProject")}</p>}

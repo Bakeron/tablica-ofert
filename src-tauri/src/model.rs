@@ -310,6 +310,8 @@ pub struct SourceLink {
     pub source: String,
     pub url: Option<String>,
     pub first_seen: String,
+    /// The city this link gave - one job in two cities keeps both links.
+    pub city: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -52,6 +52,8 @@ const fit: DemoFilter = { result: "pass" };
 export interface DemoOffer {
   input: OfferInput;
   extraSources?: string[];
+  /** The same job in several cities of `input.source`: city and link of each (the city field lists them all). */
+  linkCities?: [string, string][];
   stage?: Stage;
   interest?: Interest;
   favorite?: boolean;
@@ -340,12 +342,16 @@ export const DEMO_OFFERS: DemoOffer[] = [
       },
       { result: "fail", reasons: [{ kind: "fail", code: "office_outside", value: "Gdańsk" }] },
     ],
+    linkCities: [
+      ["Gdańsk", "https://example.com/oferty/wydma-gdansk"],
+      ["Gdynia", "https://example.com/oferty/wydma-gdynia"],
+    ],
     input: {
       title: "Specjalista wsparcia IT",
       company: "Wydma Serwis",
       source: "pracuj",
       url: "https://example.com/oferty/wydma-wsparcie",
-      city: "Gdańsk",
+      city: "Gdańsk, Gdynia",
       remote: "unknown",
     },
   },

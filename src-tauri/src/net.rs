@@ -10,6 +10,12 @@ use crate::error::{AppError, AppResult};
 /// No answer from a job feed or AI is ever this big - anything larger is refused.
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 
+/// The start of the message of a question that got no answer in time.
+pub const TIMED_OUT: &str = "no answer in time";
+/// The start of the message when the server could not be reached at all (no network, no DNS) -
+/// the question never got there.
+pub const NO_CONNECTION: &str = "no connection";
+
 pub fn client() -> AppResult<Client> {
     let builder = Client::builder();
     // Android: rustls (tls.rs) instead of the bundled OpenSSL.
@@ -95,7 +101,17 @@ pub async fn json<T: DeserializeOwned>(resp: Response) -> AppResult<T> {
 
 pub fn net_error(e: reqwest::Error) -> AppError {
     // Never include the address: it may carry an API key in the query.
-    AppError::Net(e.without_url().to_string())
+    // A server that took the question but did not answer in time is told apart from no connection.
+    let slow = e.is_timeout() && !e.is_connect();
+    let offline = e.is_connect();
+    let text = e.without_url().to_string();
+    AppError::Net(if slow {
+        format!("{TIMED_OUT}: {text}")
+    } else if offline {
+        format!("{NO_CONNECTION}: {text}")
+    } else {
+        text
+    })
 }
 
 #[cfg(test)]

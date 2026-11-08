@@ -40,6 +40,9 @@ use tauri::{Emitter, Manager};
 
 use commands::AppState;
 
+/// A background run got a window (the person started the app meanwhile) - it must not quit.
+static WINDOW_OPENED: AtomicBool = AtomicBool::new(false);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
@@ -59,6 +62,13 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.set_focus();
+                } else if let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main") {
+                    // The person started the app during a background run (which has no window):
+                    // the window opens now and the app stays after the run.
+                    if tauri::WebviewWindowBuilder::from_config(app, config).and_then(|b| b.build()).is_ok() {
+                        WINDOW_OPENED.store(true, std::sync::atomic::Ordering::SeqCst);
+                        start_auto_fetch(app.clone());
+                    }
                 }
             }))
             .plugin(tauri_plugin_window_state::Builder::default().build());
@@ -82,13 +92,15 @@ pub fn run() {
                     Err(e.to_string())
                 }
             };
-            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false) });
+            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false), syncing: AtomicBool::new(false) });
             app.manage(preview::Pending::default());
             if background {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     one_pass(&handle, true).await;
-                    handle.exit(0);
+                    if !WINDOW_OPENED.load(std::sync::atomic::Ordering::SeqCst) {
+                        handle.exit(0);
+                    }
                 });
                 return Ok(());
             }

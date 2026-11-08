@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { useI18n } from "../i18n";
-import { fullDate, isWebUrl, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
+import { companyLabel, fullDate, isWebUrl, linksByCity, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
 import { LEARN_MAX_POINTS, LOW_KEYWORD_SCORE } from "../lib/limits";
 import { isPhone } from "../lib/platform";
@@ -82,6 +82,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   const inTrash = offer.deletedAt !== null;
   const inArchive = !inTrash && offer.archivedAt !== null;
   const missing = t("card.missing");
+  const cityLinks = linksByCity(offer.links);
   const titleTr = translatedTitle(offer, lang);
   const descriptionTr = offer.translationLang === lang ? offer.ai.descriptionTranslated : null;
   const hasTranslation = Boolean(titleTr || descriptionTr);
@@ -145,7 +146,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
         </div>
         <div className="pass-field pass-field-wide">
           <span className="pass-label">{t("card.company")}</span>
-          <span className="pass-company">{offer.company}</span>
+          <span className="pass-company">{companyLabel(offer.company, t)}</span>
         </div>
         <div className="pass-grid">
           <div className="pass-field">
@@ -310,24 +311,27 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           <div>
             <dt>{t("card.sources")}</dt>
             <dd>
-              {offer.links.map((l, i) => (
-                <span key={l.source}>
-                  {i > 0 && " · "}
-                  {isWebUrl(l.url) ? (
-                    <a
-                      href={l.url}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onOpenLink(l.url!);
-                      }}
-                    >
-                      {sourceLabel(l.source, t)}
-                    </a>
-                  ) : (
-                    sourceLabel(l.source, t)
-                  )}
-                </span>
-              ))}
+              {offer.links.map((l, i) => {
+                const name = cityLinks.length > 1 && l.city ? `${sourceLabel(l.source, t)} - ${l.city}` : sourceLabel(l.source, t);
+                return (
+                  <span key={`${l.source}|${l.url ?? ""}|${i}`}>
+                    {i > 0 && " · "}
+                    {isWebUrl(l.url) ? (
+                      <a
+                        href={l.url}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onOpenLink(l.url!);
+                        }}
+                      >
+                        {name}
+                      </a>
+                    ) : (
+                      name
+                    )}
+                  </span>
+                );
+              })}
               {/* Adzuna's API terms: their logo, at least 116 x 23 px, linked to their site. */}
               {offer.sources.includes("adzuna") && (
                 <a
@@ -410,11 +414,17 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           <button type="button" className="btn btn-ghost pass-expired" onClick={onExpired} title={offer.expired ? undefined : t("expired.hint")}>
             {!isPhone() && !offer.expired && <kbd aria-hidden="true">W</kbd>} {t(offer.expired ? "expired.undoButton" : "expired.button")}
           </button>
-          {isWebUrl(offer.url) && (
-            <button type="button" className="btn btn-sign pass-open" onClick={() => onOpenLink(offer.url!)}>
-              <IconArrowOut /> {t("card.open")}
-            </button>
-          )}
+          {cityLinks.length > 1
+            ? cityLinks.map((l) => (
+                <button key={l.url} type="button" className="btn btn-sign pass-open" onClick={() => onOpenLink(l.url)}>
+                  <IconArrowOut /> {t("card.openIn", { city: l.city })}
+                </button>
+              ))
+            : isWebUrl(offer.url) && (
+                <button type="button" className="btn btn-sign pass-open" onClick={() => onOpenLink(offer.url!)}>
+                  <IconArrowOut /> {t("card.open")}
+                </button>
+              )}
         </div>
       )}
     </aside>

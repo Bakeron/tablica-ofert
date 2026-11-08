@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::commands::{AppState, with_db};
-use crate::dedup::{fingerprint, normalize};
+use crate::dedup::normalize;
 use crate::error::{AppError, AppResult};
 use crate::filter::Facts;
 use crate::model::*;
@@ -280,6 +280,8 @@ Answer with this JSON object (write summary, flags and why in {language}):\n\
 pub struct Reading {
     pub title: Option<String>,
     pub company: Option<String>,
+    /// The offer's text names this company (AI did not make it up).
+    pub company_in_text: bool,
     pub city: Option<String>,
     pub remote: Option<Remote>,
     pub remote_quote: Option<String>,
@@ -337,12 +339,47 @@ fn real_quote(quote: Option<String>, offer_text: &str) -> Option<String> {
     (nq.len() >= 8 && normalize(offer_text).contains(&nq)).then(|| cut(&q, 300))
 }
 
+/// The amount is written in the offer ("12 000", "12.000", "12k", "12 tys.") - AI did not make it up.
+fn number_in_text(n: i64, text: &str) -> bool {
+    let t: String = text.chars().filter(|c| !matches!(c, ' ' | '\u{a0}' | '\u{202f}' | '.' | ',')).collect::<String>().to_lowercase();
+    let alone = |needle: &str, unit: &[&str]| {
+        t.match_indices(needle).any(|(i, _)| {
+            let after = &t[i + needle.len()..];
+            !t[..i].ends_with(|c: char| c.is_ascii_digit())
+                && !after.starts_with(|c: char| c.is_ascii_digit())
+                && (unit.is_empty() || unit.iter().any(|u| after.starts_with(u)))
+        })
+    };
+    alone(&n.to_string(), &[]) || (n % 1000 == 0 && alone(&(n / 1000).to_string(), &["k", "tys"]))
+}
+
+/// "month", "monthly", "per hour", "h"… - `None` when AI did not say.
+fn salary_period(v: &Value) -> Option<SalaryPeriod> {
+    let p = normalize(v.get("salary_period")?.as_str()?);
+    if ["hour", "hourly", "per hour", "h", "godzina", "godzinowo"].contains(&p.as_str()) {
+        Some(SalaryPeriod::Hour)
+    } else if ["month", "monthly", "per month", "m", "miesiac", "miesiecznie"].contains(&p.as_str()) {
+        Some(SalaryPeriod::Month)
+    } else {
+        None
+    }
+}
+
 pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64], app_language: &str) -> Reading {
-    let remote = v.get("remote").and_then(Value::as_str).and_then(Remote::parse).filter(|r| *r != Remote::Unknown);
+    // The form of work and the salary may decide the hard filter - taken only when the offer
+    // says so (a quote it really contains, amounts written in it, a stated period).
+    let remote_quote = real_quote(s(v, "remote_quote", 400), offer_text);
+    let remote = v
+        .get("remote")
+        .and_then(Value::as_str)
+        .and_then(Remote::parse)
+        .filter(|r| *r != Remote::Unknown && remote_quote.is_some());
     let currency = s(v, "salary_currency", 3)
         .map(|c| c.to_ascii_uppercase())
         .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()));
-    let (mut salary_min, mut salary_max) = (num(v, "salary_min"), num(v, "salary_max"));
+    let period = salary_period(v);
+    let stated = |n: Option<i64>| n.filter(|n| period.is_some() && number_in_text(*n, offer_text));
+    let (mut salary_min, mut salary_max) = (stated(num(v, "salary_min")), stated(num(v, "salary_max")));
     if let (Some(a), Some(b)) = (salary_min, salary_max) {
         if a > b {
             std::mem::swap(&mut salary_min, &mut salary_max);
@@ -371,20 +408,19 @@ pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64], app_la
     }
     let has_salary = salary_min.is_some() || salary_max.is_some();
     let translation = translation(v, language.as_deref(), app_language);
+    let company = s(v, "company", 300);
+    let company_in_text = company.as_deref().map(normalize).is_some_and(|c| c.len() >= 2 && normalize(offer_text).contains(&c));
     Reading {
         title: s(v, "title", 300),
-        company: s(v, "company", 300),
+        company,
+        company_in_text,
         city: s(v, "city", 100),
         remote,
-        remote_quote: real_quote(s(v, "remote_quote", 400), offer_text),
+        remote_quote,
         salary_min,
         salary_max,
         salary_currency: if has_salary { currency.or(Some("PLN".into())) } else { None },
-        salary_period: if has_salary {
-            Some(v.get("salary_period").and_then(Value::as_str).and_then(SalaryPeriod::parse).unwrap_or(SalaryPeriod::Month))
-        } else {
-            None
-        },
+        salary_period: if has_salary { period } else { None },
         contract: s(v, "contract", 100),
         level,
         language,
@@ -416,21 +452,13 @@ fn translation(v: &Value, offer_language: Option<&str>, app_language: &str) -> O
 /// Fills only what is missing - data from the source or typed by the user is never overwritten.
 pub fn store(conn: &mut Connection, offer_id: i64, r: &Reading) -> AppResult<()> {
     let tx = conn.transaction()?;
-    let (company, title): (String, String) =
-        tx.query_row("SELECT company, title FROM offers WHERE id = ?1", [offer_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
-    // An e-mail alert without a company name got a placeholder - AI may know the real one.
+    let company: String = tx.query_row("SELECT company FROM offers WHERE id = ?1", [offer_id], |row| row.get(0))?;
+    // An e-mail alert without a company name got a placeholder - AI may find the real one in the
+    // offer's text (never a name the text does not have). The fingerprint stays: the same alert
+    // coming again still finds this offer, and a deleted one stays deleted.
     if company.starts_with("? (") {
-        if let Some(real) = &r.company {
-            let print = fingerprint(real, &title);
-            let taken: bool = tx
-                .query_row(
-                    "SELECT EXISTS (SELECT 1 FROM offers WHERE fingerprint = ?1) OR EXISTS (SELECT 1 FROM removed_offers WHERE fingerprint = ?1)",
-                    [&print],
-                    |row| row.get(0),
-                )?;
-            if !taken {
-                tx.execute("UPDATE offers SET company = ?2, fingerprint = ?3 WHERE id = ?1", params![offer_id, real, print])?;
-            }
+        if let Some(real) = r.company.as_ref().filter(|c| r.company_in_text && !c.starts_with("? (")) {
+            tx.execute("UPDATE offers SET company = ?2 WHERE id = ?1", params![offer_id, real])?;
         }
     }
     let has_salary: bool = tx.query_row(
@@ -564,6 +592,14 @@ fn provider_problem(e: &AppError) -> bool {
     )
 }
 
+/// The provider is down (5xx) or cannot be reached - another provider may still answer.
+fn server_or_offline(e: &AppError) -> bool {
+    match e {
+        AppError::Provider { status, .. } => *status >= 500,
+        _ => client::problem(e) == Problem::Offline,
+    }
+}
+
 struct Rating<'a>(&'a AppState);
 
 impl Drop for Rating<'_> {
@@ -578,7 +614,13 @@ async fn rate(ai: &Ai, job: &Job, app_language: &str) -> AppResult<Reading> {
     let value = client::json_object(&answer)?;
     let offer_text = offer_block(&job.facts);
     let allowed: Vec<i64> = job.profiles.iter().map(|p| p.id).collect();
-    Ok(read_answer(&value, &offer_text, &allowed, app_language))
+    let reading = read_answer(&value, &offer_text, &allowed, app_language);
+    // A score missing for a profile (`{}`, a profile's name instead of its number): the answer is
+    // broken - the offer is marked and its earlier scores stay.
+    if reading.scores.len() < allowed.len() {
+        return Err(AppError::Net("JSON answer without a score for every profile".into()));
+    }
+    Ok(reading)
 }
 
 /// Reads offers waiting for AI (newest first, at most `PER_RUN`), within the daily limit.
@@ -650,9 +692,10 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                     report.rated += 1;
                     break;
                 }
-                // A broken answer: this offer is skipped, the next one is tried.
-                Err(AppError::Net(msg)) if msg.contains("JSON") => {
-                    with_db(state, |c| mark_failed(c, job.id, &msg))?;
+                // A broken, empty or refused answer, or this offer took too long: the offer is
+                // marked (it does not block the queue in every run), the next one is tried.
+                Err(e) if client::problem(&e) == Problem::Answer || matches!(&e, AppError::Net(m) if m.starts_with(crate::net::TIMED_OUT)) => {
+                    with_db(state, |c| mark_failed(c, job.id, &e.to_string()))?;
                     report.failed += 1;
                     break;
                 }
@@ -672,9 +715,10 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                     progress(Some(Progress::new("ai", None, i + 1, ids.len())));
                     waits += 1;
                 }
-                // Wrong key, API turned off, no such model: the same offer goes to the next provider,
-                // this one is asked again in the next run.
-                Err(e) if provider_problem(&e) => {
+                // Wrong key, API turned off, no such model, a server error or no connection to this
+                // provider (Ollama not started): the same offer goes to the next provider, this one is
+                // asked again in the next run. The run stops only when no provider is left.
+                Err(e) if provider_problem(&e) || server_or_offline(&e) => {
                     report.problems.push(AiProblem::new(cfg, &e));
                     last_error = e;
                     at += 1;
@@ -687,6 +731,10 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                 }
             }
         }
+    }
+    // AI filled in requirements - the words the ratings teach may have changed.
+    if report.rated > 0 {
+        with_db(state, crate::learn::refresh)?;
     }
     report.waiting = with_db(state, |c| {
         Ok(c.query_row(
@@ -992,7 +1040,7 @@ Read this job offer and answer with one JSON object:
   \"contract\": e.g. \"UoP\", \"B2B\" or null, \"level\": \"junior\" | \"mid\" | \"senior\" | null,
   \"requirements\": short comma-separated list of required skills or null }}
 The text may contain menus and other parts of the page - ignore them.",
-        title_hint.map(|t| one_line(t, 300)).unwrap_or_default(),
+        title_hint.map(|t| one_line(t, 300).replace(['<', '>'], " ")).unwrap_or_default(),
         offer_text
     );
     let answer = ai.ask(RATE_SYSTEM, &prompt, true).await;
@@ -1245,6 +1293,27 @@ mod tests {
     }
 
     #[test]
+    fn facts_from_ai_need_the_offers_own_words() {
+        // Amounts the offer does not have, a missing period, a form of work without a quote and a
+        // company the text never names are not taken - they could decide the hard filter.
+        let v = json!({
+            "company": "Wielka Korporacja", "remote": "no", "remote_quote": null,
+            "salary_min": 9000, "salary_max": 11000, "salary_period": "month",
+            "scores": [{"profile": 1, "score": 50}]
+        });
+        let r = read_answer(&v, OFFER, &[1], "pl");
+        assert_eq!((r.salary_min, r.salary_max, r.salary_period), (None, None, None));
+        assert_eq!(r.remote, None);
+        assert!(!r.company_in_text);
+        let v = json!({ "salary_min": 12000, "salary_max": 16000, "salary_period": null, "scores": [] });
+        assert_eq!(read_answer(&v, OFFER, &[], "pl").salary_min, None);
+        let v = json!({ "salary_min": 12000, "salary_max": 16000, "salary_period": "monthly", "scores": [] });
+        let r = read_answer(&v, OFFER, &[], "pl");
+        assert_eq!((r.salary_min, r.salary_period), (Some(12000), Some(SalaryPeriod::Month)));
+        assert!(number_in_text(15000, "15k PLN") && number_in_text(8000, "od 8 tys. zł") && !number_in_text(100, "1000 zł"));
+    }
+
+    #[test]
     fn answer_is_checked_field_by_field() {
         let v = json!({
             "title": "Frontend Developer", "company": "  Przykładowa\nFirma ", "city": "null",
@@ -1336,6 +1405,7 @@ mod tests {
         assert_eq!(pending_ids(&conn, 10).unwrap(), vec![id]);
         let reading = Reading {
             company: Some("Firma Prawdziwa".into()),
+            company_in_text: true,
             city: Some("Wrocław".into()),
             remote: Some(Remote::Yes),
             summary: Some("Krótko".into()),

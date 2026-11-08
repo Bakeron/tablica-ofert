@@ -12,8 +12,8 @@ export const SALARY_FAR_ABOVE = 2;
 export const PASSWORD_MIN = 8;
 /** Longest key or password (`secrets::MAX_SECRET`). */
 export const SECRET_MAX = 512;
-/** Ratings needed before anything is learned from them (`learn::MIN_RATINGS`). */
-export const LEARN_MIN_RATINGS = 5;
+/** Ratings needed on each side ("Very" and "No") before anything is learned (`learn::MIN_RATINGS`). */
+export const LEARN_MIN_RATINGS = 2;
 /** The largest correction of a score, up or down (`learn::MAX_POINTS`). */
 export const LEARN_MAX_POINTS = 15;
 /** Longest value of a text setting (`max` of the rules in settings.rs). */

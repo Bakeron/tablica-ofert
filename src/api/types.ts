@@ -232,6 +232,8 @@ export interface SourceLink {
   source: string;
   url: string | null;
   firstSeen: string;
+  /** The city this link gave - one job in two cities keeps both links. */
+  city: string | null;
 }
 
 export interface StageEvent {
@@ -603,7 +605,7 @@ export interface WorkProgress {
 
 /** Error shape sent by the Rust side (`AppError`). */
 export interface AppError {
-  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy" | "outdated";
+  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy" | "outdated" | "other_outdated";
   detail: string;
 }
 
@@ -619,7 +621,7 @@ export function isAppError(value: unknown): value is AppError {
 /** Any thrown value as a text key (`error.*`) for the person plus the technical detail. */
 export function describeError(e: unknown): { key: string; detail: string } {
   if (!isAppError(e)) return { key: "error.generic", detail: String(e) };
-  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy", "outdated"];
+  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy", "outdated", "other_outdated"];
   return { key: known.includes(e.code) ? `error.${e.code}` : "error.generic", detail: e.detail };
 }
 

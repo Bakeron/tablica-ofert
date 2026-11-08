@@ -13,8 +13,9 @@ use rusqlite::{Connection, params};
 use crate::dedup::normalize;
 use crate::error::{AppError, AppResult};
 
-/// Ratings ("Very" and "No" together) needed before anything is learned.
-pub const MIN_RATINGS: i64 = 5;
+/// Ratings needed on each side ("Very" and "No") before anything is learned: one side alone
+/// would tilt every word of the user's own trade the same way.
+pub const MIN_RATINGS: i64 = 2;
 /// The largest correction, up or down. The migration checks the same number.
 pub const MAX_POINTS: i64 = 15;
 /// A word seen in one rated offer says nothing yet.
@@ -227,8 +228,12 @@ fn correction(found: &Found, weights: &[f64]) -> Option<(i64, Vec<String>)> {
 pub fn refresh(conn: &mut Connection) -> AppResult<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM offer_learned", [])?;
-    let ratings: i64 = tx.query_row("SELECT COUNT(*) FROM offers WHERE interest IN ('high', 'no')", [], |r| r.get(0))?;
-    if ratings >= MIN_RATINGS && crate::settings::is_on(&tx, "learn_scores")? {
+    let (very, no): (i64, i64) = tx.query_row(
+        "SELECT COALESCE(SUM(interest = 'high'), 0), COALESCE(SUM(interest = 'no'), 0) FROM offers WHERE interest IN ('high', 'no')",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    if very >= MIN_RATINGS && no >= MIN_RATINGS && crate::settings::is_on(&tx, "learn_scores")? {
         let terms = terms();
         let (mut very, mut no, mut live) = (Vec::new(), Vec::new(), Vec::new());
         {
@@ -320,20 +325,35 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_learned_before_five_ratings_or_with_the_setting_off() {
+    fn nothing_is_learned_before_two_ratings_on_each_side_or_with_the_setting_off() {
         let mut conn = test_db();
-        for title in ["A", "B", "C", "D"] {
+        // Only "Very" - however many - teaches nothing.
+        for title in ["A", "B", "C", "D", "E", "F"] {
             let id = add(&mut conn, title, "WordPress");
             offers::set_interest(&conn, id, Some(Interest::High)).unwrap();
         }
+        let first_no = add(&mut conn, "G", "Java");
+        offers::set_interest(&conn, first_no, Some(Interest::No)).unwrap();
         let offer = add(&mut conn, "Nowa", "WordPress");
         refresh(&mut conn).unwrap();
         assert_eq!(learned(&conn, offer).0, 0);
-        let fifth = add(&mut conn, "E", "WordPress");
-        offers::set_interest(&conn, fifth, Some(Interest::High)).unwrap();
+        let second_no = add(&mut conn, "H", "Java");
+        offers::set_interest(&conn, second_no, Some(Interest::No)).unwrap();
         refresh(&mut conn).unwrap();
         assert!(learned(&conn, offer).0 > 0);
         crate::settings::set(&conn, "learn_scores", "off").unwrap();
+        refresh(&mut conn).unwrap();
+        assert_eq!(learned(&conn, offer).0, 0);
+    }
+
+    #[test]
+    fn only_no_ratings_do_not_push_down_the_users_own_trade() {
+        let mut conn = test_db();
+        for title in ["A", "B", "C", "D", "E", "F"] {
+            let id = add(&mut conn, title, "Developer JavaScript");
+            offers::set_interest(&conn, id, Some(Interest::No)).unwrap();
+        }
+        let offer = add(&mut conn, "Nowa", "Developer JavaScript");
         refresh(&mut conn).unwrap();
         assert_eq!(learned(&conn, offer).0, 0);
     }
@@ -345,6 +365,10 @@ mod tests {
         for title in ["A", "B", "C", "D", "E", "F"] {
             let id = add(&mut conn, title, &many);
             offers::set_interest(&conn, id, Some(Interest::High)).unwrap();
+        }
+        for title in ["G", "H"] {
+            let id = add(&mut conn, title, "Biuro rachunkowe");
+            offers::set_interest(&conn, id, Some(Interest::No)).unwrap();
         }
         let up = add(&mut conn, "Nowa", &many);
         refresh(&mut conn).unwrap();

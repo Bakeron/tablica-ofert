@@ -1309,6 +1309,13 @@ details[open]::details-content {
 .pass-open {
   flex: 1 1 auto;
   justify-content: center;
+  white-space: nowrap;
+}
+
+/* The same job in several cities: one "Open - <city>" per row, at every width. */
+.pass-dock:has(.pass-open + .pass-open) .pass-open {
+  flex-basis: 100%;
+  white-space: normal;
 }
 
 /* "Expired": a quick decision, but not the main one - plain, beside "Open". */
@@ -1330,7 +1337,7 @@ details[open]::details-content {
   }
 
   /* "Expired" and "Open" share the last row; "Open" keeps the most room. */
-  .pass-dock:has(.pass-expired) .pass-open {
+  .pass-dock:has(.pass-expired):not(:has(.pass-open + .pass-open)) .pass-open {
     flex-basis: 0;
   }
 

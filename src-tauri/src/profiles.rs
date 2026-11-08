@@ -248,7 +248,7 @@ pub fn experience_prev(conn: &Connection) -> AppResult<Option<String>> {
 
 const FACT_COLUMNS: &str = "id, title, company, city, remote, salary_min, salary_max, salary_currency,
     salary_period, contract, level, language, requirements, description,
-    (SELECT group_concat(s.source, ',') FROM offer_sources s WHERE s.offer_id = offers.id)";
+    (SELECT group_concat(DISTINCT s.source) FROM offer_sources s WHERE s.offer_id = offers.id)";
 
 fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
     Ok((

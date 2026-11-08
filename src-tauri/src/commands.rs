@@ -22,6 +22,8 @@ pub struct AppState {
     pub fetching: AtomicBool,
     /// Set while AI reads offers.
     pub rating: AtomicBool,
+    /// Set while the sync file on Drive is read or written (sync, new key, deleting it).
+    pub syncing: AtomicBool,
 }
 
 pub fn with_db<T>(state: &AppState, f: impl FnOnce(&mut Connection) -> AppResult<T>) -> AppResult<T> {
@@ -182,7 +184,12 @@ pub async fn restore_offer(state: State<'_, AppState>, id: i64) -> AppResult<()>
 /// `id = null` empties the whole trash.
 #[tauri::command]
 pub async fn purge_offers(state: State<'_, AppState>, id: Option<i64>) -> AppResult<usize> {
-    with_db(&state, |c| offers::purge(c, id))
+    with_db(&state, |c| {
+        let n = offers::purge(c, id)?;
+        // Ratings of deleted offers no longer teach anything.
+        learn::refresh(c)?;
+        Ok(n)
+    })
 }
 
 #[tauri::command]
@@ -601,8 +608,9 @@ pub async fn load_copy(state: State<'_, AppState>, app: tauri::AppHandle, passwo
     let result = crate::backup::load_copy(&db_path, &key, &source, &password);
     *guard = crate::db::open_app_database(&dir, false).map_err(|e| e.to_string());
     result?;
-    if let Err(problem) = guard.as_ref() {
-        return Err(AppError::Locked(problem.clone()));
+    match guard.as_ref() {
+        Err(problem) => return Err(AppError::Locked(problem.clone())),
+        Ok(conn) => crate::backup::copy_wins(conn, &crate::clock::now())?,
     }
     Ok(Some(count))
 }

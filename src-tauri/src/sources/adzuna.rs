@@ -130,11 +130,16 @@ fn predicted(v: &serde_json::Value) -> bool {
 
 /// Adzuna gives yearly amounts in most countries. Very small amounts are hourly rates.
 /// For Poland amounts under 60 000 are taken as monthly - the filter must never reject an
-/// offer because of a wrong guess, and monthly pay in PLN is below that.
+/// offer because of a wrong guess, and monthly pay in PLN is below that. Amounts from 300 to
+/// 3000 PLN are B2B day rates (justjoin.it offers "1200-1400" a day) - below any monthly pay,
+/// so they are left out rather than taken as a month.
 fn salary(value: Option<f64>, country: &str) -> (Option<i64>, Option<SalaryPeriod>) {
     let Some(v) = value.filter(|v| v.is_finite() && *v > 0.0) else { return (None, None) };
     if v < 300.0 {
         return (Some(v.round() as i64), Some(SalaryPeriod::Hour));
+    }
+    if country == "pl" && v < 3000.0 {
+        return (None, None);
     }
     let yearly_from = if country == "pl" { 60_000.0 } else { 10_000.0 };
     let monthly = if v >= yearly_from { v / 12.0 } else { v };
@@ -157,11 +162,14 @@ pub fn to_offer(job: Job, country: &str) -> Option<OfferInput> {
     let has_salary = salary_min.is_some() || salary_max.is_some();
     let city = job.location.as_ref().and_then(|l| {
         // `area` goes from the country down to the town - the last one is the most precise.
+        // A region alone ("mazowieckie") is no town: the filter could not measure it.
+        let town = |t: &String| !super::alerts::is_region(t);
         l.area
             .last()
             .filter(|_| l.area.len() > 1)
+            .filter(|t| town(t))
             .cloned()
-            .or_else(|| l.display_name.as_ref().map(|d| d.split(',').next().unwrap_or(d).to_string()))
+            .or_else(|| l.display_name.as_ref().map(|d| d.split(',').next().unwrap_or(d).trim().to_string()).filter(town))
     });
     // Adzuna gives only the start of the description; the full text is on the linked page.
     let mut description = job.description.map(|d| html_to_text(&d)).unwrap_or_default();
@@ -267,6 +275,9 @@ mod tests {
         assert_eq!(salary(Some(45.0), "gb"), (Some(45), Some(SalaryPeriod::Hour)));
         assert_eq!(salary(Some(36000.0), "gb"), (Some(3000), Some(SalaryPeriod::Month)));
         assert_eq!(salary(Some(18000.0), "pl"), (Some(18000), Some(SalaryPeriod::Month)));
+        // A B2B day rate (real case: "PHP Developer", 1200-1400) is not a month - left out, never "too low".
+        assert_eq!(salary(Some(1200.0), "pl"), (None, None));
+        assert_eq!(salary(Some(272_000.0), "pl"), (Some(22700), Some(SalaryPeriod::Month)));
         assert_eq!(salary(Some(f64::NAN), "pl"), (None, None));
     }
 }

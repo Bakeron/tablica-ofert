@@ -125,11 +125,15 @@ export function createMockApi(): Api {
       expiresAt: null,
       deletedAt: null,
       contentRemoved: null,
-      links: [input.source, ...(demo.extraSources ?? [])].map((source) => ({
-        source,
-        url: input.url ?? null,
-        firstSeen: added,
-      })),
+      links: [
+        ...(demo.linkCities ?? [[null, input.url ?? null] as const]).map(([city, url]) => ({
+          source: input.source,
+          url,
+          firstSeen: added,
+          city,
+        })),
+        ...(demo.extraSources ?? []).map((source) => ({ source, url: input.url ?? null, firstSeen: added, city: null })),
+      ],
       history: stage === "new" ? [{ stage, at: added }] : [{ stage: "new", at: added }, { stage, at: added }],
       filters: [],
       ai: demoAi(demo.ai, demo.score ?? null, demo.scoreSource ?? null, {
@@ -301,7 +305,7 @@ export function createMockApi(): Api {
         expiresAt: null,
         deletedAt: null,
         contentRemoved: null,
-        links: [{ source: input.source, url: input.url ?? null, firstSeen: at }],
+        links: [{ source: input.source, url: input.url ?? null, firstSeen: at, city: input.city ?? null }],
         history: [{ stage: "new", at }],
         filters: [],
         ai: demoAi(undefined, null, null),

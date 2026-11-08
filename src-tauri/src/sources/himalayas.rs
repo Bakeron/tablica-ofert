@@ -369,7 +369,7 @@ fn strip(conn: &mut rusqlite::Connection, ids: &[i64], keep_all: bool) -> AppRes
         }
         // Quotes from the removed text go too; the scores and their short reasons stay.
         tx.execute("UPDATE offer_scores SET quote = NULL WHERE offer_id = ?1", [id])?;
-        tx.execute("UPDATE offer_sources SET url = NULL WHERE offer_id = ?1 AND source = 'himalayas'", [id])?;
+        crate::offers::drop_links(&tx, *id, "himalayas")?;
         crate::profiles::recheck_offer(&tx, *id)?;
         out.kept += 1;
     }

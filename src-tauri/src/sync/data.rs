@@ -7,7 +7,7 @@
 use rusqlite::{Connection, OptionalExtension, Transaction, params, types::Value as Sql};
 use serde_json::{Map, Value, json};
 
-use super::merge::{FORMAT, Row, Snapshot, Tombstone};
+use super::merge::{FORMAT, OFFER_USER_FIELDS, Row, Snapshot, Tombstone};
 use crate::error::{AppError, AppResult};
 
 /// Offer columns that travel (besides `uid`).
@@ -16,7 +16,7 @@ const OFFER_COLS: &[&str] = &[
     "salary_period", "contract", "level", "language", "requirements", "description", "notes", "interest", "favorite",
     "stage", "stage_changed_at", "expires_at", "expired", "added_at", "updated_at", "deleted_at", "ai_status", "ai_at",
     "ai_summary", "ai_flags", "ai_remote_quote", "ai_tr_lang", "ai_title_tr", "ai_description_tr", "content_removed",
-    "published_at", "archived_at", "kept_at",
+    "published_at", "archived_at", "kept_at", "user_changed_at", "expired_by_user",
 ];
 const PROFILE_COLS: &[&str] = &["name", "position", "description", "criteria", "description_prev", "created_at", "updated_at"];
 const EVENT_COLS: &[&str] = &["kind", "at", "minutes", "note", "created_at"];
@@ -65,16 +65,23 @@ fn rows(conn: &Connection, sql: &str, cols: &[&str], at_col: &str) -> AppResult<
 
 /// Builds the snapshot of this device.
 pub fn export(conn: &Connection, device: &str, now: &str) -> AppResult<Snapshot> {
-    let mut s = Snapshot { format: FORMAT, device: device.into(), exported_at: now.into(), ..Default::default() };
+    let schema: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    let mut s = Snapshot { format: FORMAT, schema, device: device.into(), exported_at: now.into(), ..Default::default() };
     let cols = |list: &[&str]| list.iter().map(|c| format!("o.{c}")).collect::<Vec<_>>().join(", ");
 
     let mut offers = rows(conn, &format!("SELECT o.uid, {} FROM offers o WHERE NOT {NOT_SYNCED}", cols(OFFER_COLS)), OFFER_COLS, "updated_at")?;
     for o in &mut offers {
         let id: i64 = conn.query_row("SELECT id FROM offers WHERE uid = ?1", [&o.uid], |r| r.get(0))?;
+        // The row's time is the later of its two times (the merge compares each group by its own).
+        if let Some(user) = o.data.get("user_changed_at").and_then(Value::as_str).filter(|u| *u > o.at.as_str()) {
+            o.at = user.to_string();
+        }
         let data = o.data.as_object_mut().expect("object");
-        let mut stmt = conn.prepare("SELECT source, url, first_seen FROM offer_sources WHERE offer_id = ?1 ORDER BY source")?;
+        let mut stmt = conn.prepare("SELECT source, url, first_seen, city FROM offer_sources WHERE offer_id = ?1 ORDER BY source, url, first_seen")?;
         let sources: Vec<Value> = stmt
-            .query_map([id], |r| Ok(json!({ "source": r.get::<_, String>(0)?, "url": r.get::<_, Option<String>>(1)?, "first_seen": r.get::<_, String>(2)? })))?
+            .query_map([id], |r| {
+                Ok(json!({ "source": r.get::<_, String>(0)?, "url": r.get::<_, Option<String>>(1)?, "first_seen": r.get::<_, String>(2)?, "city": r.get::<_, Option<String>>(3)? }))
+            })?
             .collect::<Result<_, _>>()?;
         let mut stmt = conn.prepare("SELECT stage, at FROM stage_history WHERE offer_id = ?1 ORDER BY at, id")?;
         let history: Vec<Value> = stmt
@@ -177,6 +184,18 @@ fn upsert(tx: &Transaction, table: &str, cols: &[&str], uid: &str, data: &Value,
     }
     let exists: bool = tx.query_row(&format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE uid = ?1)"), [uid], |r| r.get(0))?;
     if exists {
+        // Only the fields the row carries: a device with an older app version knows fewer
+        // columns, and a missing one must keep its local value, not become empty.
+        let (names, values): (Vec<String>, Vec<Sql>) = names
+            .into_iter()
+            .zip(values)
+            .enumerate()
+            .filter(|(i, _)| *i >= cols.len() || data.get(cols[*i]).is_some())
+            .map(|(_, pair)| pair)
+            .unzip();
+        if names.is_empty() {
+            return Ok(());
+        }
         let set = names.iter().enumerate().map(|(i, n)| format!("{n} = ?{}", i + 2)).collect::<Vec<_>>().join(", ");
         let mut all = vec![Sql::Text(uid.to_string())];
         all.extend(values);
@@ -190,8 +209,52 @@ fn upsert(tx: &Transaction, table: &str, cols: &[&str], uid: &str, data: &Value,
     Ok(())
 }
 
+/// The row's time of change as the merge saw it: a time from the future (a device with its clock
+/// ahead) is cut to now before it is saved - saved as it came, it would beat every later change
+/// from the other device until the clock catches up.
+fn at_most(data: &Value, col: &str, at: &str) -> Value {
+    let mut data = data.clone();
+    if data.get(col).and_then(Value::as_str).is_some_and(|t| t > at) {
+        data[col] = Value::String(at.to_string());
+    }
+    data
+}
+
 fn local_at(tx: &Transaction, table: &str, at_col: &str, uid: &str) -> AppResult<Option<String>> {
     Ok(tx.query_row(&format!("SELECT {at_col} FROM {table} WHERE uid = ?1"), [uid], |r| r.get(0)).optional()?.flatten())
+}
+
+/// Whether the merged row brings a group of fields this device does not have yet: its time is
+/// later, or the same with another content (the merge settled a tie for the other side). A local
+/// change made while the sync ran (a later time here) stays.
+fn newer_group(merged: &Value, local: &Value, user: bool) -> bool {
+    let key = if user { "user_changed_at" } else { "updated_at" };
+    let time = |v: &Value| v.get(key).or_else(|| v.get("updated_at")).and_then(Value::as_str).unwrap_or_default().to_string();
+    let (theirs, mine) = (time(merged), time(local));
+    if theirs != mine {
+        return theirs > mine;
+    }
+    let group = |v: &Value| -> Vec<(String, Value)> {
+        let mut fields: Vec<(String, Value)> = v
+            .as_object()
+            .map(|o| o.iter().filter(|(k, _)| OFFER_USER_FIELDS.contains(&k.as_str()) == user).map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default();
+        fields.sort_by(|a, b| a.0.cmp(&b.0));
+        fields
+    };
+    group(merged) != group(local)
+}
+
+/// The stage history goes with the stage (the user's fields).
+fn write_history(tx: &Transaction, id: i64, data: &Value) -> AppResult<()> {
+    let history: Vec<&Value> = data.get("history").and_then(Value::as_array).into_iter().flatten().collect();
+    if !history.is_empty() {
+        tx.execute("DELETE FROM stage_history WHERE offer_id = ?1", [id])?;
+        for h in history {
+            tx.execute("INSERT INTO stage_history (offer_id, stage, at) VALUES (?1, ?2, ?3)", params![id, to_sql(h.get("stage")), to_sql(h.get("at"))])?;
+        }
+    }
+    Ok(())
 }
 
 fn offer_id(tx: &Transaction, uid: &str) -> AppResult<Option<i64>> {
@@ -218,22 +281,32 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         if crate::profiles::check_synced(&r.data).is_err() {
             continue;
         }
-        upsert(&tx, "profiles", PROFILE_COLS, &r.uid, &r.data, &[])?;
+        upsert(&tx, "profiles", PROFILE_COLS, &r.uid, &at_most(&r.data, "updated_at", &r.at), &[])?;
     }
 
     for t in table("removed") {
         tx.execute("INSERT OR IGNORE INTO removed_offers (fingerprint, removed_at) VALUES (?1, ?2)", params![t.uid, t.at])?;
     }
 
+    // This device's offers as they are now: a group is written only when the merge took it from
+    // the other side (newer, or the same time and another content).
+    let mine: std::collections::HashMap<String, Row> =
+        export(&tx, "", now)?.tables.remove("offers").unwrap_or_default().into_iter().map(|r| (r.uid.clone(), r)).collect();
     for r in table("offers") {
         // The same field rules as data from outside; a bad row is skipped, the local copy stays.
         if crate::offers::check_synced(&r.data).is_err() {
             continue;
         }
         let fingerprint = r.data.get("fingerprint").and_then(Value::as_str).unwrap_or_default();
-        let blocked: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM removed_offers WHERE fingerprint = ?1)", [fingerprint], |x| x.get(0))?;
-        if blocked {
-            continue;
+        let removed: Option<String> =
+            tx.query_row("SELECT removed_at FROM removed_offers WHERE fingerprint = ?1", [fingerprint], |x| x.get(0)).optional()?;
+        if let Some(removed) = removed {
+            // Deleted for good - unless the user changed it later (a copy loaded after that).
+            let user = r.data.get("user_changed_at").and_then(Value::as_str).unwrap_or_default();
+            if user <= removed.as_str() {
+                continue;
+            }
+            tx.execute("DELETE FROM removed_offers WHERE fingerprint = ?1", [fingerprint])?;
         }
         // The same offer added on both devices (same company and title, different ids):
         // both keep the smaller id, the other one becomes a tombstone - devices agree.
@@ -245,32 +318,51 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
                 tombstone(&tx, "offers", &r.uid, now)?;
                 continue;
             }
-            tx.execute("UPDATE offers SET uid = ?2 WHERE uid = ?1", params![twin, r.uid])?;
+            if offer_id(&tx, &r.uid)?.is_some() {
+                // Both ids are here already (the company of one changed): the larger one goes -
+                // renaming it would break the unique id and stop every sync.
+                tx.execute("DELETE FROM offers WHERE uid = ?1", [&twin])?;
+            } else {
+                tx.execute("UPDATE offers SET uid = ?2 WHERE uid = ?1", params![twin, r.uid])?;
+            }
             tombstone(&tx, "offers", &twin, now)?;
         }
-        if local_at(&tx, "offers", "updated_at", &r.uid)?.is_some_and(|mine| mine >= r.at) {
+        let data = at_most(&at_most(&r.data, "updated_at", &r.at), "user_changed_at", &r.at);
+        let (write_data, write_user) = match (mine.get(&r.uid), offer_id(&tx, &r.uid)?) {
+            (_, None) => (true, true),
+            (Some(local), Some(_)) => (newer_group(&data, &local.data, false), newer_group(&data, &local.data, true)),
+            // Here, but not synced from this side (rejected by the filter): by the times only.
+            (None, Some(_)) => (
+                local_at(&tx, "offers", "updated_at", &r.uid)?.is_none_or(|t| t < r.at),
+                local_at(&tx, "offers", "COALESCE(user_changed_at, updated_at)", &r.uid)?.is_none_or(|t| t < r.at),
+            ),
+        };
+        if !write_data && !write_user {
             continue;
         }
-        upsert(&tx, "offers", OFFER_COLS, &r.uid, &r.data, &[])?;
+        let cols: Vec<&str> = OFFER_COLS
+            .iter()
+            .copied()
+            .filter(|c| if OFFER_USER_FIELDS.contains(c) { write_user } else { write_data })
+            .collect();
+        upsert(&tx, "offers", &cols, &r.uid, &data, &[])?;
         let id = offer_id(&tx, &r.uid)?.ok_or(AppError::NotFound)?;
+        if write_user {
+            write_history(&tx, id, &r.data)?;
+        }
+        if !write_data {
+            continue;
+        }
         for s in r.data.get("sources").and_then(Value::as_array).into_iter().flatten() {
             tx.execute(
-                "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
-                params![id, to_sql(s.get("source")), to_sql(s.get("url")), to_sql(s.get("first_seen"))],
+                "INSERT OR IGNORE INTO offer_sources (offer_id, source, url, first_seen, city) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, to_sql(s.get("source")), to_sql(s.get("url")), to_sql(s.get("first_seen")), to_sql(s.get("city"))],
             )?;
         }
-        // A source whose job closed (its terms): its link goes on this device too.
-        tx.execute(
-            "UPDATE offer_sources SET url = NULL WHERE offer_id = ?1
-             AND source = (SELECT content_removed FROM offers WHERE id = ?1)",
-            [id],
-        )?;
-        let history: Vec<&Value> = r.data.get("history").and_then(Value::as_array).into_iter().flatten().collect();
-        if !history.is_empty() {
-            tx.execute("DELETE FROM stage_history WHERE offer_id = ?1", [id])?;
-            for h in history {
-                tx.execute("INSERT INTO stage_history (offer_id, stage, at) VALUES (?1, ?2, ?3)", params![id, to_sql(h.get("stage")), to_sql(h.get("at"))])?;
-            }
+        // A source whose job closed (its terms): its links go on this device too.
+        let closed: Option<String> = tx.query_row("SELECT content_removed FROM offers WHERE id = ?1", [id], |x| x.get(0))?;
+        if let Some(source) = closed {
+            crate::offers::drop_links(&tx, id, &source)?;
         }
         tx.execute("DELETE FROM offer_scores WHERE offer_id = ?1 AND source = 'ai'", [id])?;
         for sc in r.data.get("ai_scores").and_then(Value::as_array).into_iter().flatten() {
@@ -296,7 +388,9 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
             if local_at(&tx, db_table, at_col, &r.uid)?.is_some_and(|mine| mine >= r.at) {
                 continue;
             }
-            upsert(&tx, db_table, cols, &r.uid, &r.data, &[("offer_id", Sql::Integer(id))])?;
+            // The log's time is the date the person chose, not a time of change - it stays.
+            let data = if name == "contacts" { at_most(&r.data, "updated_at", &r.at) } else { r.data.clone() };
+            upsert(&tx, db_table, cols, &r.uid, &data, &[("offer_id", Sql::Integer(id))])?;
         }
     }
 
@@ -394,6 +488,159 @@ mod tests {
         let d = crate::offers::detail(&pc, id).unwrap();
         assert_eq!(d.row.stage, Stage::Applied);
         assert_eq!(d.history.len(), 2);
+    }
+
+    fn set_times(conn: &Connection, data: Option<&str>, user: Option<&str>) {
+        if let Some(t) = data {
+            conn.execute("UPDATE offers SET updated_at = ?1", [t]).unwrap();
+        }
+        if let Some(t) = user {
+            conn.execute("UPDATE offers SET user_changed_at = ?1", [t]).unwrap();
+        }
+    }
+
+    fn only_id(conn: &Connection) -> i64 {
+        conn.query_row("SELECT id FROM offers", [], |r| r.get(0)).unwrap()
+    }
+
+    /// The case from the audit of 8.11.2026: the stage and note set on the phone at 10:00 survive
+    /// the PC fetching the same offer again at 10:30 - and the PC's new source reaches the phone.
+    #[test]
+    fn a_fetch_on_one_device_does_not_undo_the_users_change_on_the_other() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let pc_id = add(&mut pc, "Frontend Developer");
+        round(&mut pc, &mut phone);
+        for c in [&pc, &phone] {
+            set_times(c, Some("2026-11-01T00:00:00Z"), Some("2026-11-01T00:00:00Z"));
+        }
+        let phone_id = only_id(&phone);
+        crate::offers::set_stage(&mut phone, phone_id, Stage::Applied).unwrap();
+        crate::offers::set_notes(&phone, phone_id, "Wysłane CV".into()).unwrap();
+        set_times(&phone, None, Some("2026-11-08T10:00:00Z"));
+        let again = OfferInput {
+            title: "Frontend Developer".into(),
+            company: "Firma Testowa".into(),
+            source: "jjit".into(),
+            description: Some("Pełny opis z portalu".into()),
+            ..Default::default()
+        };
+        assert_eq!(crate::offers::add(&mut pc, again).unwrap(), AddOutcome::Merged { id: pc_id });
+        set_times(&pc, Some("2026-11-08T10:30:00Z"), None);
+        round(&mut pc, &mut phone);
+        for (conn, id) in [(&pc, pc_id), (&phone, phone_id)] {
+            let d = crate::offers::detail(conn, id).unwrap();
+            assert_eq!((d.row.stage, d.notes.as_str()), (Stage::Applied, "Wysłane CV"));
+            assert_eq!(d.description.as_deref(), Some("Pełny opis z portalu"));
+            assert_eq!(d.links.len(), 2);
+            assert_eq!(d.history.len(), 2);
+        }
+    }
+
+    #[test]
+    fn the_trash_on_one_device_is_not_undone_by_a_fetch_on_the_other() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let pc_id = add(&mut pc, "Frontend Developer");
+        round(&mut pc, &mut phone);
+        for c in [&pc, &phone] {
+            set_times(c, Some("2026-11-01T00:00:00Z"), Some("2026-11-01T00:00:00Z"));
+        }
+        crate::offers::trash(&phone, only_id(&phone)).unwrap();
+        set_times(&phone, None, Some("2026-11-08T10:00:00Z"));
+        let again = OfferInput { title: "Frontend Developer".into(), company: "Firma Testowa".into(), source: "jjit".into(), ..Default::default() };
+        crate::offers::add(&mut pc, again).unwrap();
+        set_times(&pc, Some("2026-11-08T10:30:00Z"), None);
+        round(&mut pc, &mut phone);
+        assert!(crate::offers::detail(&pc, pc_id).unwrap().deleted_at.is_some());
+        assert!(titles(&pc).is_empty() && titles(&phone).is_empty());
+    }
+
+    #[test]
+    fn a_purged_offer_is_not_brought_back_by_a_fetch_on_the_other_device() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        add(&mut pc, "Frontend Developer");
+        round(&mut pc, &mut phone);
+        let phone_id = only_id(&phone);
+        crate::offers::trash(&phone, phone_id).unwrap();
+        crate::offers::purge(&mut phone, Some(phone_id)).unwrap();
+        phone.execute("UPDATE sync_deleted SET at = '2026-11-08T10:00:00Z'", []).unwrap();
+        // The PC fetched the same offer later - data only, no change of the user's.
+        let again = OfferInput { title: "Frontend Developer".into(), company: "Firma Testowa".into(), source: "jjit".into(), ..Default::default() };
+        crate::offers::add(&mut pc, again).unwrap();
+        set_times(&pc, Some("2026-11-08T10:30:00Z"), Some("2026-11-01T00:00:00Z"));
+        round(&mut pc, &mut phone);
+        let count = |c: &Connection| c.query_row("SELECT count(*) FROM offers", [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!((count(&pc), count(&phone)), (0, 0));
+    }
+
+    /// The same second on both devices: both pick the same version instead of keeping their own.
+    #[test]
+    fn a_change_at_the_same_second_ends_the_same_on_both_devices() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        add(&mut pc, "Frontend Developer");
+        round(&mut pc, &mut phone);
+        crate::offers::set_notes(&pc, only_id(&pc), "z komputera".into()).unwrap();
+        crate::offers::set_notes(&phone, only_id(&phone), "z telefonu".into()).unwrap();
+        for c in [&pc, &phone] {
+            set_times(c, Some("2026-11-08T10:00:00Z"), Some("2026-11-08T11:00:00Z"));
+        }
+        round(&mut pc, &mut phone);
+        let notes = |c: &Connection| crate::offers::detail(c, only_id(c)).unwrap().notes;
+        assert_eq!(notes(&pc), notes(&phone));
+    }
+
+    /// "Load a copy" on the PC after the phone deleted things: the copy wins on both devices.
+    #[test]
+    fn a_loaded_copy_wins_over_later_deletions_on_the_other_device() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        add(&mut pc, "Frontend Developer");
+        add(&mut pc, "QA Engineer");
+        round(&mut pc, &mut phone);
+        for c in [&pc, &phone] {
+            set_times(c, Some("2026-11-01T00:00:00Z"), Some("2026-11-01T00:00:00Z"));
+        }
+        // The phone: one offer to the trash, one deleted for good - later than the copy.
+        let id_of = |c: &Connection, title: &str| c.query_row("SELECT id FROM offers WHERE title = ?1", [title], |r| r.get::<_, i64>(0)).unwrap();
+        crate::offers::trash(&phone, id_of(&phone, "Frontend Developer")).unwrap();
+        let qa = id_of(&phone, "QA Engineer");
+        crate::offers::trash(&phone, qa).unwrap();
+        crate::offers::purge(&mut phone, Some(qa)).unwrap();
+        for sql in ["UPDATE offers SET user_changed_at = '2026-11-05T00:00:00Z'", "UPDATE sync_deleted SET at = '2026-11-05T00:00:00Z'", "UPDATE removed_offers SET removed_at = '2026-11-05T00:00:00Z'"] {
+            phone.execute(sql, []).unwrap();
+        }
+        // The PC loads its copy (here: its data as it is) - it counts as changed now.
+        crate::backup::copy_wins(&pc, "2026-11-08T12:00:00Z").unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(titles(&pc), vec!["Frontend Developer", "QA Engineer"]);
+        assert_eq!(titles(&phone), vec!["Frontend Developer", "QA Engineer"]);
+        // Fetching the restored offer again works on both.
+        for c in [&mut pc, &mut phone] {
+            assert_ne!(add_outcome(c, "QA Engineer"), AddOutcome::Blocked);
+        }
+    }
+
+    #[test]
+    fn a_clock_ahead_and_an_older_app_do_not_spoil_the_row() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let id = add(&mut pc, "Frontend Developer");
+        round(&mut pc, &mut phone);
+        let published: Option<String> = pc.query_row("SELECT published_at FROM offers WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        assert!(published.is_some());
+        // The phone's clock is years ahead, and its older app does not know `published_at`.
+        let mut sb = export(&phone, "phone", NOW).unwrap();
+        for r in sb.tables.get_mut("offers").unwrap() {
+            r.at = "2031-01-01T00:00:00Z".into();
+            r.data["updated_at"] = serde_json::json!("2031-01-01T00:00:00Z");
+            r.data["notes"] = serde_json::json!("z telefonu");
+            r.data.as_object_mut().unwrap().remove("published_at");
+        }
+        let (merged, _) = merge(&export(&pc, "pc", NOW).unwrap(), &sb, NOW);
+        apply(&mut pc, &merged, NOW).unwrap();
+        let (notes, updated, kept): (String, String, Option<String>) = pc
+            .query_row("SELECT notes, updated_at, published_at FROM offers WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        assert_eq!(notes, "z telefonu");
+        assert!(updated.as_str() <= NOW, "{updated}");
+        assert_eq!(kept, published);
     }
 
     #[test]

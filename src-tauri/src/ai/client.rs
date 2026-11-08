@@ -161,7 +161,16 @@ impl Ai {
         if json {
             body["response_format"] = json!({ "type": "json_object" });
         }
+        // The same offer read again gives about the same score (the default is up to 1.0).
+        // OpenAI's newest models take only the default, so it is not sent there.
+        if self.provider != Provider::OpenAi {
+            body["temperature"] = json!(0.2);
+        }
         let mut req = self.http.post(self.chat_url()).json(&body);
+        // A model on the processor alone needs a minute or more for one offer.
+        if self.provider == Provider::Ollama {
+            req = req.timeout(std::time::Duration::from_secs(300));
+        }
         if let Some(key) = &self.key {
             req = req.bearer_auth(key);
         }
@@ -303,7 +312,11 @@ pub fn problem(e: &AppError) -> Problem {
         AppError::Provider { kind, .. } => *kind,
         AppError::Missing(_) => Problem::NoKey,
         AppError::Limit(_) => Problem::Cap,
-        AppError::Net(msg) if msg == EMPTY || msg.contains("JSON") || msg.contains("refused") => Problem::Answer,
+        AppError::Net(msg)
+            if msg == EMPTY || msg.contains("JSON") || msg.contains("refused") || msg.starts_with("unexpected answer") =>
+        {
+            Problem::Answer
+        }
         AppError::Net(_) => Problem::Offline,
         _ => Problem::Other,
     }
@@ -313,21 +326,29 @@ pub fn problem(e: &AppError) -> Problem {
 pub fn retry_after(e: &AppError) -> Option<std::time::Duration> {
     let AppError::Provider { message, .. } = e else { return None };
     let lower = message.to_lowercase();
-    let rest = &lower[lower.find("try again in ")? + "try again in ".len()..];
+    // Groq, OpenAI: "try again in 7.5s"; Gemini: "Please retry in 33s".
+    let start = ["try again in ", "retry in "].iter().find_map(|w| lower.find(w).map(|i| i + w.len()))?;
+    let rest = &lower[start..];
     let mut seconds = 0.0;
     let mut number = String::new();
-    for c in rest.chars() {
+    let mut chars = rest.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
             '0'..='9' | '.' => number.push(c),
-            'm' if !number.is_empty() => seconds += number.parse::<f64>().ok()? * 60.0,
+            // "260ms" - milliseconds, not minutes.
+            'm' if !number.is_empty() && chars.peek() == Some(&'s') => {
+                seconds += number.parse::<f64>().ok()? / 1000.0;
+                break;
+            }
+            'm' if !number.is_empty() => {
+                seconds += number.parse::<f64>().ok()? * 60.0;
+                number.clear();
+            }
             's' if !number.is_empty() => {
                 seconds += number.parse::<f64>().ok()?;
                 break;
             }
             _ => break,
-        }
-        if c == 'm' {
-            number.clear();
         }
     }
     (seconds > 0.0 && seconds.is_finite()).then(|| std::time::Duration::from_secs_f64(seconds.min(3600.0)))
@@ -367,7 +388,7 @@ fn problem_in(status: u16, body: &str) -> Problem {
     }
     // A limit per minute (Groq: tokens or requests per minute) or a model busy for everybody
     // (OpenRouter's free models) - not the daily limit: a short wait is enough.
-    if has(&["rate-limited upstream", "temporarily rate-limited", "free-models-per-min", "overloaded", "per minute", "(tpm)", "(rpm)"]) {
+    if has(&["rate-limited upstream", "temporarily rate-limited", "free-models-per-min", "overloaded", "per minute", "perminute", "(tpm)", "(rpm)"]) {
         return Problem::Busy;
     }
     let model_gone = has(&[
@@ -514,6 +535,12 @@ mod tests {
         assert_eq!(problem(&e), Problem::Limit);
         assert_eq!(retry_after(&e), Some(std::time::Duration::from_secs_f64(62.5)));
         assert_eq!(retry_after(&AppError::Net("timeout".into())), None);
+        // Milliseconds are not minutes.
+        let groq_ms = r#"{"error":{"message":"Rate limit reached on requests per minute (RPM). Please try again in 260ms.","code":"rate_limit_exceeded"}}"#;
+        assert_eq!(retry_after(&answer_error(429, groq_ms.as_bytes())), Some(std::time::Duration::from_secs_f64(0.26)));
+        // Every kind of unusable answer is "Answer" (the offer is marked, the queue goes on).
+        assert_eq!(problem(&AppError::Net("unexpected answer: missing field `choices`".into())), Problem::Answer);
+        assert_eq!(problem(&AppError::Net("the model refused to answer".into())), Problem::Answer);
         let per_day = r#"{"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day","code":429}}"#;
         assert_eq!(problem(&answer_error(429, per_day.as_bytes())), Problem::Limit);
         let quota = r#"{"error": {"code": 429, "message": "Quota exceeded for metric: x, limit: 20, model: gemini-3.5-flash-lite", "status": "RESOURCE_EXHAUSTED"}}"#;

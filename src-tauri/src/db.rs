@@ -31,6 +31,9 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/015_freshness.sql"),
     include_str!("migrations/016_clean_start.sql"),
     include_str!("migrations/017_learned.sql"),
+    include_str!("migrations/018_reread_alerts.sql"),
+    include_str!("migrations/019_user_changed_at.sql"),
+    include_str!("migrations/020_offer_links.sql"),
 ];
 
 /// Schema version this app writes (copies from newer versions are refused).
@@ -175,8 +178,17 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
                 )));
             }
         },
+        // No database and no key in Credential Manager: the key of the copy, when there is one -
+        // a new random key would overwrite it, and the backups in `kopie/` (made with the old
+        // key) could never be opened again.
         None => {
-            let key = secrets::random_hex(32)?;
+            let key = match keycopy::read(data_dir).ok().flatten() {
+                Some(old) => {
+                    diag::log(data_dir, "no database and no key in Credential Manager - the key copy is used for the new database");
+                    old
+                }
+                None => secrets::random_hex(32)?,
+            };
             vault.set(&key)?;
             (key, false)
         }
@@ -210,8 +222,17 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
         crate::profiles::recheck_all(&tx)?;
         tx.commit()?;
     }
+    // Version 20 (8.11.2026): new keys of companies and titles, the same job in several cities as
+    // one offer, "Staff" / "Head" / "Expert" to check - every offer gets its key and its filter
+    // results once more.
+    if exists && (1..20).contains(&before) {
+        crate::offers::refresh_fingerprints(&mut conn)?;
+        let tx = conn.transaction()?;
+        crate::profiles::recheck_all(&tx)?;
+        tx.commit()?;
+    }
     // Ratings given before learning came in count at once.
-    if before < 17 {
+    if before < 20 {
         crate::learn::refresh(&mut conn)?;
     }
     Ok(conn)

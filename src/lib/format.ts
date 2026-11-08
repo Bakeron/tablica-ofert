@@ -1,5 +1,5 @@
 import type { Lang, T } from "../i18n";
-import type { OfferRow } from "../api/types";
+import type { OfferRow, SourceLink } from "../api/types";
 import { FOLLOW_UP_DAYS } from "./limits";
 
 const DAY = 86_400_000;
@@ -76,6 +76,11 @@ export function placeLabel(o: Pick<OfferRow, "city" | "remote">, t: T): string {
   return o.city ?? t("card.missing");
 }
 
+/** An e-mail alert without a company name stores "? (a1b2c3)" (it keeps offers apart) - shown as words. */
+export function companyLabel(company: string, t: T): string {
+  return /^\? \([0-9a-f]+\)$/.test(company) ? t("card.unknownCompany") : company;
+}
+
 /** `FOLLOW_UP_DAYS` after "applied" without any later stage → time for a follow-up. */
 export function needsFollowUp(o: Pick<OfferRow, "stage" | "stageChangedAt">, now = Date.now()): boolean {
   return o.stage === "applied" && now - new Date(o.stageChangedAt).getTime() >= FOLLOW_UP_DAYS * DAY;
@@ -90,6 +95,18 @@ export function isWebUrl(value: string | null | undefined): value is string {
   } catch {
     return false;
   }
+}
+
+/** One web link per city, when the same job came for several cities (otherwise one "Open offer"). */
+export function linksByCity(links: SourceLink[]): { city: string; url: string }[] {
+  const out: { city: string; url: string }[] = [];
+  for (const l of links) {
+    const city = l.city?.trim();
+    if (city && isWebUrl(l.url) && !out.some((o) => o.city.toLowerCase() === city.toLowerCase())) {
+      out.push({ city, url: l.url });
+    }
+  }
+  return out;
 }
 
 /** Is this moment today on the person's own clock? */
