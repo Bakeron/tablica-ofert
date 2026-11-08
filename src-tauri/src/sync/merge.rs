@@ -196,7 +196,15 @@ pub fn merge(local: &Snapshot, remote: &Snapshot, now: &str) -> (Snapshot, Merge
         // an offer deleted for good.
         let mut kept = Vec::new();
         for (uid, row) in rows {
-            let alive_at = if offers { offer_time(&row, "user_changed_at", now) } else { row.at.clone() };
+            // A contact history entry cannot be edited, so its deletion always wins (its time is the
+            // date the person chose - it may be later than the deletion).
+            let alive_at = if offers {
+                offer_time(&row, "user_changed_at", now)
+            } else if name == "log" {
+                String::new()
+            } else {
+                row.at.clone()
+            };
             match tombs.get(&uid) {
                 Some(dead) if *dead >= alive_at => {
                     if local_rows.contains_key(uid.as_str()) {

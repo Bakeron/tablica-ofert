@@ -9,8 +9,11 @@ function insideTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** The text of our QR code (Rust checks it), or why there is none: cancelled / not our code, or no camera permission. */
-export type ScanResult = { text: string } | "none" | "denied";
+/** The text of our QR code (Rust checks it), or why there is none: not our code, cancelled by the person, or no camera permission. */
+export type ScanResult = { text: string } | "none" | "cancelled" | "denied";
+
+/** "Cancel" or "back" may come before the camera starts - then it must not start at all. */
+let scanCancelled = false;
 
 /**
  * Scans the PC's QR code with the sync key. The camera shows under the app (`windowed`), so
@@ -18,20 +21,23 @@ export type ScanResult = { text: string } | "none" | "denied";
  */
 export async function scanSyncKey(): Promise<ScanResult> {
   if (!insideTauri()) return "none";
+  scanCancelled = false;
   const scanner = await import("@tauri-apps/plugin-barcode-scanner");
   const allowed = (await scanner.checkPermissions()) === "granted" || (await scanner.requestPermissions()) === "granted";
   if (!allowed) return "denied";
+  if (scanCancelled) return "cancelled";
   try {
     const result = await scanner.scan({ windowed: true, formats: [scanner.Format.QRCode] });
     const text = result.content.trim();
     return text.startsWith("tablica-ofert:sync:") && text.length <= 1000 ? { text } : "none";
   } catch {
     // cancel() makes scan() fail
-    return "none";
+    return scanCancelled ? "cancelled" : "none";
   }
 }
 
 export async function cancelScan(): Promise<void> {
+  scanCancelled = true;
   if (!insideTauri()) return;
   const scanner = await import("@tauri-apps/plugin-barcode-scanner");
   await scanner.cancel();
@@ -69,19 +75,34 @@ export async function askNotifications(): Promise<boolean> {
   return (await n.requestPermission()) === "granted";
 }
 
+/** One planning at a time: a later one must not be overtaken by an earlier, slower one. */
+let planning: Promise<void> = Promise.resolve();
+
 /**
  * Plans reminders with the phone's own notifications (they come even when the app is closed).
- * Never asks for the permission: that waits for the first date or the setting (`askNotifications`).
+ * An empty list cancels them all (reminders switched off). Never asks for the permission:
+ * that waits for the first date or the setting (`askNotifications`).
  */
-export async function scheduleReminders(list: PhoneReminder[]): Promise<void> {
-  if (!insideTauri() || !isPhone() || !(await notificationsAllowed())) return;
+export function scheduleReminders(list: PhoneReminder[]): Promise<void> {
+  const run = () => planReminders(list).catch((e) => console.warn("reminders", e));
+  planning = planning.then(run, run);
+  return planning;
+}
+
+async function planReminders(list: PhoneReminder[]): Promise<void> {
+  if (!insideTauri() || !isPhone()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
   const n = await import("@tauri-apps/plugin-notification");
-  // Old plans are replaced - dates may have moved or been deleted.
-  const pending = await n.pending();
-  if (pending.length) await n.cancel(pending.map((p) => p.id));
   const now = Date.now();
-  for (const r of list) {
-    if (r.at.getTime() <= now) continue;
-    n.sendNotification({ id: r.id, title: r.title, body: r.body, schedule: n.Schedule.at(r.at) });
-  }
+  const future = list.filter((r) => r.at.getTime() > now);
+  // Old plans are replaced - dates may have moved or been deleted. The plugin remembers the ids of
+  // plans made with `batch`, so `cancelAll` reaches them in any later session; the ids still to
+  // come are cancelled too, for plans made before (app 1.7 and older). Reminders already shown stay.
+  // Not `pending()`: plugin 2.8.0 stores `batch` plans without their content and fails reading them.
+  await n.cancelAll();
+  if (future.length) await n.cancel(future.map((r) => r.id));
+  if (!future.length || !(await notificationsAllowed())) return;
+  // allowWhileIdle: a sleeping phone (Doze) still shows it, within minutes of the time.
+  const notifications = future.map((r) => ({ id: r.id, title: r.title, body: r.body, schedule: n.Schedule.at(r.at, false, true) }));
+  await invoke("plugin:notification|batch", { notifications });
 }

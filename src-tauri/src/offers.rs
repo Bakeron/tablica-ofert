@@ -282,13 +282,16 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
                     requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at, published_at,
                     user_changed_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    'new', ?18, ?18, ?18, COALESCE(?19, ?18), ?18)",
+                    'new', ?18, ?18, ?18, COALESCE(?19, ?18), ?20)",
                 params![
                     uid, fingerprint, input.title, input.company, input.url, input.city,
                     input.remote.unwrap_or(Remote::Unknown), input.salary_min, input.salary_max,
                     input.salary_currency, input.salary_period, input.contract, input.level,
                     input.language, input.requirements, input.description, input.expires_at, now,
-                    input.published_at
+                    input.published_at,
+                    // Added by hand: the person's own act. Collected: no user change yet - the
+                    // same offer worked on the other device in the meantime keeps that work (sync).
+                    if input.source == "manual" { now.as_str() } else { NOT_BY_USER }
                 ],
             )?;
             let id = tx.last_insert_rowid();
@@ -482,7 +485,10 @@ const MANUAL: &str = "EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o
 const IN_RECRUITMENT: &str = "(o.stage NOT IN ('new', 'interested'))";
 
 /// The user did something with the offer - it never leaves for the archive by itself.
-const TOUCHED: &str = "(o.stage != 'new' OR o.favorite = 1 OR o.interest IS NOT NULL OR o.notes != ''
+/// `user_changed_at` of a collected offer nobody worked on yet: older than any real change.
+pub const NOT_BY_USER: &str = "1970-01-01T00:00:00Z";
+
+pub(crate) const TOUCHED: &str = "(o.stage != 'new' OR o.favorite = 1 OR o.interest IS NOT NULL OR o.notes != ''
     OR o.kept_at IS NOT NULL
     OR EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o.id AND m.source = 'manual')
     OR EXISTS (SELECT 1 FROM events e WHERE e.offer_id = o.id)
@@ -979,7 +985,7 @@ pub fn refresh_fingerprints(conn: &mut Connection) -> AppResult<usize> {
     {
         let mut stmt = tx.prepare(&format!(
             "SELECT o.id, o.company, o.title, o.fingerprint FROM offers o
-             ORDER BY o.deleted_at IS NOT NULL, NOT {TOUCHED}, o.added_at, o.id"
+             ORDER BY o.deleted_at IS NOT NULL, NOT {TOUCHED}, o.added_at, o.uid"
         ))?;
         let mut rows = stmt.query([])?;
         while let Some(r) = rows.next()? {
@@ -1256,7 +1262,8 @@ mod tests {
         let mut conn = test_db();
         // Saved with the old keys (as before 8.11.2026): two keys for one job.
         let long = id_of(add(&mut conn, offer("Tester", "Firma Przykładowa Sp. z o.o. Sp. k.", "pracuj")).unwrap());
-        conn.execute("UPDATE offers SET fingerprint = 'firma przykladowa sp k|tester' WHERE id = ?1", [long]).unwrap();
+        // Added a day earlier: the same second would be decided by the random `uid`.
+        conn.execute("UPDATE offers SET fingerprint = 'firma przykladowa sp k|tester', added_at = '2026-11-01T00:00:00Z' WHERE id = ?1", [long]).unwrap();
         let short = id_of(add(&mut conn, offer("Tester", "Firma Przykładowa", "jjit")).unwrap());
         set_notes(&conn, short, "Zadzwonić we wtorek".into()).unwrap();
         crate::agenda::add_event(&conn, long, crate::agenda::EventInput { kind: "interview".into(), at: "2026-11-20T10:00:00Z".into(), minutes: 60, note: String::new() }).unwrap();

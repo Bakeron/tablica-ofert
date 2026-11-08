@@ -137,8 +137,12 @@ pub async fn run(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
     result
 }
 
+/// Phone before the QR code: a key of its own would lock the PC out of the file on Drive.
+pub const NO_KEY: &str = "no sync key yet";
+
 async fn run_inner(state: &AppState, confirm: bool) -> AppResult<SyncOutcome> {
-    let key = key_or_new()?;
+    // Only the PC makes the key; the phone gets it from the PC's QR code.
+    let key = if DEVICE == "phone" { key()?.ok_or_else(|| AppError::Missing(NO_KEY.into()))? } else { key_or_new()? };
     let (http, access) = token(state).await?;
     let now = clock::now();
     let local = with_db(state, |c| data::export(c, DEVICE, &now))?;
@@ -259,6 +263,8 @@ fn own_client(conn: &rusqlite::Connection) -> AppResult<Option<drive::OAuthClien
 /// Phone: saves what the QR code carried. A new Google project ends the old login (it belongs to one project).
 pub fn save_scanned(state: &AppState, text: &str) -> AppResult<Option<String>> {
     let scanned = parse_qr(text)?;
+    // Not while a sync runs: it would send the file sealed with the old key.
+    let _busy = Syncing::start(state)?;
     secrets::set(KEY_SECRET, &crypto::key_to_hex(&scanned.key))?;
     let Some(client) = scanned.client else { return Ok(None) };
     let old = with_db(state, |c| settings::get(c, "google_client_id"))?;

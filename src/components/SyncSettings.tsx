@@ -30,6 +30,8 @@ const loginExpired = (text: string | null | undefined) => !!text && text.include
 const OUTDATED = "newer app version";
 /** Same text as `AppError::OtherOutdated` in Rust - the other device has an older version of the app. */
 const OTHER_OUTDATED = "older app version on the other device";
+/** `NO_KEY` in sync/mod.rs - the phone syncs only with the key from the PC's QR code. */
+const NO_KEY = "no sync key yet";
 /// `CONFIRM_WAITING` in sync/mod.rs.
 const CONFIRM_WAITING = "waits for confirmation";
 
@@ -139,8 +141,10 @@ export function SyncSettings({
         onSynced();
       }
     } catch (e) {
+      const detail = describeError(e).detail;
       // An ended login is said in the Google Drive part, with the "Connect" button next to it.
-      if (!loginExpired(describeError(e).detail)) onError(e);
+      if (detail.includes(NO_KEY)) onToast(t("sync.noKey"));
+      else if (!loginExpired(detail)) onError(e);
     } finally {
       setBusy(false);
       await load();
@@ -291,6 +295,8 @@ export function SyncSettings({
                         ? "error.other_outdated"
                         : status.lastError.startsWith(CONFIRM_WAITING)
                         ? "sync.waitsConfirm"
+                        : status.lastError.includes(NO_KEY)
+                        ? "sync.noKey"
                         : "sync.failed",
                   )}
                 </p>
@@ -343,6 +349,7 @@ export function SyncSettings({
                       setScanning(false);
                       if (found === "denied") return onConfirm(t("sync.cameraDenied"), () => void openAppSettings(), t("sync.openAppSettings"));
                       if (found === "none") return onToast(t("sync.scanNone"));
+                      if (found === "cancelled") return;
                       const clientId = await api.syncFromQr(found.text);
                       if (clientId) onChange("google_client_id", clientId);
                       onToast(t(clientId ? "sync.scanDoneProject" : "sync.scanDone"));

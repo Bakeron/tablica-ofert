@@ -79,9 +79,12 @@ export function AgendaPart({
                 <button type="button" className="btn btn-ghost btn-small" onClick={() => actions.google(ev.id)}>
                   {t("agenda.google")}
                 </button>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => actions.ics(ev.id)} title={t("agenda.icsHint")}>
-                  {t("agenda.ics")}
-                </button>
+                {/* Android keeps the saved file in the app's private folder, so on the phone only Google Calendar */}
+                {!isPhone() && (
+                  <button type="button" className="btn btn-ghost btn-small" onClick={() => actions.ics(ev.id)} title={t("agenda.icsHint")}>
+                    {t("agenda.ics")}
+                  </button>
+                )}
                 <button type="button" className="icon-btn icon-btn-small" aria-label={t("agenda.delete")} title={t("agenda.delete")} onClick={() => actions.deleteEvent(ev.id)}>
                   <IconTrash />
                 </button>

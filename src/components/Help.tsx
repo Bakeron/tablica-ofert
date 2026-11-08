@@ -1,5 +1,6 @@
-import { useId, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useI18n } from "../i18n";
+import { onBack } from "../lib/back";
 
 /**
  * Small "?" next to a harder field - a tooltip on hover or keyboard focus (tap on a phone).
@@ -19,6 +20,23 @@ export function Help({ text }: { text: string }) {
     btn.current?.style.setProperty("anchor-name", anchor);
     tip.current?.style.setProperty("position-anchor", anchor);
   }, [id]);
+
+  // Android "back" closes an open tooltip first, not the card or window under it.
+  useEffect(() => {
+    const el = tip.current;
+    if (!el) return;
+    let stop: (() => void) | null = null;
+    const onToggle = (e: Event) => {
+      stop?.();
+      stop = (e as ToggleEvent).newState === "open" ? onBack(() => hide(true)) : null;
+    };
+    el.addEventListener("toggle", onToggle);
+    return () => {
+      el.removeEventListener("toggle", onToggle);
+      stop?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isOpen = () => tip.current?.matches(":popover-open") ?? false;
   const show = () => {

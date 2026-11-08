@@ -42,6 +42,7 @@ import { askNotifications, isPhone, scheduleReminders } from "./lib/platform";
 import { isWebUrl } from "./lib/format";
 import { isNarrowLayout, useFitLevels } from "./lib/fit";
 import { onBack } from "./lib/back";
+import { keepOrder } from "./lib/browse";
 import { leavesView, viewFor } from "./lib/profile";
 import { csvCells, csvName } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
@@ -74,6 +75,8 @@ export default function App() {
   const [detail, setDetail] = useState<OfferDetail | null>(null);
   /** Narrow layout: the card takes the whole screen instead of the list. */
   const [cardOpen, setCardOpen] = useState(false);
+  /** Quick browsing (cards, keys 1 / 2 / 3): the order it started with (`keepOrder`), else `null`. */
+  const [browseOrder, setBrowseOrder] = useState<number[] | null>(null);
   const listScroll = useRef<number[]>([]);
   /** What the archive's search box holds (title, company or city). */
   const [archiveQuery, setArchiveQuery] = useState("");
@@ -122,10 +125,13 @@ export default function App() {
       setAdding(true);
     };
     window.addEventListener("tablica-share", onShare);
-    // A share that started the app arrives before React - it waits in a global.
-    const early = (window as unknown as { __tablicaShared?: unknown }).__tablicaShared;
-    if (typeof early === "string") onShare(new CustomEvent("tablica-share", { detail: early }));
-    return () => window.removeEventListener("tablica-share", onShare);
+    // The phone (MainActivity.kt) waits for this before it hands over a share.
+    const ready = window as unknown as { __tablicaReady?: boolean };
+    ready.__tablicaReady = true;
+    return () => {
+      ready.__tablicaReady = false;
+      window.removeEventListener("tablica-share", onShare);
+    };
   }, []);
   const cardHeading = useRef<HTMLHeadingElement>(null);
   const topbarRef = useRef<HTMLElement>(null);
@@ -231,8 +237,11 @@ export default function App() {
     reload(false);
   }, [reload]);
 
-  // Every tab opens in its own order.
+  // Every tab opens in its own order - and at its top.
   useEffect(() => setSort(null), [view]);
+  useEffect(() => {
+    for (const s of LIST_SCROLLERS) document.querySelector(s)?.scrollTo(0, 0);
+  }, [view, profileId]);
 
   useEffect(() => {
     if (pendingSelect !== null && rows.some((r) => r.id === pendingSelect)) {
@@ -260,11 +269,29 @@ export default function App() {
 
   function openCard() {
     listScroll.current = LIST_SCROLLERS.map((s) => document.querySelector(s)?.scrollTop ?? 0);
+    setBrowseOrder(sorted.map((r) => r.id));
     setCardOpen(true);
   }
 
+  // Browsing ends - back to the list, another tab or profile, another order: the new order shows.
+  useEffect(() => {
+    if (!cardOpen) setBrowseOrder(null);
+  }, [cardOpen]);
+  useEffect(() => setBrowseOrder(null), [view, profileId, sort]);
+
   // Android "back" leaves the card like "Back to the list" does (an open window goes first).
   useEffect(() => (cardOpen ? onBack(() => setCardOpen(false)) : undefined), [cardOpen]);
+  // No offer left (the list emptied, or the layout is wide again after turning the phone): the card
+  // closes - otherwise "back" would close an invisible card and the next offer's card open by itself.
+  useEffect(() => {
+    if (!cardOpen) return;
+    const check = () => {
+      if (selectedId === null || !isNarrowLayout()) setCardOpen(false);
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [cardOpen, selectedId]);
 
   // Before painting: the screen must not show the wrong place for a moment.
   useLayoutEffect(() => {
@@ -280,6 +307,9 @@ export default function App() {
       document.querySelector<HTMLElement>("table.board")?.focus({ preventScroll: true });
     }
   }, [cardShown, selectedId]);
+
+  /** The offer the card's buttons act on - none while the card still shows the previous offer. */
+  const cardId = detail !== null && detail.id === selectedId ? selectedId : null;
 
   // Going on to the next offer with the card open: its top, not the middle of the last one.
   const shownId = cardShown ? detail?.id : undefined;
@@ -504,7 +534,11 @@ export default function App() {
 
   // Phone: reminders planned with the system's own notifications (a day and an hour before).
   useEffect(() => {
-    if (!api || !isPhone() || settings.notify_reminders !== "on") return;
+    if (!api || !isPhone()) return;
+    if (settings.notify_reminders !== "on") {
+      void scheduleReminders([]);
+      return;
+    }
     api
       .upcomingEvents()
       .then((list) =>
@@ -526,11 +560,11 @@ export default function App() {
 
   const shownSort = sort ?? (view === "today" ? null : DEFAULT_SORT);
   const sorted = useMemo(() => {
-    const list = shownSort === null ? rows : sortRows(rows, shownSort);
+    const list = keepOrder(shownSort === null ? rows : sortRows(rows, shownSort), browseOrder);
     const q = archiveQuery.trim().toLocaleLowerCase();
     if (view !== "archive" || !q) return list;
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
-  }, [rows, shownSort, view, archiveQuery]);
+  }, [rows, shownSort, view, archiveQuery, browseOrder]);
 
   // ----- actions -----
   async function run(action: () => Promise<unknown>, after?: () => void) {
@@ -625,6 +659,8 @@ export default function App() {
 
   /** Quick browsing: on to the next offer after a decision (keys, a swipe on the card). */
   function goNext(id: number) {
+    // Keys on the list: from the first decision on, the order stays (on the card it already does).
+    if (browseOrder === null) setBrowseOrder(sorted.map((r) => r.id));
     const i = sorted.findIndex((r) => r.id === id);
     const next = sorted[i + 1];
     if (id !== selectedId || !next) return;
@@ -654,10 +690,14 @@ export default function App() {
     const row = rows.find((r) => r.id === id);
     if (!row || !api) return;
     const before = row.interest;
-    goNext(id);
+    const i = sorted.findIndex((r) => r.id === id);
+    // The last offer: back to the list (the card would show the first offer, or none at all).
+    const last = !sorted[i + 1];
+    if (!last) goNext(id);
+    else if (id === selectedId) setCardOpen(false);
     return run(
       () => api.setInterest(id, value),
-      () => setToast({ text: t("swipe.card", { value: t(`interest.${value}`) }), undo: () => run(() => api.setInterest(id, before)) }),
+      () => setToast({ text: t(last ? "swipe.cardLast" : "swipe.card", { value: t(`interest.${value}`) }), undo: () => run(() => api.setInterest(id, before)) }),
     );
   };
 
@@ -904,7 +944,7 @@ export default function App() {
             <IconWarning />
             <div>
               <strong>{t("error.title")}: </strong>
-              {locked ? t("error.locked") : error?.text}
+              {locked ? t(isPhone() ? "error.lockedPhone" : "error.locked") : error?.text}
               {(locked ? status?.problem : error?.detail) && (
                 <details>
                   <summary>{t("error.details")}</summary>
@@ -998,7 +1038,11 @@ export default function App() {
               freshIds={freshIds}
               sort={shownSort}
               onSort={onSort}
-              onSelect={setSelectedId}
+              onSelect={(id) => {
+                // A row chosen by hand (click, arrows) ends quick browsing with the keys.
+                if (!cardOpen) setBrowseOrder(null);
+                setSelectedId(id);
+              }}
               onOpen={() => (isNarrowLayout() ? openCard() : cardHeading.current?.focus())}
               onInterest={toggleInterest}
               onTrash={trash}
@@ -1010,28 +1054,28 @@ export default function App() {
           <OfferCard
             ref={cardHeading}
             offer={detail}
-            onStage={(stage: Stage) => selectedId !== null && setStage(selectedId, stage)}
-            onInterest={(i) => selectedId !== null && setInterest(selectedId, i)}
-            onFavorite={(f) => selectedId !== null && setFavorite(selectedId, f)}
-            onNotes={(n) => selectedId !== null && run(() => api!.setNotes(selectedId, n), () => setToast({ text: t("card.notesSaved") }))}
+            onStage={(stage: Stage) => cardId !== null && setStage(cardId, stage)}
+            onInterest={(i) => cardId !== null && setInterest(cardId, i)}
+            onFavorite={(f) => cardId !== null && setFavorite(cardId, f)}
+            onNotes={(id, n) => run(() => api!.setNotes(id, n), () => setToast({ text: t("card.notesSaved") }))}
             onOpenLink={openLink}
-            onTrash={() => selectedId !== null && trash(selectedId)}
-            onRestore={() => selectedId !== null && restore(selectedId)}
+            onTrash={() => cardId !== null && trash(cardId)}
+            onRestore={() => cardId !== null && restore(cardId)}
             onExpired={() => {
               setExpiredPage(null);
-              return selectedId !== null && expire(selectedId);
+              return cardId !== null && expire(cardId);
             }}
-            expiredPage={expiredPage?.id === selectedId ? expiredPage.phrase : null}
+            expiredPage={expiredPage?.id === cardId ? expiredPage.phrase : null}
             onKeepExpiredPage={() => setExpiredPage(null)}
-            onUnarchive={() => selectedId !== null && unarchive(selectedId)}
-            onSwipe={(value) => selectedId !== null && swipeCard(selectedId, value)}
+            onUnarchive={() => cardId !== null && unarchive(cardId)}
+            onSwipe={(value) => cardId !== null && swipeCard(cardId, value)}
             onPurge={() =>
-              selectedId !== null &&
+              cardId !== null &&
               setConfirm({
                 message: t("trash.confirmOne"),
                 action: () => {
-                  selectNeighbour(selectedId);
-                  return run(() => api!.purgeOffers(selectedId), () => setToast({ text: t("trash.purged") }));
+                  selectNeighbour(cardId);
+                  return run(() => api!.purgeOffers(cardId), () => setToast({ text: t("trash.purged") }));
                 },
               })
             }
@@ -1068,6 +1112,8 @@ export default function App() {
           aiOn={aiOn(settings)}
           onClose={() => {
             setAdding(false);
+            // A later "Add offer" starts empty, not with the old shared text.
+            setShared(null);
             api?.closePreview().catch(() => {});
           }}
           onSave={addOffer}

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Reminders about interviews (Android 13+ asks the person) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- AndroidTV support -->
-    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- The camera only scans the PC's QR code - phones without one can still install the app -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:replace="android:required" />
 
     <!-- No Android backup: the data is encrypted with a key that never leaves this phone,
          so a restored copy could not be opened anyway. Sync is the way to move data. -->
@@ -25,8 +25,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <!-- AndroidTV support -->
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
             <!-- "Share" a link or text from the browser to Tablica Ofert -->
             <intent-filter>
@@ -35,15 +33,5 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-
-        <provider
-          android:name="androidx.core.content.FileProvider"
-          android:authorities="${applicationId}.fileprovider"
-          android:exported="false"
-          android:grantUriPermissions="true">
-          <meta-data
-            android:name="android.support.FILE_PROVIDER_PATHS"
-            android:resource="@xml/file_paths" />
-        </provider>
     </application>
 </manifest>

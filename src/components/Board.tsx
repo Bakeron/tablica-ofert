@@ -228,7 +228,8 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   if (isNarrowLayout()) onOpen();
                 }}
                 onDoubleClick={onOpen}
-                onTouchStart={(e) => (touch.current = { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null })}
+                // No rating in the Trash or the Archive - like the keys and the card.
+                onTouchStart={(e) => (touch.current = view === "trash" || view === "archive" ? null : { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null })}
                 onTouchMove={(e) => followFinger(e, o)}
                 onTouchCancel={(e) => {
                   touch.current = null;

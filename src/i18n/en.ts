@@ -27,6 +27,7 @@ export const en: Record<keyof typeof pl, string> = {
   "archive.search": "Search the archive: job, company, city",
   "archive.restore": "Bring back to the list",
   "swipe.card": "Marked “{value}” - next offer",
+  "swipe.cardLast": "Marked “{value}” - that was the last offer on the list",
   "list.title": "Offer list",
   "list.freshDays": "An offer stays fresh for",
   "list.days": "{count} days",
@@ -226,6 +227,8 @@ export const en: Record<keyof typeof pl, string> = {
 
   "error.title": "Warning",
   "error.locked": "Your data could not be opened safely. Saving is blocked so nothing gets overwritten.",
+  "error.lockedPhone":
+    "Your data could not be opened safely. Saving is blocked so nothing gets overwritten. If your data is on the computer: Android Settings → Apps → Tablica Ofert → Storage → “Clear data”, then connect the phone to the computer again (QR code) and sync with Google Drive.",
   "error.generic": "Something went wrong.",
   "error.invalid": "Check the data you entered.",
   "error.not_found": "This offer no longer exists.",
@@ -881,7 +884,7 @@ export const en: Record<keyof typeof pl, string> = {
 
   "settings.s.sync": "Sync",
   "sync.intro": "Shared data of the computer and the phone through your Google Drive: one file “tablica-ofert.sync” in “My Drive” (the app sees only the files it made - do not delete or move it). The file is encrypted on this computer before it goes to Drive - even someone with access to the Google account cannot read it. Without sync the computer works on its own.",
-  "sync.introPhone": "Shared data of the computer and the phone through your Google Drive: one file “tablica-ofert.sync” in “My Drive” (the app sees only the files it made - do not delete or move it). The file is encrypted - you bring the key from the computer by QR code, so even someone with access to the Google account cannot read it. Offers rejected by the filter do not come to the phone.",
+  "sync.introPhone": "Shared data of the computer and the phone through your Google Drive: one file “tablica-ofert.sync” in “My Drive” (the app sees only the files it made - do not delete or move it). The file is encrypted - you bring the key from the computer by QR code, so even someone with access to the Google account cannot read it. Offers rejected by the filter do not come to the phone - unless they have your note, date or rating.",
   "sync.lostWarning": "the key to read the copy on Drive is only on your devices. If both are lost, the copy cannot be read - so save a copy with a password now and then too (Settings → Data → “Save a copy as…”).",
   "sync.lostWarningPhone": "the key to read the copy on Drive is only on your devices. If both are lost, the copy cannot be read - so now and then also save a copy with a password on the computer (Settings → Data → “Save a copy as…”).",
   "sync.enable": "Sync with Google Drive",
@@ -921,6 +924,7 @@ export const en: Record<keyof typeof pl, string> = {
   "sync.copyFailed": "Could not copy - type the code on the Google page by hand.",
   "sync.connected": "Connected to Google Drive",
   "sync.now": "Sync now",
+  "sync.noKey": "First scan the QR code from the computer (below) - only then can the phone sync.",
   "sync.waitsConfirm": "The sync would delete several offers at once, so it waits for you - click “Sync now” and decide.",
   "sync.working": "Syncing…",
   "sync.done": "Synced - changed: {changed}, deleted: {removed}",

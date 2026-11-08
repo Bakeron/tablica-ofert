@@ -144,6 +144,12 @@ impl KeyVault for SystemVault {
     }
 }
 
+/// Where the key lives, named in the technical details of a locked database.
+#[cfg(not(target_os = "android"))]
+const VAULT: &str = "Windows Credential Manager";
+#[cfg(target_os = "android")]
+const VAULT: &str = "the Android Keystore";
+
 fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppResult<Connection> {
     fs::create_dir_all(data_dir)?;
     let path = data_dir.join(DB_FILE);
@@ -168,13 +174,13 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
             Ok(None) => {
                 diag::log(data_dir, "ERROR key missing from Credential Manager and there is no copy - writes blocked");
                 return Err(AppError::Locked(
-                    "the database exists, but its key is missing from Windows Credential Manager".into(),
+                    format!("the database exists, but its key is missing from {VAULT}"),
                 ));
             }
             Err(e) => {
                 diag::log(data_dir, &format!("ERROR key missing from Credential Manager and the copy cannot be read: {e}"));
                 return Err(AppError::Locked(format!(
-                    "the database key is missing from Windows Credential Manager and its copy cannot be read: {e}"
+                    "the database key is missing from {VAULT} and its copy cannot be read: {e}"
                 )));
             }
         },

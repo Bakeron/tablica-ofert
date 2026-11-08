@@ -23,9 +23,11 @@ const EVENT_COLS: &[&str] = &["kind", "at", "minutes", "note", "created_at"];
 const CONTACT_COLS: &[&str] = &["name", "role", "email", "phone", "linkedin", "created_at", "updated_at"];
 const LOG_COLS: &[&str] = &["at", "kind", "note"];
 
-/// Offers the phone does not need: rejected by the filter and not acted on.
-const NOT_SYNCED: &str = "(o.filter_result = 'fail' AND o.stage = 'new' AND o.favorite = 0
-    AND COALESCE(o.interest, '') NOT IN ('high', 'maybe'))";
+/// Offers the phone does not need: rejected by the filter and not acted on - an offer the person
+/// added by hand, or gave a note, a date or a contact, travels (it would live on one device only).
+fn not_synced() -> String {
+    format!("(o.filter_result = 'fail' AND NOT {})", crate::offers::TOUCHED)
+}
 
 fn to_json(v: Sql) -> Value {
     match v {
@@ -69,7 +71,8 @@ pub fn export(conn: &Connection, device: &str, now: &str) -> AppResult<Snapshot>
     let mut s = Snapshot { format: FORMAT, schema, device: device.into(), exported_at: now.into(), ..Default::default() };
     let cols = |list: &[&str]| list.iter().map(|c| format!("o.{c}")).collect::<Vec<_>>().join(", ");
 
-    let mut offers = rows(conn, &format!("SELECT o.uid, {} FROM offers o WHERE NOT {NOT_SYNCED}", cols(OFFER_COLS)), OFFER_COLS, "updated_at")?;
+    let not_synced = not_synced();
+    let mut offers = rows(conn, &format!("SELECT o.uid, {} FROM offers o WHERE NOT {not_synced}", cols(OFFER_COLS)), OFFER_COLS, "updated_at")?;
     for o in &mut offers {
         let id: i64 = conn.query_row("SELECT id FROM offers WHERE uid = ?1", [&o.uid], |r| r.get(0))?;
         // The row's time is the later of its two times (the merge compares each group by its own).
@@ -107,7 +110,7 @@ pub fn export(conn: &Connection, device: &str, now: &str) -> AppResult<Snapshot>
         let mut out = rows(
             conn,
             &format!(
-                "SELECT t.uid, o.uid AS offer_uid, {} FROM {table} t JOIN offers o ON o.id = t.offer_id WHERE NOT {NOT_SYNCED}",
+                "SELECT t.uid, o.uid AS offer_uid, {} FROM {table} t JOIN offers o ON o.id = t.offer_id WHERE NOT {not_synced}",
                 list.iter().map(|c| format!("t.{c}")).collect::<Vec<_>>().join(", ")
             ),
             list,
@@ -314,13 +317,20 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
             .query_row("SELECT uid FROM offers WHERE fingerprint = ?1 AND uid != ?2", params![fingerprint, r.uid], |x| x.get(0))
             .optional()?;
         if let Some(twin) = twin {
-            if twin < r.uid {
+            // Unless the merge already chose this one (the twin has its tombstone) - the devices
+            // could have kept different twins when they joined duplicates on their own.
+            let twin_goes = merged.deleted.get("offers").is_some_and(|list| list.iter().any(|t| t.uid == twin));
+            if twin < r.uid && !twin_goes {
                 tombstone(&tx, "offers", &r.uid, now)?;
                 continue;
             }
-            if offer_id(&tx, &r.uid)?.is_some() {
+            if let Some(keep) = offer_id(&tx, &r.uid)? {
                 // Both ids are here already (the company of one changed): the larger one goes -
-                // renaming it would break the unique id and stop every sync.
+                // renaming it would break the unique id and stop every sync. Its dates, contacts
+                // and contact history move to the one that stays.
+                for child in ["events", "contacts", "contact_log"] {
+                    tx.execute(&format!("UPDATE {child} SET offer_id = ?1 WHERE offer_id = (SELECT id FROM offers WHERE uid = ?2)"), params![keep, twin])?;
+                }
                 tx.execute("DELETE FROM offers WHERE uid = ?1", [&twin])?;
             } else {
                 tx.execute("UPDATE offers SET uid = ?2 WHERE uid = ?1", params![twin, r.uid])?;
@@ -331,11 +341,16 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         let (write_data, write_user) = match (mine.get(&r.uid), offer_id(&tx, &r.uid)?) {
             (_, None) => (true, true),
             (Some(local), Some(_)) => (newer_group(&data, &local.data, false), newer_group(&data, &local.data, true)),
-            // Here, but not synced from this side (rejected by the filter): by the times only.
-            (None, Some(_)) => (
-                local_at(&tx, "offers", "updated_at", &r.uid)?.is_none_or(|t| t < r.at),
-                local_at(&tx, "offers", "COALESCE(user_changed_at, updated_at)", &r.uid)?.is_none_or(|t| t < r.at),
-            ),
+            // Here, but not synced from this side (rejected by the filter): by the times only, each
+            // group by its own time (the row's time is the later of the two).
+            (None, Some(_)) => {
+                let theirs = |key: &str| data.get(key).or_else(|| data.get("updated_at")).and_then(Value::as_str).unwrap_or_default().to_string();
+                let (data_at, user_at) = (theirs("updated_at"), theirs("user_changed_at"));
+                (
+                    local_at(&tx, "offers", "updated_at", &r.uid)?.is_none_or(|t| t < data_at),
+                    local_at(&tx, "offers", "COALESCE(user_changed_at, updated_at)", &r.uid)?.is_none_or(|t| t < user_at),
+                )
+            }
         };
         if !write_data && !write_user {
             continue;
@@ -724,6 +739,59 @@ mod tests {
         assert_eq!(uid(&pc), uid(&phone));
     }
 
+    /// Audit R22: an offer shared on the phone and worked on there, then collected on the PC before
+    /// the phone synced - the person's work stays, whichever of the two ids wins.
+    #[test]
+    fn work_on_the_phone_survives_the_same_offer_collected_on_the_pc() {
+        let (low, high) = ("a".repeat(32), "b".repeat(32));
+        for (phone_uid, pc_uid) in [(&low, &high), (&high, &low)] {
+            let (mut pc, mut phone) = (test_db(), test_db());
+            let id = add(&mut phone, "Data Analyst");
+            phone.execute("UPDATE offers SET uid = ?1", [phone_uid]).unwrap();
+            crate::offers::set_stage(&mut phone, id, Stage::Applied).unwrap();
+            crate::offers::set_notes(&phone, id, "Wysłane CV".into()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+            let fetched = OfferInput { title: "Data Analyst".into(), company: "Firma Testowa".into(), source: "jjit".into(), ..Default::default() };
+            crate::offers::add(&mut pc, fetched).unwrap();
+            pc.execute("UPDATE offers SET uid = ?1", [pc_uid]).unwrap();
+            round(&mut pc, &mut phone);
+            round(&mut pc, &mut phone);
+            for c in [&pc, &phone] {
+                let d = crate::offers::detail(c, only_id(c)).unwrap();
+                assert_eq!((d.row.stage, d.notes.as_str()), (Stage::Applied, "Wysłane CV"), "phone id {}", &phone_uid[..1]);
+            }
+        }
+    }
+
+    /// An offer the filter rejects still travels once the person worked on it (a note here).
+    #[test]
+    fn a_rejected_offer_with_a_note_travels() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let fetched = OfferInput { title: "Data Analyst".into(), company: "Firma Testowa".into(), source: "jjit".into(), ..Default::default() };
+        let AddOutcome::Added { id } = crate::offers::add(&mut pc, fetched).unwrap() else { panic!() };
+        pc.execute("UPDATE offers SET filter_result = 'fail'", []).unwrap();
+        assert!(!export(&pc, "pc", NOW).unwrap().tables.contains_key("offers"));
+        crate::offers::set_notes(&pc, id, "Zapytać o zdalną".into()).unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::offers::detail(&phone, only_id(&phone)).unwrap().notes, "Zapytać o zdalną");
+    }
+
+    /// A contact history entry dated in the future, deleted on one device, does not come back.
+    #[test]
+    fn a_deleted_log_entry_dated_later_stays_deleted() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let id = add(&mut pc, "Data Analyst");
+        let log = crate::agenda::LogInput { at: "2099-06-01T09:00:00Z".into(), kind: "call".into(), note: "Oddzwonić".into() };
+        let entry = crate::agenda::add_log(&pc, id, log).unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!(crate::agenda::agenda(&phone, only_id(&phone)).unwrap().log.len(), 1);
+        crate::agenda::delete_log(&pc, entry).unwrap();
+        round(&mut pc, &mut phone);
+        round(&mut pc, &mut phone);
+        assert!(crate::agenda::agenda(&pc, id).unwrap().log.is_empty());
+        assert!(crate::agenda::agenda(&phone, only_id(&phone)).unwrap().log.is_empty());
+    }
+
     #[test]
     fn bad_offer_rows_from_the_sync_file_are_skipped() {
         let (mut pc, mut phone) = (test_db(), test_db());
@@ -811,5 +879,63 @@ mod tests {
         assert_eq!(a.contacts.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["Anna Zmyślona"]);
         assert_eq!(a.log.len(), 1);
         assert_eq!(crate::profiles::experience(&pc).unwrap(), "");
+    }
+
+    /// The phone's first sync (R22, checked once on a copy of a real database): an empty phone ends
+    /// with every synced field of the PC, and the next round changes nothing on either side.
+    #[test]
+    fn an_empty_phone_gets_everything_and_the_next_round_changes_nothing() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        crate::profiles::save(&mut pc, ProfileInput { id: None, name: "Plan A".into(), description: "Frontend".into(), criteria: Criteria::default() }).unwrap();
+        crate::profiles::set_experience(&pc, "4 lata React").unwrap();
+        let input = |city: &str, url: &str| OfferInput {
+            title: "Frontend Developer".into(),
+            company: "Firma Testowa".into(),
+            source: "pracuj".into(),
+            city: Some(city.into()),
+            url: Some(url.into()),
+            salary_min: Some(12000),
+            salary_max: Some(15000),
+            salary_currency: Some("PLN".into()),
+            description: Some("Opis oferty".into()),
+            ..Default::default()
+        };
+        let id = match crate::offers::add(&mut pc, input("Kraków", "https://example.com/oferta/1")).unwrap() {
+            AddOutcome::Added { id } => id,
+            other => panic!("{other:?}"),
+        };
+        crate::offers::add(&mut pc, input("Gdańsk", "https://example.com/oferta/2")).unwrap();
+        crate::offers::set_interest(&pc, id, Some(crate::model::Interest::High)).unwrap();
+        crate::offers::set_notes(&pc, id, "Zadzwonić we wtorek".into()).unwrap();
+        crate::offers::set_stage(&mut pc, id, Stage::Applied).unwrap();
+        pc.execute(
+            "INSERT OR REPLACE INTO offer_scores (offer_id, profile_id, score, source, why, quote) SELECT ?1, id, 80, 'ai', 'Pasuje', 'React' FROM profiles",
+            [id],
+        )
+        .unwrap();
+        let event = crate::agenda::EventInput { kind: "interview".into(), at: "2099-02-01T10:00:00Z".into(), minutes: 45, note: "Rozmowa".into() };
+        crate::agenda::add_event(&pc, id, event).unwrap();
+        let contact = crate::agenda::Contact { name: "Anna Zmyślona".into(), email: "anna@example.com".into(), ..Default::default() };
+        crate::agenda::save_contact(&pc, id, contact).unwrap();
+        let log = crate::agenda::LogInput { at: "2026-11-02T09:00:00Z".into(), kind: "call".into(), note: "Telefon".into() };
+        crate::agenda::add_log(&pc, id, log).unwrap();
+        let gone = add(&mut pc, "Tester");
+        crate::offers::trash(&pc, gone).unwrap();
+        crate::offers::purge(&mut pc, Some(gone)).unwrap();
+
+        round(&mut pc, &mut phone);
+        let (a, b) = (export(&pc, "pc", NOW).unwrap(), export(&phone, "phone", NOW).unwrap());
+        assert_eq!((&a.tables, &a.deleted), (&b.tables, &b.deleted));
+        for table in ["offers", "profiles", "experience", "events", "contacts", "log", "removed"] {
+            assert!(a.tables.contains_key(table), "{table} missing in the test data");
+        }
+        let d = crate::offers::detail(&phone, only_id(&phone)).unwrap();
+        assert_eq!(d.links.len(), 2);
+        assert_eq!(d.history.len(), 2);
+
+        let (_, stats) = merge(&b, &a, NOW);
+        assert_eq!(stats.changed + stats.removed, 0);
+        let (_, stats) = merge(&a, &b, NOW);
+        assert_eq!(stats.changed + stats.removed, 0);
     }
 }

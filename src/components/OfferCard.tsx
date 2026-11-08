@@ -24,7 +24,8 @@ interface Props {
   onStage: (stage: Stage) => void;
   onInterest: (interest: Interest | null) => void;
   onFavorite: (favorite: boolean) => void;
-  onNotes: (notes: string) => void;
+  /** With the offer the note was written in - the card may already show the next one when it is saved. */
+  onNotes: (id: number, notes: string) => void;
   onOpenLink: (url: string) => void;
   onTrash: () => void;
   onRestore: () => void;
@@ -59,9 +60,10 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   headingRef,
 ) {
   const { t, lang } = useI18n();
-  const [notes, setNotes] = useState(offer?.notes ?? "");
+  // The note stays with its offer: a swipe to the next offer saves it there, not in the next one.
+  const [notes, setNotes] = useState({ id: offer?.id, text: offer?.notes ?? "", saved: offer?.notes ?? "" });
 
-  useEffect(() => setNotes(offer?.notes ?? ""), [offer?.id, offer?.notes]);
+  useEffect(() => setNotes({ id: offer?.id, text: offer?.notes ?? "", saved: offer?.notes ?? "" }), [offer?.id, offer?.notes]);
   // An offer in another language shows the AI translation; the original is one click away.
   const [showOriginal, setShowOriginal] = useState(false);
   useEffect(() => setShowOriginal(false), [offer?.id]);
@@ -278,17 +280,20 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               </select>
             </label>
 
-            <AgendaPart agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />
+            <AgendaPart key={offer.id} agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />
 
             <label className="field">
               <span className="pass-label">{t("card.notes")}</span>
               <textarea
                 rows={3}
-                value={notes}
+                value={notes.id === offer.id ? notes.text : offer.notes}
                 maxLength={20000}
                 aria-describedby="notes-hint"
-                onChange={(e) => setNotes(e.target.value)}
-                onBlur={() => notes !== offer.notes && onNotes(notes)}
+                onChange={(e) => {
+                  const text = e.target.value;
+                  setNotes((n) => (n.id === offer.id ? { ...n, text } : { id: offer.id, text, saved: offer.notes }));
+                }}
+                onBlur={() => notes.id !== undefined && notes.text !== notes.saved && onNotes(notes.id, notes.text)}
               />
               <span id="notes-hint" className="hint">
                 {t("card.notesHint")}

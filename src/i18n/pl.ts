@@ -26,6 +26,7 @@ export const pl = {
   "archive.search": "Szukaj w archiwum: stanowisko, firma, miasto",
   "archive.restore": "Przywróć na listę",
   "swipe.card": "Oznaczono „{value}” - następna oferta",
+  "swipe.cardLast": "Oznaczono „{value}” - to była ostatnia oferta na liście",
   "list.title": "Lista ofert",
   "list.freshDays": "Oferta jest świeża przez",
   "list.days": "{count} dni",
@@ -226,6 +227,8 @@ export const pl = {
   "error.title": "Uwaga",
   "error.locked":
     "Nie udało się bezpiecznie otworzyć danych. Zapis jest zablokowany, żeby niczego nie nadpisać.",
+  "error.lockedPhone":
+    "Nie udało się bezpiecznie otworzyć danych. Zapis jest zablokowany, żeby niczego nie nadpisać. Gdy dane są na komputerze: Ustawienia Androida → Aplikacje → Tablica Ofert → Pamięć → „Wyczyść dane”, potem połącz telefon z komputerem jeszcze raz (kod QR) i zsynchronizuj z Google Dyskiem.",
   "error.generic": "Coś poszło nie tak.",
   "error.invalid": "Sprawdź wpisane dane.",
   "error.not_found": "Tej oferty już nie ma.",
@@ -881,7 +884,7 @@ export const pl = {
 
   "settings.s.sync": "Synchronizacja",
   "sync.intro": "Wspólne dane komputera i telefonu przez Twój Google Dysk: jeden plik „tablica-ofert.sync” w „Moim dysku” (aplikacja widzi tylko pliki, które sama utworzyła - nie usuwaj go ani nie przenoś). Plik jest szyfrowany na tym komputerze, zanim trafi na Dysk - nawet ktoś z dostępem do konta Google go nie odczyta. Bez synchronizacji działa sam komputer.",
-  "sync.introPhone": "Wspólne dane komputera i telefonu przez Twój Google Dysk: jeden plik „tablica-ofert.sync” w „Moim dysku” (aplikacja widzi tylko pliki, które sama utworzyła - nie usuwaj go ani nie przenoś). Plik jest zaszyfrowany - klucz przenosisz z komputera kodem QR, więc nawet ktoś z dostępem do konta Google go nie odczyta. Na telefon nie trafiają oferty odrzucone przez filtr.",
+  "sync.introPhone": "Wspólne dane komputera i telefonu przez Twój Google Dysk: jeden plik „tablica-ofert.sync” w „Moim dysku” (aplikacja widzi tylko pliki, które sama utworzyła - nie usuwaj go ani nie przenoś). Plik jest zaszyfrowany - klucz przenosisz z komputera kodem QR, więc nawet ktoś z dostępem do konta Google go nie odczyta. Na telefon nie trafiają oferty odrzucone przez filtr - chyba że jest przy nich Twoja notatka, termin albo ocena.",
   "sync.lostWarning": "klucz do odczytu kopii na Dysku jest tylko na Twoich urządzeniach. Gdy przepadną oba, kopii nie da się odczytać - dlatego co jakiś czas zapisz też kopię z hasłem (Ustawienia → Dane → „Zapisz kopię jako…”).",
   "sync.lostWarningPhone": "klucz do odczytu kopii na Dysku jest tylko na Twoich urządzeniach. Gdy przepadną oba, kopii nie da się odczytać - dlatego co jakiś czas zapisz też kopię z hasłem na komputerze (Ustawienia → Dane → „Zapisz kopię jako…”).",
   "sync.enable": "Synchronizuj z Google Dyskiem",
@@ -921,6 +924,7 @@ export const pl = {
   "sync.copyFailed": "Nie udało się skopiować - przepisz kod na stronie Google.",
   "sync.connected": "Połączono z Google Dyskiem",
   "sync.now": "Synchronizuj teraz",
+  "sync.noKey": "Najpierw zeskanuj kod QR z komputera (niżej) - dopiero z nim telefon może synchronizować.",
   "sync.waitsConfirm": "Synchronizacja usunęłaby kilka ofert naraz, więc czeka na Ciebie - kliknij „Synchronizuj teraz” i zdecyduj.",
   "sync.working": "Synchronizuję…",
   "sync.done": "Zsynchronizowano - zmienione: {changed}, usunięte: {removed}",
