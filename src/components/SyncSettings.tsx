@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Api } from "../api";
 import { describeError, type DeviceCode, type SecretHints, type Settings, type SyncStatus } from "../api/types";
 import { useI18n } from "../i18n";
@@ -359,7 +359,9 @@ export function SyncSettings({
                       if (found === "cancelled") return;
                       const clientId = await api.syncFromQr(found.text);
                       if (clientId) onChange("google_client_id", clientId);
-                      onToast(t(clientId ? "sync.scanDoneProject" : "sync.scanDone"));
+                      // Still connected (the same Google project) - nothing more to do than sync.
+                      const now = await api.syncStatus();
+                      onToast(t(clientId && !now.connected ? "sync.scanDoneProject" : "sync.scanDone"));
                       await load();
                     } catch (e) {
                       onError(e);
@@ -476,6 +478,29 @@ function DeviceCodeSteps({ code, onOpenLink, onToast }: { code: DeviceCode; onOp
  */
 function ScanOverlay() {
   const { t } = useI18n();
+  const box = useRef<HTMLDivElement>(null);
+  // `position: fixed` is not always the screen here (on the phone the frame landed near the top,
+  // partly off the screen, with the settings scrolled down): measure where it came out and
+  // move it onto the screen, so the frame is where the camera picture is.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.top = el.style.left = "0px";
+      const r = el.getBoundingClientRect();
+      el.style.top = `${-r.top}px`;
+      el.style.left = `${-r.left}px`;
+      el.style.width = `${window.innerWidth}px`;
+      el.style.height = `${window.innerHeight}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    document.addEventListener("scroll", fit, true);
+    return () => {
+      window.removeEventListener("resize", fit);
+      document.removeEventListener("scroll", fit, true);
+    };
+  }, []);
   useEffect(() => {
     const root = document.documentElement;
     root.classList.add("scanning");
@@ -486,7 +511,7 @@ function ScanOverlay() {
     };
   }, []);
   return (
-    <div className="scan-overlay" role="dialog" aria-modal="true" aria-labelledby="scan-hint">
+    <div ref={box} className="scan-overlay" role="dialog" aria-modal="true" aria-labelledby="scan-hint">
       <p id="scan-hint" className="scan-hint">
         {t("sync.scanHint")}
       </p>

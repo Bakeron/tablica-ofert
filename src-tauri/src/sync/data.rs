@@ -186,16 +186,17 @@ fn upsert(tx: &Transaction, table: &str, cols: &[&str], uid: &str, data: &Value,
         values.push(value.clone());
     }
     let exists: bool = tx.query_row(&format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE uid = ?1)"), [uid], |r| r.get(0))?;
+    // Only the fields the row carries: a device with an older app version knows fewer columns,
+    // and a missing one must keep its local value (or get the column's default in a new row) -
+    // not become empty (`NOT NULL` columns would refuse the whole sync).
+    let (names, values): (Vec<String>, Vec<Sql>) = names
+        .into_iter()
+        .zip(values)
+        .enumerate()
+        .filter(|(i, _)| *i >= cols.len() || data.get(cols[*i]).is_some())
+        .map(|(_, pair)| pair)
+        .unzip();
     if exists {
-        // Only the fields the row carries: a device with an older app version knows fewer
-        // columns, and a missing one must keep its local value, not become empty.
-        let (names, values): (Vec<String>, Vec<Sql>) = names
-            .into_iter()
-            .zip(values)
-            .enumerate()
-            .filter(|(i, _)| *i >= cols.len() || data.get(cols[*i]).is_some())
-            .map(|(_, pair)| pair)
-            .unzip();
         if names.is_empty() {
             return Ok(());
         }
@@ -656,6 +657,22 @@ mod tests {
         assert_eq!(notes, "z telefonu");
         assert!(updated.as_str() <= NOW, "{updated}");
         assert_eq!(kept, published);
+    }
+
+    #[test]
+    fn a_new_offer_from_an_older_app_gets_the_defaults_of_missing_columns() {
+        let (mut old, mut phone) = (test_db(), test_db());
+        add(&mut old, "Frontend Developer");
+        // The sync file written by an app from before `expired_by_user` (NOT NULL DEFAULT 0).
+        let mut sa = export(&old, "phone", NOW).unwrap();
+        for r in sa.tables.get_mut("offers").unwrap() {
+            r.data.as_object_mut().unwrap().remove("expired_by_user");
+        }
+        let (merged, _) = merge(&sa, &export(&phone, "phone", NOW).unwrap(), NOW);
+        apply(&mut phone, &merged, NOW).unwrap();
+        assert_eq!(titles(&phone), vec!["Frontend Developer"]);
+        let by_user: i64 = phone.query_row("SELECT expired_by_user FROM offers", [], |r| r.get(0)).unwrap();
+        assert_eq!(by_user, 0);
     }
 
     #[test]
