@@ -807,6 +807,7 @@ export const en: Record<keyof typeof pl, string> = {
   "features.feature_contacts": "Contacts and contact history of an offer",
   "features.feature_keys": "Keyboard shortcut hint above the board",
   "features.sound": "Sounds: quiet clatter of tiles for new offers, a short gong an hour before an interview",
+  "features.tilt": "Tilted match score stamp - as if pressed on by hand (off: it stands straight)",
   "features.hint": "A turned-off part disappears from the screen, its data stays.",
   "data.saveTitle": "Save a copy as…",
   "data.saveText": "The whole database in one file protected with your password - it can be loaded on another computer. API keys and passwords are not part of the copy. Make one now and then and keep it off this computer (USB stick, cloud) - it helps when the disk, Windows or the key store fails.",

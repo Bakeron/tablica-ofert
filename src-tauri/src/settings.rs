@@ -39,6 +39,8 @@ const ALLOWED: &[(&str, Rule)] = &[
     // Size of all text (PC: also Ctrl + / Ctrl - / Ctrl 0).
     ("text_size", Rule::One(&["normal", "small", "large", "xlarge"])),
     ("sound", Rule::One(&["off", "on"])),
+    // Tilted decorations (the score stamp); off = everything stands straight.
+    ("tilt", Rule::One(&["off", "on"])),
     // "First steps" shown at the first start until finished or skipped.
     ("onboarding", Rule::One(&["pending", "done"])),
     // Collect offers at start and every few hours while the app is open.

@@ -261,6 +261,10 @@ function SettingsBody({
             <input type="checkbox" checked={settings.sound === "on"} onChange={(e) => onChange("sound", e.target.checked ? "on" : "off")} />
             <span>{t("features.sound")}</span>
           </label>
+          <label className="choice-item">
+            <input type="checkbox" checked={settings.tilt === "on"} onChange={(e) => onChange("tilt", e.target.checked ? "on" : "off")} />
+            <span>{t("features.tilt")}</span>
+          </label>
           {/* On the PC this sits with the sources; the phone has no such section. */}
           {isPhone() && (
             <PhoneReminders

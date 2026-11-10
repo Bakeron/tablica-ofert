@@ -419,6 +419,8 @@ export interface Settings {
   /** Size of all text; on the PC also Ctrl + / Ctrl - / Ctrl 0. */
   text_size: TextSize;
   sound: "off" | "on";
+  /** Tilted decorations (the score stamp); off = everything stands straight. */
+  tilt: "off" | "on";
   /** "First steps" at the first start, until finished or skipped. */
   onboarding: "pending" | "done";
   /** Collect offers at start and every few hours while the app is open. */
@@ -483,6 +485,7 @@ export const DEFAULT_SETTINGS: Settings = {
   motion: "system",
   text_size: "normal",
   sound: "off",
+  tilt: "off",
   onboarding: "done",
   fetch_auto: "on",
   fetch_every: "6",

@@ -2,6 +2,15 @@
    signal-yellow wayfinding signs, offer details as a boarding pass.
    Every colour is a token; dark and light themes only swap tokens. */
 
+/* Every tilt goes through --tilt: 0 = straight (the default), 1 = tilted (Settings → Look). */
+:root {
+  --tilt: 0;
+}
+
+:root[data-tilt="on"] {
+  --tilt: 1;
+}
+
 :root,
 :root[data-theme="dark"] {
   --hall: #121314;
@@ -1131,7 +1140,7 @@ details[open]::details-content {
   color: var(--stamp);
   font-family: var(--font-board);
   text-transform: uppercase;
-  transform: rotate(-7deg);
+  transform: rotate(calc(-7deg * var(--tilt)));
   box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 3px var(--stamp);
 }
 

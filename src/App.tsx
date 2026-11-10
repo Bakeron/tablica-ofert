@@ -181,6 +181,7 @@ export default function App() {
         settings.motion === "system" ? (motionMedia.matches ? "reduced" : "full") : settings.motion;
       root.lang = lang;
       root.dataset.textSize = settings.text_size;
+      root.dataset.tilt = settings.tilt;
     };
     apply();
     media.addEventListener("change", apply);
@@ -189,7 +190,7 @@ export default function App() {
       media.removeEventListener("change", apply);
       motionMedia.removeEventListener("change", apply);
     };
-  }, [settings.theme, settings.motion, settings.text_size, lang]);
+  }, [settings.theme, settings.motion, settings.text_size, settings.tilt, lang]);
 
   // ----- errors -----
   const fail = useCallback(

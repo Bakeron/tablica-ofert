@@ -807,6 +807,7 @@ export const pl = {
   "features.feature_contacts": "Kontakty i historia kontaktów przy ofercie",
   "features.feature_keys": "Podpowiedź skrótów klawiszowych nad tablicą",
   "features.sound": "Dźwięki: ciche klekotanie klapek przy nowych ofertach, krótki gong godzinę przed rozmową",
+  "features.tilt": "Krzywa pieczątka z oceną dopasowania - jak przybita ręcznie (wyłączone: stoi prosto)",
   "features.hint": "Wyłączona część znika z ekranu, a jej dane zostają.",
   "data.saveTitle": "Zapisz kopię jako…",
   "data.saveText": "Cała baza w jednym pliku zabezpieczonym Twoim hasłem - da się ją wczytać na innym komputerze. Klucze API i hasła nie trafiają do kopii. Rób ją co jakiś czas i trzymaj poza tym komputerem (pendrive, chmura) - pomoże, gdy zawiedzie dysk, Windows albo sejf z kluczem.",
