@@ -11,6 +11,7 @@ pub mod ollama_install;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -27,8 +28,8 @@ use crate::{clock, profiles, settings, usage};
 
 use client::{Ai, Problem, Provider};
 
-/// Offers read in one run (the rest waits for the next run).
-const PER_RUN: usize = 25;
+/// Offers read in one run on its own (the rest waits for the next run); "Rate now" reads them all.
+pub const PER_RUN: usize = 25;
 /// Pause when a busy provider does not say how long to wait, and the longest pause taken.
 const BUSY_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
 const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -540,7 +541,7 @@ fn load_job(conn: &Connection, id: i64) -> AppResult<Option<Job>> {
     Ok(Some(Job { id, facts, profiles, experience: profiles::experience(conn)? }))
 }
 
-fn pending_ids(conn: &Connection, limit: usize) -> AppResult<Vec<i64>> {
+fn pending_ids(conn: &Connection, limit: Option<usize>) -> AppResult<Vec<i64>> {
     // Offers the user already acted on go first, then the newest published; older ones nobody
     // works on and "Not for me" ones are not read ("Rate again" still rates any offer).
     let mut stmt = conn.prepare(&format!(
@@ -548,7 +549,8 @@ fn pending_ids(conn: &Connection, limit: usize) -> AppResult<Vec<i64>> {
         crate::offers::waiting_for_ai(conn)?,
         crate::offers::AI_ORDER
     ))?;
-    let ids = stmt.query_map([limit as i64], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    // -1 = no limit in SQLite.
+    let ids = stmt.query_map([limit.map_or(-1, |n| n as i64)], |r| r.get(0))?.collect::<Result<_, _>>()?;
     Ok(ids)
 }
 
@@ -623,10 +625,10 @@ async fn rate(ai: &Ai, job: &Job, app_language: &str) -> AppResult<Reading> {
     Ok(reading)
 }
 
-/// Reads offers waiting for AI (newest first, at most `PER_RUN`), within the daily limit.
-/// `only` = just this offer (button "Rate again"). `progress` hears every offer before AI
-/// reads it (the caller says when it is over).
-pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'_>) -> AppResult<RateReport> {
+/// Reads offers waiting for AI (newest first, at most `per_run`; `None` = all of them), within the
+/// daily limits. `only` = just this offer (button "Rate again"). `progress` hears every offer before
+/// AI reads it (the caller says when it is over).
+pub async fn process(state: &AppState, only: Option<i64>, per_run: Option<usize>, progress: OnProgress<'_>) -> AppResult<RateReport> {
     if state.rating.swap(true, Ordering::SeqCst) {
         return Err(AppError::Busy);
     }
@@ -636,14 +638,18 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
     if cfgs.is_empty() {
         return Ok(RateReport::default());
     }
-    // Connected when first needed; `at` = the provider asked now - after its limit, the next one.
+    // Connected when first needed. `out` = not asked again in this run (its limit, key, server);
+    // `rest` = asked for a short pause (a limit per minute, a busy model) - until then the offers go
+    // to the next provider, and back to this one when the pause is over.
     let mut ais: Vec<Option<Ai>> = cfgs.iter().map(|_| None).collect();
-    let mut at = 0;
+    let mut out = vec![false; cfgs.len()];
+    let mut rest: Vec<Option<(Instant, AiProblem)>> = cfgs.iter().map(|_| None).collect();
+    let mut last_used = 0;
     // Offers in another language get a translation into the language of the app.
     let app_language = if crate::notify::polish(state) { "pl" } else { "en" };
     let ids = match only {
         Some(id) => vec![id],
-        None => with_db(state, |c| pending_ids(c, PER_RUN))?,
+        None => with_db(state, |c| pending_ids(c, per_run))?,
     };
     let mut report = RateReport::default();
     'offers: for (i, id) in ids.iter().enumerate() {
@@ -653,23 +659,56 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
         };
         progress(Some(Progress::new("ai", None, i + 1, ids.len())));
         if i > 0 {
-            tokio::time::sleep(cfgs[at.min(cfgs.len() - 1)].provider.pause()).await;
+            tokio::time::sleep(cfgs[last_used].provider.pause()).await;
         }
         let mut last_error = AppError::Limit("daily limit of AI calls".into());
-        // Short waits for this offer when a provider asks for a pause (a limit per minute).
+        // Waits for this offer when every provider left asks for a pause.
         let mut waits = 0;
         loop {
-            while at < cfgs.len() {
-                let Some(why) = with_db(state, |c| used_up(c, &cfgs[at]))? else { break };
-                let cfg = &cfgs[at];
-                let kind = if why == "app" { Problem::Cap } else { Problem::Limit };
-                report.problems.push(AiProblem { provider: cfg.provider.as_str().into(), model: cfg.model.clone(), kind, message: String::new() });
-                at += 1;
+            // The first provider on the list that is still in the run and not resting.
+            let now = Instant::now();
+            let mut pick = None;
+            for k in 0..cfgs.len() {
+                if out[k] {
+                    continue;
+                }
+                if let Some(why) = with_db(state, |c| used_up(c, &cfgs[k]))? {
+                    let cfg = &cfgs[k];
+                    let kind = if why == "app" { Problem::Cap } else { Problem::Limit };
+                    report.problems.push(AiProblem { provider: cfg.provider.as_str().into(), model: cfg.model.clone(), kind, message: String::new() });
+                    out[k] = true;
+                    continue;
+                }
+                if rest[k].as_ref().is_some_and(|(until, _)| *until > now) {
+                    continue;
+                }
+                pick = Some(k);
+                break;
             }
-            if at >= cfgs.len() {
-                report.error = Some((&last_error).into());
-                break 'offers;
-            }
+            let Some(at) = pick else {
+                // Everyone left is resting: wait for the first one to be free - twice at most per
+                // offer, then the run stops (the next run tries again).
+                let first = (0..cfgs.len()).filter(|&k| !out[k]).filter_map(|k| rest[k].as_ref().map(|(until, _)| (*until, k))).min();
+                match first {
+                    Some((until, k)) if waits < 2 => {
+                        progress(Some(Progress::new("ai-wait", Some(cfgs[k].provider.as_str()), i + 1, ids.len())));
+                        tokio::time::sleep(until.saturating_duration_since(now)).await;
+                        progress(Some(Progress::new("ai", None, i + 1, ids.len())));
+                        waits += 1;
+                        continue;
+                    }
+                    _ => {
+                        for k in 0..cfgs.len() {
+                            if let (false, Some((_, problem))) = (out[k], rest[k].take()) {
+                                report.problems.push(problem);
+                            }
+                        }
+                        report.error = Some((&last_error).into());
+                        break 'offers;
+                    }
+                }
+            };
+            last_used = at;
             let cfg = &cfgs[at];
             if ais[at].is_none() {
                 match connect(cfg) {
@@ -678,7 +717,7 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                     Err(e) => {
                         report.problems.push(AiProblem::new(cfg, &e));
                         last_error = e;
-                        at += 1;
+                        out[at] = true;
                         continue;
                     }
                 }
@@ -690,6 +729,7 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                 Ok(reading) => {
                     with_db(state, |c| store(c, job.id, &reading))?;
                     report.rated += 1;
+                    rest[at] = None;
                     break;
                 }
                 // A broken, empty or refused answer, or this offer took too long: the offer is
@@ -704,16 +744,14 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                     with_db(state, |c| usage::add_calls(c, &limit_key(cfg.provider), 1))?;
                     report.problems.push(AiProblem::new(cfg, &e));
                     last_error = e;
-                    at += 1;
+                    out[at] = true;
                 }
-                // A limit per minute or a busy model: wait as long as the provider asks (at most a
-                // minute) and ask it again - twice at most, then the next provider.
-                Err(e) if client::problem(&e) == Problem::Busy && waits < 2 => {
+                // A limit per minute or a busy model: the provider rests as long as it asks (at most
+                // a minute) and the same offer goes to the next provider at once.
+                Err(e) if client::problem(&e) == Problem::Busy => {
                     let wait = client::retry_after(&e).unwrap_or(BUSY_WAIT).min(MAX_WAIT);
-                    progress(Some(Progress::new("ai-wait", Some(cfg.provider.as_str()), i + 1, ids.len())));
-                    tokio::time::sleep(wait).await;
-                    progress(Some(Progress::new("ai", None, i + 1, ids.len())));
-                    waits += 1;
+                    rest[at] = Some((Instant::now() + wait, AiProblem::new(cfg, &e)));
+                    last_error = e;
                 }
                 // Wrong key, API turned off, no such model, a server error or no connection to this
                 // provider (Ollama not started): the same offer goes to the next provider, this one is
@@ -721,7 +759,7 @@ pub async fn process(state: &AppState, only: Option<i64>, progress: OnProgress<'
                 Err(e) if provider_problem(&e) || server_or_offline(&e) => {
                     report.problems.push(AiProblem::new(cfg, &e));
                     last_error = e;
-                    at += 1;
+                    out[at] = true;
                 }
                 // No connection: stop - the next run tries again.
                 Err(e) => {
@@ -1402,7 +1440,7 @@ mod tests {
             AddOutcome::Added { id } => id,
             other => panic!("{other:?}"),
         };
-        assert_eq!(pending_ids(&conn, 10).unwrap(), vec![id]);
+        assert_eq!(pending_ids(&conn, Some(10)).unwrap(), vec![id]);
         let reading = Reading {
             company: Some("Firma Prawdziwa".into()),
             company_in_text: true,
@@ -1422,9 +1460,9 @@ mod tests {
         let view = offer_ai(&conn, id).unwrap();
         assert_eq!(view.flags, vec!["Brak widełek"]);
         assert_eq!(view.scores[0].source, "ai");
-        assert!(pending_ids(&conn, 10).unwrap().is_empty());
+        assert!(pending_ids(&conn, Some(10)).unwrap().is_empty());
         reset(&conn, id).unwrap();
-        assert_eq!(pending_ids(&conn, 10).unwrap(), vec![id]);
+        assert_eq!(pending_ids(&conn, Some(10)).unwrap(), vec![id]);
 
         // A low AI score never hides an offer - it only comes later in "Today", with its reason.
         let low = Reading {
@@ -1474,7 +1512,7 @@ mod tests {
         assert_eq!(reset_all(&conn).unwrap(), 2);
         let after = status(&conn, keys).unwrap();
         assert_eq!((after.rate_again, after.waiting), (0, 3));
-        assert!(pending_ids(&conn, 10).unwrap().contains(&waiting));
+        assert!(pending_ids(&conn, Some(10)).unwrap().contains(&waiting));
         // Left alone: "Not for me" and the Trash keep their status.
         let kept: i64 = conn.query_row("SELECT count(*) FROM offers WHERE ai_status = 'done'", [], |r| r.get(0)).unwrap();
         assert_eq!(kept, 2);

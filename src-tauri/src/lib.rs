@@ -278,7 +278,7 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
     // AI on its own only when turned on, and not more often than its "every" setting.
     if collects && on("ai_auto") && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false) {
         let _ = commands::with_db(&state, |c| ai::auto_ran(c));
-        match commands::until_done(ai::process(&state, None, &say).await, &say) {
+        match commands::until_done(ai::process(&state, None, Some(ai::PER_RUN), &say).await, &say) {
             Ok(report) if report.rated > 0 => {
                 let _ = handle.emit("offers-rated", &report);
             }

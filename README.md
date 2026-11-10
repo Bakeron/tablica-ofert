@@ -4,7 +4,7 @@ Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe ofe
 
 > **Stan (6.11.2026):** aplikacja na PC działa na prawdziwych danych (agregatory, AI, Harmonogram zadań); alerty e-mail, synchronizacja z telefonem przez Google Dysk i aplikacja na Androida są gotowe w kodzie i sprawdzone testami na zmyślonych danych oraz na emulatorze - czekają na test z prawdziwą skrzynką, kontem Google i telefonem.
 
-![Tablica ofert - motyw ciemny](Podgląd/01-tablica-ciemny.png)
+![Tablica ofert - zakładka „Dziś” z kartą oferty, motyw ciemny](Podgląd/01-tablica.png)
 
 > **In English:** a personal job-search board for Windows built with Tauri 2 (Rust + React/TypeScript). It collects offers from legal sources only (job-portal e-mail alerts over read-only IMAP, the Adzuna, Remotive, Jooble, Himalayas and Remote OK APIs, the We Work Remotely feed), filters them with plain-code hard filters, scores them with a swappable AI provider (Gemini, Groq, OpenRouter, Ollama, Claude, OpenAI - or keyword scoring without AI) and reminds about interviews through Windows notifications and Task Scheduler. Data stays on the device in a SQLCipher-encrypted SQLite database whose key lives in Windows Credential Manager (with a DPAPI-encrypted backup copy); optional sync with an Android phone through an encrypted file in Google Drive. Built with Claude Code as a pair programmer: the author set the requirements and made the decisions, Claude wrote the code, tests and audits. Docs are in Polish, code and comments in English.
 
@@ -29,17 +29,13 @@ Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe ofe
 
 Pomysł na wygląd: **tablica odlotów i znaki kierunkowe** - grafitowa tablica, żółty sygnałowy, piktogramy z kreski. Z lotniska jest tylko wygląd i ruch, napisy mówią językiem rekrutacji.
 
-![Motyw jasny](Podgląd/02-tablica-jasny.png)
+Zrzuty z wersji na PC, na zmianę w motywie jasnym i ciemnym (kliknij obraz, żeby zobaczyć go w pełnym rozmiarze):
 
-![Do sprawdzenia - oferty, o których filtr nie mógł zdecydować, z powodami](Podgląd/03-do-sprawdzenia-ciemny.png)
+![Zakładki tablicy - Oferty, Do sprawdzenia, Odrzucone przez filtr, Nie dla mnie, Archiwum, Kosz](Podgląd/02-zakladki.png)
 
-![Profil „czego szukam” - kryteria z przełącznikiem „twardy filtr / tylko w ocenie AI”](Podgląd/04-profil-jasny.png)
+![Karta oferty (etap, terminy, kontakty, ocena AI) i okna - nowa oferta, wiadomość do rekrutera, profil „czego szukam”, pierwsze kroki](Podgląd/03-karta-i-okna.png)
 
-![Ocena AI na karcie oferty - streszczenie, „Uwagi”, cytat o pracy zdalnej, ocena dla każdego profilu z powodem](Podgląd/05-ocena-ai-ciemny.png)
-
-![Źródła ofert - Adzuna z kluczem w sejfie Windows, Remotive, alerty e-mail](Podgląd/06-zrodla-ofert-jasny.png)
-
-![Wybór dostawcy AI - darmowi i płatni, z limitem zapytań](Podgląd/07-dostawca-ai-ciemny.png)
+![Ustawienia - źródła ofert, AI, wygląd, synchronizacja z telefonem, dane i kopie, o aplikacji](Podgląd/04-ustawienia.png)
 
 ## Technologie i dlaczego
 

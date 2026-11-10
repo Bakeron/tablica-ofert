@@ -98,7 +98,7 @@ pub fn spawn_ai(app: tauri::AppHandle) {
             return;
         }
         let say = progress_of(&app);
-        match until_done(ai::process(&state, None, &say).await, &say) {
+        match until_done(ai::process(&state, None, Some(ai::PER_RUN), &say).await, &say) {
             Ok(report) if report.rated > 0 || report.error.is_some() => {
                 let _ = app.emit("offers-rated", &report);
             }
@@ -376,14 +376,14 @@ pub async fn ai_status(state: State<'_, AppState>) -> AppResult<AiStatus> {
     })
 }
 
-/// AI reads waiting offers now (the same as after every fetch).
+/// AI reads all waiting offers now, until the daily limits run out.
 #[tauri::command]
 pub async fn ai_rate_now(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<RateReport> {
     let say = progress_of(&app);
-    until_done(ai::process(&state, None, &say).await, &say)
+    until_done(ai::process(&state, None, None, &say).await, &say)
 }
 
-/// "Rate all again" in the settings: at most one run of offers, the rest waits for "Rate now".
+/// "Rate all again" in the settings: all of them, until the daily limits run out.
 #[tauri::command]
 pub async fn ai_rate_all_again(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<RateReport> {
     if state.rating.load(std::sync::atomic::Ordering::SeqCst) {
@@ -391,7 +391,7 @@ pub async fn ai_rate_all_again(state: State<'_, AppState>, app: tauri::AppHandle
     }
     with_db(&state, |c| ai::reset_all(c))?;
     let say = progress_of(&app);
-    until_done(ai::process(&state, None, &say).await, &say)
+    until_done(ai::process(&state, None, None, &say).await, &say)
 }
 
 /// "Rate again" on the offer card.
@@ -399,7 +399,7 @@ pub async fn ai_rate_all_again(state: State<'_, AppState>, app: tauri::AppHandle
 pub async fn ai_rate_offer(state: State<'_, AppState>, id: i64) -> AppResult<RateReport> {
     with_db(&state, |c| ai::reset(c, id))?;
     // One offer - the message "AI is working" is enough, no line at the bottom.
-    ai::process(&state, Some(id), &|_| {}).await
+    ai::process(&state, Some(id), None, &|_| {}).await
 }
 
 /// "Check connection" next to an AI provider (one call of the day).

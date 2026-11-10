@@ -34,6 +34,8 @@ const OTHER_OUTDATED = "older app version on the other device";
 const NO_KEY = "no sync key yet";
 /// `CONFIRM_WAITING` in sync/mod.rs.
 const CONFIRM_WAITING = "waits for confirmation";
+/** `crypto::open` in Rust - the file on Drive was sealed with another key than this device's. */
+const BAD_KEY = "cannot be read with this key";
 
 const QR_SECONDS = 120;
 /** Asking Google again survives a short loss of network (the phone is in the browser meanwhile). */
@@ -144,6 +146,7 @@ export function SyncSettings({
       const detail = describeError(e).detail;
       // An ended login is said in the Google Drive part, with the "Connect" button next to it.
       if (detail.includes(NO_KEY)) onToast(t("sync.noKey"));
+      else if (detail.includes(BAD_KEY)) onToast(t(isPhone() ? "sync.badKeyPhone" : "sync.badKey"));
       else if (!loginExpired(detail)) onError(e);
     } finally {
       setBusy(false);
@@ -297,6 +300,10 @@ export function SyncSettings({
                         ? "sync.waitsConfirm"
                         : status.lastError.includes(NO_KEY)
                         ? "sync.noKey"
+                        : status.lastError.includes(BAD_KEY)
+                        ? isPhone()
+                          ? "sync.badKeyPhone"
+                          : "sync.badKey"
                         : "sync.failed",
                   )}
                 </p>
@@ -411,8 +418,9 @@ export function SyncSettings({
 }
 
 /**
- * The Google page covers the app, so the code comes first: copy it, and only then the page
- * opens up. Google is asked all the time, so coming back finishes the connection by itself.
+ * The Google page covers the app, so the code comes first: "Copy code" is the lead button until
+ * the code is copied, then the Google page is. Google is asked all the time, so coming back
+ * finishes the connection by itself.
  */
 function DeviceCodeSteps({ code, onOpenLink, onToast }: { code: DeviceCode; onOpenLink: (url: string) => void; onToast: (text: string) => void }) {
   const { t } = useI18n();
@@ -438,7 +446,10 @@ function DeviceCodeSteps({ code, onOpenLink, onToast }: { code: DeviceCode; onOp
         <li>{t("sync.step2")}</li>
         <li>{t("sync.step3")}</li>
       </ol>
-      <p className="device-code-value mono">{code.userCode}</p>
+      {/* Copied by hand (long press, Ctrl+C) counts too - the button only leads, it never locks. */}
+      <p className="device-code-value mono" onCopy={() => setCopied(true)}>
+        {code.userCode}
+      </p>
       <div className="ai-row">
         <button type="button" className={`btn btn-small ${copied ? "btn-ghost" : "btn-sign"}`} onClick={copy}>
           {t("sync.copyCode")}
@@ -446,7 +457,6 @@ function DeviceCodeSteps({ code, onOpenLink, onToast }: { code: DeviceCode; onOp
         <button
           type="button"
           className={`btn btn-small ${copied ? "btn-sign" : "btn-ghost"}`}
-          disabled={!copied}
           onClick={() => {
             setOpened(true);
             onOpenLink(code.verificationUrl);

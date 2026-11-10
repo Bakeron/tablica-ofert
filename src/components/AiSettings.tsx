@@ -328,8 +328,15 @@ function OllamaModels({
   // null = not checked yet, "off" = Ollama does not answer.
   const [models, setModels] = useState<string[] | "off" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [looking, setLooking] = useState(false);
+  // When Ollama last answered - a second click with the same models still shows it checked again.
+  const [checkedAt, setCheckedAt] = useState("");
   const look = useCallback(async () => {
-    setModels(await api.ollamaModels().catch(() => "off" as const));
+    setLooking(true);
+    const found = await api.ollamaModels().catch(() => "off" as const);
+    setModels(found);
+    setCheckedAt(new Date().toTimeString().slice(0, 8));
+    setLooking(false);
   }, [api]);
   // Another address - the old answer no longer counts.
   useEffect(() => {
@@ -359,13 +366,16 @@ function OllamaModels({
       )}
       {Array.isArray(models) &&
         (models.length > 0 ? (
-          <ModelChips name="ollama" label={t("ai.ollamaPick")} models={models} current={current} onPick={onPick} />
+          <>
+            <p className="source-ok">{t("ai.ollamaOn", { time: checkedAt })}</p>
+            <ModelChips name="ollama" label={t("ai.ollamaPick")} models={models} current={current} onPick={onPick} />
+          </>
         ) : (
           <p className="source-state">{t("ai.ollamaEmpty")}</p>
         ))}
       <div className="source-row">
-        <button type="button" className="btn btn-ghost btn-small" onClick={look} disabled={busy}>
-          {t("ai.ollamaLook")}
+        <button type="button" className="btn btn-ghost btn-small" onClick={look} disabled={busy || looking} aria-busy={looking}>
+          {looking ? t("ai.checking") : t("ai.ollamaLook")}
         </button>
         {Array.isArray(models) && want && !has(want) && (
           <button type="button" className="btn btn-sign btn-small" onClick={pull} disabled={busy} aria-busy={busy}>
@@ -568,6 +578,10 @@ function ConnectionCheck({ api, provider, ready, onChecked }: { api: Api; provid
       ) : failed ? (
         <p className="source-warn" role="status">
           <IconWarning /> {failed}
+        </p>
+      ) : busy && provider === "ollama" ? (
+        <p className="hint" role="status">
+          {t("ai.testingOllama")}
         </p>
       ) : (
         <p className="hint" role="status">
