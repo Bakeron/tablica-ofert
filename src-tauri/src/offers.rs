@@ -203,7 +203,7 @@ pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
     one_of(word(d, "remote")?, Remote::parse, "remote")?;
     one_of(word(d, "interest")?, Interest::parse, "interest")?;
     Stage::parse(&word(d, "stage")?.unwrap_or_default()).ok_or_else(|| AppError::Invalid("stage has an unknown value".into()))?;
-    for key in ["favorite", "expired", "expired_by_user", "renew_asked"] {
+    for key in ["favorite", "expired", "expired_by_user", "renew_asked", "own", "ai_precise"] {
         if !matches!(number(d, key)?, None | Some(0) | Some(1)) {
             return Err(AppError::Invalid(format!("{key} must be 0 or 1")));
         }

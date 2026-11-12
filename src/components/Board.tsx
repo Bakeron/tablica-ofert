@@ -68,6 +68,8 @@ export function sortRows(rows: OfferRow[], sort: Sort): OfferRow[] {
 
 interface Props {
   rows: OfferRow[];
+  /** Instead of the tab's own "no offers" text - e.g. none from the chosen portal. */
+  emptyText?: string;
   view: View;
   selectedId: number | null;
   freshIds: Set<number>;
@@ -90,7 +92,7 @@ interface Props {
 /** How long the children slide out when the tree folds (as `tree-out` in app.css). */
 const TREE_OUT_MS = 160;
 
-export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onOwn, onRestore, onNext }: Props) {
+export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onOwn, onRestore, onNext }: Props) {
   const touch = useRef<{ id: number; x: number; y: number; axis: SwipeAxis | null } | null>(null);
   /** The row whose interest mark just came from a swipe - the mark flips in. */
   const [flipped, setFlipped] = useState<number | null>(null);
@@ -213,7 +215,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
   if (rows.length === 0) {
     return (
       <div className="board board-empty">
-        <p>{t(view === "board" && isPhone() ? "board.empty.phone" : `board.empty.${view}`)}</p>
+        <p>{emptyText ?? t(view === "board" && isPhone() ? "board.empty.phone" : `board.empty.${view}`)}</p>
       </div>
     );
   }

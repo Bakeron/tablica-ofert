@@ -955,6 +955,12 @@ mod tests {
         offers.push(bad("u-type", &|d| {
             d.insert("salary_min".into(), json!("dużo"));
         }));
+        offers.push(bad("u-own", &|d| {
+            d.insert("own".into(), json!(7));
+        }));
+        offers.push(bad("u-precise", &|d| {
+            d.insert("ai_precise".into(), json!(-1));
+        }));
         apply(&mut pc, &snapshot, NOW).unwrap();
         assert_eq!(titles(&pc), vec!["Frontend Developer"]);
         let count: i64 = pc.query_row("SELECT count(*) FROM offers", [], |r| r.get(0)).unwrap();

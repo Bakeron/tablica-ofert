@@ -30,7 +30,7 @@ import {
 } from "./api/types";
 import { AddOfferDialog } from "./components/AddOfferDialog";
 import { AssistDialog } from "./components/AiDialogs";
-import { Board, DEFAULT_SORT, sortRows, type Sort, type SortKey } from "./components/Board";
+import { Board, DEFAULT_SORT, sortRows, sourceLabel, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
 import { ErrorContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
@@ -47,6 +47,7 @@ import { isWebUrl } from "./lib/format";
 import { isNarrowLayout, useFitLevels } from "./lib/fit";
 import { onBack } from "./lib/back";
 import { keepOrder } from "./lib/browse";
+import { byPortal, portalCounts } from "./lib/portals";
 import { BIN, isBin, leavesView, placeName, viewFor, type BinView } from "./lib/profile";
 import { csvCells, csvName, csvSeparator } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
@@ -154,6 +155,8 @@ export default function App() {
   const listScroll = useRef<number[]>([]);
   /** What the bin's search box holds (title, company or city). */
   const [binQuery, setBinQuery] = useState("");
+  // The portal filter above every list - one choice for all tabs, never remembered after a restart.
+  const [portal, setPortal] = useState<string | null>(null);
   /** `null` = the tab's own order: "Today" as Rust ranks it, the others the newest first. */
   const [sort, setSort] = useState<Sort | null>(null);
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
@@ -374,6 +377,8 @@ export default function App() {
   useEffect(() => (currentTab !== "own" ? onBack(() => setView("own"), true) : undefined), [currentTab]);
   const searching = isBin(view) && binQuery !== "";
   useEffect(() => (searching ? onBack(() => setBinQuery(""), true) : undefined), [searching]);
+  const filtering = portal !== null;
+  useEffect(() => (filtering ? onBack(() => setPortal(null), true) : undefined), [filtering]);
   // No offer left (the list emptied, or the layout is wide again after turning the phone): the card
   // closes - otherwise "back" would close an invisible card and the next offer's card open by itself.
   useEffect(() => {
@@ -653,12 +658,21 @@ export default function App() {
 
   // "Today" as Rust ranks it, the bin the last thrown in on top; the others the newest first.
   const shownSort = sort ?? (view === "today" || isBin(view) ? null : DEFAULT_SORT);
-  const sorted = useMemo(() => {
+  const searched = useMemo(() => {
     const list = keepOrder(shownSort === null ? rows : sortRows(rows, shownSort), browseOrder);
     const q = binQuery.trim().toLocaleLowerCase();
     if (!isBin(view) || !q) return list;
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
   }, [rows, shownSort, view, binQuery, browseOrder]);
+  const portals = useMemo(() => portalCounts(searched, portal), [searched, portal]);
+  const sorted = useMemo(() => byPortal(searched, portal), [searched, portal]);
+  // A portal chosen (or a new list under it): an offer the filter hid does not stay on the card.
+  useEffect(() => {
+    if (portal === null) return;
+    const shown = (id: number) => sorted.some((r) => r.id === id || r.children.some((c) => c.id === id));
+    setSelectedId((id) => (id !== null && shown(id) ? id : (sorted[0]?.id ?? null)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the list or the portal changes
+  }, [searched, portal]);
 
   // ----- actions -----
   async function run(action: () => Promise<unknown>, after?: () => void) {
@@ -1292,8 +1306,23 @@ export default function App() {
                 {isPhone() && emptyBin}
               </div>
             )}
+            {/* One portal at a time - shown when the list has more than one, or a portal is chosen. */}
+            {(portals.length > 1 || portal !== null) && (
+              <label className="portal-filter">
+                <span>{t("portal.label")}</span>
+                <select value={portal ?? ""} onChange={(e) => setPortal(e.target.value === "" ? null : e.target.value)}>
+                  <option value="">{t("portal.all", { count: searched.length })}</option>
+                  {portals.map((p) => (
+                    <option key={p.portal} value={p.portal}>
+                      {sourceLabel(p.portal, t)} ({p.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <Board
               rows={sorted}
+              emptyText={portal !== null && searched.length > 0 ? t("portal.empty", { portal: sourceLabel(portal, t) }) : undefined}
               view={view}
               selectedId={selectedId}
               freshIds={freshIds}

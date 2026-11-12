@@ -3542,6 +3542,27 @@ fieldset.plain {
   max-width: 28rem;
 }
 
+/* The portal filter above every list: a small sign "Portal" and the choice beside it. */
+.portal-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem 0.6rem;
+}
+
+.portal-filter span {
+  font-family: var(--font-board);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.portal-filter select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 20rem;
+}
+
 /* Phone: "Empty the bin" beside the search - the words stay whole. */
 .archive-search .btn {
   flex: none;
