@@ -8,6 +8,8 @@ import {
   type AiProvider,
   type AiProviderStatus,
   type AiStatus,
+  type ClaudeSpent,
+  type LowFunds,
   type FreeModels,
   type Machine,
   type RateReport,
@@ -19,11 +21,14 @@ import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
 import { TEXT_MAX, LEARN_MAX_POINTS, LEARN_MIN_RATINGS } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
-import { problemLine, rateSummary } from "../lib/aiProblem";
+import { lowFundsLine, noFreeProvider, problemLine, rateSummary } from "../lib/aiProblem";
+import { claudeCostText, localDay, plnText, topUpTyped, USD_PLN, usdText } from "../lib/aiCost";
+import { fullDay } from "../lib/format";
 import { Reveal } from "./Reveal";
 import { ConfirmContext, SecretField } from "./SecretField";
 import { SourceBox } from "./SourcesSettings";
 import { TextSetting } from "./TextSetting";
+import { RatingTest } from "./RatingTest";
 
 /** Where to get a key - each provider's own page. */
 const KEY_PAGES: Partial<Record<AiProvider, string>> = {
@@ -62,7 +67,7 @@ export function AiSettings({
   /** New scores are in - the board behind this window shows them. */
   onRated: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [hints, setHints] = useState<SecretHints>({});
   const [machine, setMachine] = useState<Machine | null>(null);
@@ -130,7 +135,7 @@ export function AiSettings({
     try {
       const done = await ask();
       setReport(done);
-      onToast(rateSummary(done, t));
+      onToast(rateSummary(done, t, lang));
       await load();
       onRated();
     } catch (e) {
@@ -142,7 +147,13 @@ export function AiSettings({
 
   function rateNow() {
     if (again && status && confirm) {
-      confirm(t("ai.rateAllAsk", { count: status.rateAgain }), () => void rate(() => api.aiRateAllAgain()), t("ai.rateAllAgain"));
+      // Offers added by hand or rated more precisely once go to Claude (paid) - its rough cost is said before anything is sent.
+      const claude = of("anthropic");
+      const paid =
+        claude?.enabled && status.rateAgainClaude > 0
+          ? ` ${t("ai.rateAllAskClaude", { count: status.rateAgainClaude, cost: claudeCostText(status.rateAgainClaude, claude.model, lang) })}`
+          : "";
+      confirm(`${t("ai.rateAllAsk", { count: status.rateAgain })}${paid}`, () => void rate(() => api.aiRateAllAgain()), t("ai.rateAllAgain"));
     } else {
       void rate(() => api.aiRateNow());
     }
@@ -153,6 +164,9 @@ export function AiSettings({
       <p>{t("ai.intro")}</p>
 
       <p className="hint">{t("ai.queue")}</p>
+
+      {/* TEMPORARY - the author's blind rating for the AI test; removed after it. */}
+      <RatingTest api={api} onOpenLink={onOpenLink} onError={onError} />
 
       {AI_PROVIDERS.map((p) => {
         const st = of(p);
@@ -175,6 +189,7 @@ export function AiSettings({
             onToggle={(on) => toggle(p, on)}
             alert={st && <ProviderAlert st={st} limit={status?.dailyLimit ?? 0} />}
           >
+            <p className="hint">{t(`ai.p.${p}.accuracy` as TextKey)}</p>
             {KEY_STEPS[p] ? (
               <KeySteps provider={p} steps={KEY_STEPS[p]!} open={st !== undefined && !st.ready} onOpenLink={onOpenLink} />
             ) : (
@@ -230,6 +245,7 @@ export function AiSettings({
             {FREE.includes(p) && p !== "ollama" && (
               <ModelPicker api={api} provider={p} current={st?.model ?? ""} onPick={(model) => onChange(`ai_model_${p}`, model)} />
             )}
+            {p === "anthropic" && <TopUp settings={settings} spent={status?.claudeSpent ?? null} low={status?.claudeLow ?? null} onChange={onChange} />}
             <ConnectionCheck api={api} provider={p} ready={st?.ready ?? false} onChecked={load} />
             {st && (
               <p className="source-state">{t("ai.usage", { today: st.callsToday, limit: status?.dailyLimit ?? 0, month: st.callsMonth })}</p>
@@ -507,23 +523,40 @@ function KeySteps({
   );
 }
 
-/** What went wrong and what to do, in plain words (no technical text on the screen). */
-function ProblemView({ problem }: { problem: AiProblem }) {
+/** What went wrong and what to do, in plain words; the provider's own (English) words only
+ *  folded under "Technical details". */
+function ProblemView({ problem, status }: { problem: AiProblem; status?: boolean }) {
   const { t } = useI18n();
   return (
-    <p className="source-warn">
-      <IconWarning /> {problemLine(problem, t)}
-    </p>
+    <div className="source-warn" role={status ? "status" : undefined}>
+      <IconWarning />
+      <div>
+        {problemLine(problem, t)}
+        {problem.message && (
+          <details>
+            <summary>{t("error.details")}</summary>
+            <code>{problem.message}</code>
+          </details>
+        )}
+      </div>
+    </div>
   );
 }
 
 /** The last "Rate now": how many were rated and every provider that failed, with the reason. */
 function RunResult({ report }: { report: RateReport }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const known = ["net", "auth", "limit", "missing", "busy"];
   return (
     <div className="ai-run">
-      {report.error ? (
+      {noFreeProvider(report) ? (
+        <>
+          <p className="source-state">{t("ai.rated", { count: report.rated, waiting: report.waiting })}</p>
+          <p className="source-warn">
+            <IconWarning /> {t("ai.noFree")}
+          </p>
+        </>
+      ) : report.error ? (
         <p className="source-warn">
           <IconWarning /> {t("ai.stopped")}
           {report.problems.length === 0 &&
@@ -536,6 +569,86 @@ function RunResult({ report }: { report: RateReport }) {
         <ProblemView key={`${p.provider}-${p.kind}`} problem={p} />
       ))}
       {report.noProfile > 0 && <p className="source-state">{t("ai.noProfile", { count: report.noProfile })}</p>}
+      {report.lowFunds && (
+        <p className="source-warn">
+          <IconWarning /> {lowFundsLine(report.lowFunds, t, lang)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The last top-up of the Claude account (in $, as Anthropic counts; about how much in PLN) and its
+ *  day - the spending counter counts from that day on. A sum without a day gets today. Below:
+ *  spent of it and what is left, today and this month. */
+function TopUp({
+  settings,
+  spent,
+  low,
+  onChange,
+}: {
+  settings: Settings;
+  spent: ClaudeSpent | null;
+  low: LowFunds | null;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
+}) {
+  const { t, lang } = useI18n();
+  const usd = settings.ai_topup_usd;
+  const shown = lang === "pl" ? usd.replace(".", ",") : usd;
+  const today = localDay();
+  return (
+    <div className="ai-topup">
+      <TextSetting
+        label={t("ai.topup")}
+        // Room for a typed "$" or "USD", taken off before saving.
+        maxLength={TEXT_MAX.ai_topup_usd + 4}
+        hint={usd ? t("ai.topupPln", { pln: plnText(Number(usd), lang), rate: USD_PLN }) : t("ai.topupHint")}
+        value={shown}
+        placeholder={lang === "pl" ? "5,00" : "5.00"}
+        inputMode="decimal"
+        onSave={async (text) => {
+          const v = topUpTyped(text);
+          if (v === null) return t("ai.topupWrong");
+          const saved = await onChange("ai_topup_usd", v);
+          if (saved !== false && v && !settings.ai_topup_date) await onChange("ai_topup_date", today);
+          return saved;
+        }}
+      />
+      <label className="field">
+        <span>{t("ai.topupDate")}</span>
+        <input
+          type="date"
+          max={today}
+          value={settings.ai_topup_date}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) onChange("ai_topup_date", v);
+          }}
+        />
+        <span className="hint">{t("ai.topupDateHint")}</span>
+      </label>
+      {spent && (
+        <div className="ai-spent" aria-live="polite">
+          {usd && spent.sinceTopUp !== null && (
+            <p className="source-state">
+              {t("ai.spent", {
+                day: fullDay(settings.ai_topup_date, lang),
+                spent: usdText(spent.sinceTopUp, lang),
+                topUp: usdText(Number(usd), lang),
+                left: usdText(Number(usd) - spent.sinceTopUp, lang),
+                pln: plnText(Math.max(0, Number(usd) - spent.sinceTopUp), lang),
+              })}
+            </p>
+          )}
+          {low && (
+            <p className="source-warn">
+              <IconWarning /> {lowFundsLine(low, t, lang)} {t("ai.lowFundsHere")}
+            </p>
+          )}
+          <p className="source-state">{t("ai.spentPeriods", { today: usdText(spent.today, lang), month: usdText(spent.month, lang) })}</p>
+          <p className="hint">{t("ai.spentHint")}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -568,9 +681,7 @@ function ConnectionCheck({ api, provider, ready, onChecked }: { api: Api; provid
         {busy ? t("ai.testing") : t("ai.test")}
       </button>
       {result?.problem ? (
-        <p className="source-warn" role="status">
-          <IconWarning /> {problemLine(result.problem, t)}
-        </p>
+        <ProblemView problem={result.problem} status />
       ) : result ? (
         <p className="source-ok" role="status">
           {t("ai.testOk", { model: result.model })}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExportRow } from "../api/types";
-import { CSV_LISTS, csvCells, csvDate, csvName } from "./csv";
+import { CSV_LISTS, csvCells, csvDate, csvName, csvSeparator } from "./csv";
 
 const row: ExportRow = {
   id: 1,
@@ -28,6 +28,11 @@ const row: ExportRow = {
 };
 
 describe("csv", () => {
+  it("separates columns the way Excel reads them in the app's language", () => {
+    expect(csvSeparator("pl")).toBe(";");
+    expect(csvSeparator("en")).toBe(",");
+  });
+
   it("turns codes into words of the app language", () => {
     const [head, cells] = csvCells([row], "pl");
     expect(head).toHaveLength(cells.length);
@@ -37,7 +42,7 @@ describe("csv", () => {
     expect(at("Okres")).toBe("miesięcznie");
     expect(at("Ulubiona")).toBe("tak");
     expect(at("Źródła")).toBe("JJIT, Jooble, nieznane");
-    expect(at("Lista")).toBe("Do sprawdzenia");
+    expect(at("Lista")).toBe("Zebrane - Do sprawdzenia");
     expect(at("Widełki do")).toBe("");
     expect(at("Opublikowano")).toMatch(/^2026-11-04 \d\d:00$/);
     expect(csvCells([row], "en")[1][3]).toBe("hybrid");

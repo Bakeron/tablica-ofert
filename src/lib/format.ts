@@ -39,7 +39,21 @@ export function fullDate(iso: string, lang: Lang): string {
   });
 }
 
-/** Compact salary for the board: "12-16 tys", "45-60 EUR/h". */
+/** A day without the hour - "open until 4 Dec 2026". */
+export function fullDay(iso: string, lang: Lang): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(lang === "pl" ? "pl-PL" : "en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** A short day for the marks on the list - "5.11" / "5 Nov". */
+export function shortDay(iso: string, lang: Lang): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(lang === "pl" ? "pl-PL" : "en-GB", { day: "numeric", month: lang === "pl" ? "numeric" : "short" });
+}
+
+/** Compact salary for the board: "12-16 tys.", "45-60 EUR/h". */
 export function salaryShort(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salaryCurrency" | "salaryPeriod">, lang: Lang, t: T): string {
   const { salaryMin: min, salaryMax: max } = o;
   if (min == null && max == null) return t("salary.none");

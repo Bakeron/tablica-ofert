@@ -22,6 +22,7 @@ import { IconPlus, IconTrash } from "./Icons";
 import { CloseButton, Modal } from "./Modal";
 import { Reveal } from "./Reveal";
 import { FieldError, FieldErrorsProvider, useField, useFieldErrors } from "./FieldError";
+import { PROFILE_EXPERIENCE_MAX, PROFILE_NAME_MAX, PROFILE_WORD_MAX } from "../lib/limits";
 
 const RADII = [0, 10, 20, 30, 50, 100];
 const MODES: Remote[] = ["yes", "hybrid", "no"];
@@ -311,7 +312,7 @@ export function ProfileFields({
         </span>
         <input
           required
-          maxLength={40}
+          maxLength={PROFILE_NAME_MAX}
           placeholder={t("profile.namePlaceholder")}
           value={form.name}
           onChange={(e) => set("name", e.target.value)}
@@ -372,7 +373,7 @@ export function ProfileFields({
         <textarea
           className="textarea-tall"
           rows={3}
-          maxLength={20000}
+          maxLength={PROFILE_EXPERIENCE_MAX}
           aria-describedby="experience-hint"
           value={form.experience}
           onChange={(e) => set("experience", e.target.value)}
@@ -414,7 +415,7 @@ export function ProfileFields({
               <label className="field">
                 <span className="sr-only">{t("profile.cityName")}</span>
                 <input
-                  maxLength={100}
+                  maxLength={PROFILE_WORD_MAX}
                   placeholder={t("profile.cityName")}
                   value={city.name}
                   onChange={(e) => set("cities", form.cities.map((c, j) => (j === i ? { ...c, name: e.target.value } : c)))}

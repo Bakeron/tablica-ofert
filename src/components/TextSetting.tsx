@@ -23,7 +23,7 @@ export function TextSetting({
   value: string;
   placeholder?: string;
   type?: "text" | "email";
-  inputMode?: "numeric";
+  inputMode?: "numeric" | "decimal";
   onSave: (value: string) => void | boolean | Promise<string | boolean | null | void>;
 }) {
   const { t } = useI18n();

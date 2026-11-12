@@ -93,6 +93,7 @@ export function SourcesSettings({
     return true;
   }
 
+  const collecting = settings.collect === "on";
   const of = (source: SourceStatus["source"]) => status.find((s) => s.source === source);
   const adzuna = of("adzuna");
   const remotive = of("remotive");
@@ -123,7 +124,18 @@ export function SourcesSettings({
   return (
     <SourceCheckContext.Provider value={{ check: checkSource, results: checks }}>
     <div className="settings-part">
+      {/* Off: only own offers - "Collected", "Fetch offers", fetching in the background and the
+          sources and mail below disappear; reminders stay. */}
       <fieldset className="crit-group">
+        <label className="choice-item">
+          <input type="checkbox" checked={collecting} onChange={(e) => onChange("collect", e.target.checked ? "on" : "off")} />
+          <span>{t("collect.label")}</span>
+        </label>
+        <p className="hint">{t(collecting ? "collect.hintOn" : "collect.hintOff")}</p>
+      </fieldset>
+
+      <fieldset className="crit-group">
+        {collecting && (
         <label className="choice-item">
           <input
             type="checkbox"
@@ -132,7 +144,8 @@ export function SourcesSettings({
           />
           <span>{t("src.auto")}</span>
         </label>
-        {settings.fetch_auto === "on" && (
+        )}
+        {collecting && settings.fetch_auto === "on" && (
           <label className="field field-inline">
             <span>{t("src.every")}</span>
             <select value={settings.fetch_every} onChange={(e) => onChange("fetch_every", e.target.value as Settings["fetch_every"])}>
@@ -144,25 +157,29 @@ export function SourcesSettings({
             </select>
           </label>
         )}
-        <p className="hint">{t("src.keywordsNote")}</p>
+        {collecting && <p className="hint">{t("src.keywordsNote")}</p>}
         <label className="choice-item">
           <input type="checkbox" checked={settings.background_task === "on"} disabled={taskBusy} onChange={(e) => toggleBackground(e.target.checked)} />
-          <span>{t("bg.label")}</span>
+          <span>{t(collecting ? "bg.label" : "bg.labelOwn")}</span>
         </label>
         <p className="hint">
-          {t("bg.hint")}{" "}
+          {t(collecting ? "bg.hint" : "bg.hintOwn")}{" "}
           {task && <strong>{task.exists ? t("bg.exists") : t("bg.missing")}</strong>}
         </p>
+        {collecting && (
         <label className="choice-item">
           <input type="checkbox" checked={settings.notify_new === "on"} onChange={(e) => onChange("notify_new", e.target.checked ? "on" : "off")} />
           <span>{t("bg.notify")}</span>
         </label>
+        )}
         <label className="choice-item">
           <input type="checkbox" checked={settings.notify_reminders === "on"} onChange={(e) => onChange("notify_reminders", e.target.checked ? "on" : "off")} />
           <span>{t("bg.reminders", { days: FOLLOW_UP_DAYS })}</span>
         </label>
       </fieldset>
 
+      {collecting && (
+      <>
       <SourceBox id="src-adzuna" name="Adzuna" short={t("src.adzuna.short")} on={settings.source_adzuna === "on"} onToggle={(on) => onChange("source_adzuna", on ? "on" : "off")} state={adzuna} lang={lang}>
         <p>{t("src.adzuna.text")}</p>
         <div className="source-row">
@@ -225,6 +242,8 @@ export function SourcesSettings({
         onOpenLink={onOpenLink}
         onToast={onToast}
       />
+      </>
+      )}
     </div>
     </SourceCheckContext.Provider>
   );
@@ -367,6 +386,10 @@ export function SourceState({
           <div>
             {prefix}
             {t("src.status.error", { when: fullDate(s.lastTry!, lang) })} {t(`src.problem.${sourceProblem(s.lastError!)}` as TextKey)}
+            <details>
+              <summary>{t("error.details")}</summary>
+              <code>{s.lastError}</code>
+            </details>
           </div>
         </div>
       )}

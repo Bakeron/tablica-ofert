@@ -247,6 +247,25 @@ textarea {
   border-bottom-color: var(--signal-ink);
 }
 
+/* "Own" - the person's own recruitments, the heart of the app - stands out like a sign of the
+   signposting: yellow letters on a black plate (the bar itself is yellow). */
+.tab.tab-own {
+  --btn-bg: var(--signal-ink);
+  --btn-ink: var(--signal);
+  background: var(--signal-ink);
+  color: var(--signal);
+  border-radius: 2px;
+}
+
+.tab.tab-own[aria-current="page"] {
+  border-bottom-color: var(--signal);
+}
+
+.tab-own .tab-count {
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
 .topbar-actions {
   margin-left: auto;
   display: flex;
@@ -668,6 +687,43 @@ details[open]::details-content {
   text-transform: uppercase;
 }
 
+/* "Collected": the switch between its four lists, right under the heading. */
+.collected-switch {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 0.4rem;
+  max-width: 48rem;
+  padding: 0 1rem 0.6rem;
+}
+
+/* Every row of the switch filled edge to edge - a wrapped row never ends ragged. */
+.collected-switch .seg {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* A phone: two equal columns, two rows - a long name ("Rejected by the filter") goes onto two
+   lines inside its button instead of taking a third row of the screen. */
+@container app (max-width: 30rem) {
+  .collected-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .collected-switch .seg {
+    padding-inline: 0.5rem;
+    line-height: 1.15;
+    text-align: center;
+  }
+}
+
+.seg-count {
+  padding: 0 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.85rem;
+}
+
 .board-head .count {
   color: var(--ink-dim);
   font-weight: 500;
@@ -913,6 +969,89 @@ details[open]::details-content {
 
 .interest-high {
   color: var(--accent-text);
+}
+
+/* Added by hand: a striped yellow edge like a sign post - not the solid edge of the selected row. */
+.board tbody tr.is-own > td:first-child {
+  background-image: repeating-linear-gradient(-45deg, var(--signal) 0 5px, var(--signal-ink) 5px 8px);
+  background-size: 7px 100%;
+  background-repeat: no-repeat;
+  padding-left: calc(0.6rem + 7px);
+}
+
+.row-marks {
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+.row-mark {
+  padding: 0 0.35rem;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.row-mark-own {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+}
+
+.row-mark-sent {
+  text-transform: none;
+  letter-spacing: 0;
+  border-style: solid;
+}
+
+.row-mark-nolink {
+  border-style: dashed;
+  color: var(--ink-dim);
+}
+
+/* The ad came again after the CV went - the question waits on the card. */
+.row-mark-renewed {
+  border-style: double;
+  border-width: 3px;
+}
+
+/* The same company and title as another offer, not joined - a question mark on the sign: the
+   frame is broken like the tree's branch, the word says it. */
+.row-mark-dup {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+/* Why an offer is in the bin - the word says it; the frame only helps the eye. */
+.row-mark-declined {
+  color: var(--ink-dim);
+}
+
+.row-mark-expired {
+  border-style: dotted;
+  color: var(--ink-dim);
+}
+
+.row-mark-deleted {
+  color: var(--danger);
+}
+
+.pass .row-mark-declined,
+.pass .row-mark-expired {
+  color: var(--paper-dim);
+}
+
+.pass-note .row-mark {
+  margin-right: 0.3rem;
+}
+
+/* "Rated more precisely" next to the card's "AI score" heading - ink of the pass, not dimmed. */
+.ai-precise-mark {
+  margin-left: 0.6rem;
+  color: var(--paper-ink);
+  vertical-align: 0.1em;
 }
 
 /* Split-flap module: dark tile with the hinge line across the middle. */
@@ -1327,7 +1466,8 @@ details[open]::details-content {
   white-space: normal;
 }
 
-/* "Expired": a quick decision, but not the main one - plain, beside "Open". */
+/* "To own" and "Expired": quick decisions, but not the main one - plain, beside "Open". */
+.pass-own,
 .pass-expired {
   flex: 0 0 auto;
   justify-content: center;
@@ -1490,6 +1630,47 @@ details[open]::details-content {
 .field-error svg {
   flex: none;
   margin-top: 0.15em;
+}
+
+/* "Add offer": a field checked against the offer's text - a yellow "check" sign with the reason
+   in words (never colour alone) and the line of the text the value comes from. */
+.field-check {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--paper-dim);
+  overflow-wrap: anywhere;
+}
+
+.check-why {
+  color: var(--paper-ink);
+  font-weight: 600;
+}
+
+.check-mark {
+  display: inline-block;
+  padding: 0 0.4em;
+  border-radius: 2px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.check-src q {
+  color: var(--paper-ink);
+}
+
+/* The field's own edge stays (its contrast); the yellow bar only points at it. */
+.field [data-check="problem"] {
+  box-shadow: inset 4px 0 0 var(--signal);
+}
+
+.form-grid .check-row {
+  grid-column: 1 / -1;
 }
 
 .field input,
@@ -2275,7 +2456,8 @@ fieldset.plain {
   font-family: var(--font-board);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--paper-dim);
+  /* Sits on the yellow header bar, so the bar's ink - the paper's dim grey vanishes there. */
+  color: var(--signal-ink);
 }
 
 .route {
@@ -2514,6 +2696,57 @@ fieldset.plain {
 
 .settings-part select {
   max-width: 18rem;
+}
+
+/* TEMPORARY - the blind rating for the AI test: a dashed "work in progress" frame, removed after the test. */
+.rating-test {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 2px dashed var(--signal);
+}
+
+.rating-test h3,
+.rating-test h4,
+.rating-test p {
+  margin: 0;
+}
+
+.rating-test-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rating-test-pos {
+  color: var(--paper-dim);
+}
+
+.rating-test-text {
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--field-line);
+  background: var(--field);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rating-test-verdict {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rating-test-verdict legend {
+  margin-bottom: 0.4rem;
+}
+
+.rating-test-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 /* Every source is a wayfinding sign: yellow edge on the left, name in board letters. */
@@ -3297,12 +3530,22 @@ fieldset.plain {
 
 /* The archive has no counter to empty - a search box to find an old offer instead. */
 .archive-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0 1rem 0.6rem;
 }
 
 .archive-search input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   max-width: 28rem;
+}
+
+/* Phone: "Empty the bin" beside the search - the words stay whole. */
+.archive-search .btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* Settings → Look → Offer list: a name, the choices, a hint - one under another. */
@@ -3516,6 +3759,18 @@ fieldset.plain {
   .board tbody tr.board-group,
   .board-group th {
     display: block;
+  }
+
+  /* A card here: the stripe of an own offer goes along the card's left edge, not into a cell. */
+  .board tbody tr.is-own {
+    background-image: repeating-linear-gradient(-45deg, var(--signal) 0 5px, var(--signal-ink) 5px 8px);
+    background-size: 7px 100%;
+    background-repeat: no-repeat;
+  }
+
+  .board tbody tr.is-own > td:first-child {
+    background-image: none;
+    padding-left: 0;
   }
 
   .board .c-offer { grid-area: offer; }
@@ -3827,6 +4082,13 @@ fieldset.plain {
   flex-direction: column;
   gap: 0.6rem;
   padding-top: 0.2rem;
+}
+
+/* Claude's top-up: the sum and its day, spaced like the other fields of the box. */
+.ai-topup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 /* Ollama: the steps and what it has. */
@@ -4308,6 +4570,17 @@ html.scanning .scan-overlay * {
     color: var(--signal);
   }
 
+  /* In the bottom bar the black plate means "you are here", so "Own" wears it only when open. */
+  .topbar .tab.tab-own:not([aria-current="page"]) {
+    background: none;
+    color: inherit;
+  }
+
+  .topbar .tab.tab-own:not([aria-current="page"]) .tab-count {
+    background: var(--signal-ink);
+    color: var(--signal);
+  }
+
   .tab-icon {
     position: relative;
     display: block;
@@ -4469,5 +4742,302 @@ html.scanning .scan-overlay * {
       align-self: flex-start;
       max-height: calc(100dvh - 1.8rem);
     }
+  }
+}
+
+/* "Add offer" found the same offer on the board: a direction sign under the form - which way now. */
+.same-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 0.6rem 0.8rem;
+  border-left: 6px solid var(--signal);
+  background: var(--paper);
+  color: var(--paper-ink);
+}
+
+.same-box p {
+  margin: 0;
+}
+
+.same-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.same-title:focus {
+  outline: none;
+}
+
+.same-title:focus-visible {
+  outline: 2px solid var(--paper-ink);
+  outline-offset: 2px;
+}
+
+.same-diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.same-diff th,
+.same-diff td {
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  border-bottom: 1px dashed var(--perf);
+  text-align: left;
+  vertical-align: top;
+  /* Whole words ("Opublikowana", "miesiąc"); only a word longer than the column breaks. */
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 600px) {
+  .same-box {
+    max-height: 70vh;
+  }
+}
+
+.same-diff thead th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The new value is what the button would write - it stands out in weight, not only in colour. */
+.same-diff td:last-child {
+  font-weight: 700;
+}
+
+.same-diff td[colspan] {
+  font-weight: 400;
+}
+
+.same-applied {
+  font-weight: 600;
+}
+
+/* A field with two versions: a radio in each cell - the ticked one is written. */
+.same-pick {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.same-pick input {
+  margin-top: 0.2rem;
+  accent-color: var(--paper-ink);
+}
+
+.same-diff td:has(.same-pick) {
+  font-weight: 400;
+}
+
+.same-pick:has(input:checked) span {
+  font-weight: 700;
+}
+
+/* "Filled in" - the field was empty: a small tag, nothing to choose. */
+.same-fill {
+  padding: 0 0.3rem;
+  border: 1px dashed currentColor;
+  border-radius: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* "Probably the same" offers: a short list of signs, each with its own way. */
+.dup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dup-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 0 0.5rem 0.6rem;
+  border-left: 3px dashed var(--perf);
+}
+
+.dup-item p {
+  margin: 0;
+}
+
+.dup-name {
+  font-weight: 700;
+}
+
+.dup-facts,
+.dup-why {
+  font-size: 0.85rem;
+}
+
+.dup-ai {
+  font-size: 0.9rem;
+}
+
+.dup-ai-mark {
+  padding: 0 0.3rem;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dup-ai-yes .dup-ai-mark {
+  border-width: 3px;
+  border-style: double;
+}
+
+.dup-ai-no .dup-ai-mark {
+  border-style: dotted;
+}
+
+.dup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.same-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* The tree of duplicates: the other ads of a job hang under the first one, one step in, with a
+   thin line like a branch - the indent says it, not only the colour. */
+.board tr.is-child > td:first-child {
+  box-shadow: inset 3px 0 0 var(--perf);
+}
+
+.board tr.is-child .c-offer {
+  padding-left: 1.2rem;
+}
+
+.board tr.is-child .offer-title {
+  font-size: 0.95em;
+}
+
+.tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border: 1.5px dashed currentColor;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.tree-toggle:hover {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+}
+
+/* One arrow that turns down with the children (reduced motion: at once). */
+.tree-mark {
+  display: inline-block;
+  width: 0.8em;
+  text-align: center;
+  transition: transform 0.16s ease-out;
+}
+
+.tree-mark.is-open {
+  transform: rotate(90deg);
+}
+
+/* The children slide in from under the parent and back up when the tree folds (TREE_OUT_MS). */
+@keyframes tree-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+}
+
+@keyframes tree-out {
+  to {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+}
+
+.board tr.is-child.tree-in {
+  animation: tree-in 0.18s ease-out;
+}
+
+.board tr.is-child.tree-out {
+  animation: tree-out 0.16s ease-in forwards;
+}
+
+.tree-ad-stage {
+  font-weight: 600;
+}
+
+.tree-ads {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.tree-ads li + li {
+  margin-top: 0.3rem;
+}
+
+.tree-ad-main {
+  font-weight: 700;
+}
+
+/* Rows as cards (narrow): the whole card of another ad steps in under the first one. */
+@container app (max-width: 37.5rem) {
+  .board tr.is-child {
+    margin-left: 1.25rem;
+  }
+
+  .board tr.is-child .c-offer {
+    padding-left: 0;
+  }
+
+  /* The branch line belongs to the table's first column; in a card the first cell is the date. */
+  .board tr.is-child > td:first-child {
+    box-shadow: none;
+  }
+}
+
+/* A finger: the small "3 ads" keeps its look, an invisible 48 px band around it takes the tap
+   (a tap just beside it opens the card, as on the rest of the row). */
+@media (pointer: coarse) {
+  .tree-toggle {
+    position: relative;
+  }
+
+  .tree-toggle::after {
+    content: "";
+    position: absolute;
+    left: -0.25rem;
+    right: -0.75rem;
+    top: 50%;
+    height: max(48px, 2.75rem);
+    translate: 0 -50%;
   }
 }

@@ -24,6 +24,10 @@ jobs:
       - name: Install JavaScript packages
         run: npm ci
 
+      # Known high and critical vulnerabilities in the JavaScript packages stop the run.
+      - name: Package vulnerabilities
+        run: npm audit --audit-level=high
+
       - name: Interface tests
         run: npm test
 

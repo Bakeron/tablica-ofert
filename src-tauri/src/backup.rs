@@ -14,9 +14,10 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 
 pub const MIN_PASSWORD: usize = 8;
+pub const MAX_PASSWORD: usize = 200;
 
 fn check_password(password: &str) -> AppResult<()> {
-    if password.chars().count() < MIN_PASSWORD || password.chars().count() > 200 {
+    if password.chars().count() < MIN_PASSWORD || password.chars().count() > MAX_PASSWORD {
         return Err(AppError::Invalid(format!("the password must have at least {MIN_PASSWORD} characters")));
     }
     Ok(())
@@ -134,12 +135,22 @@ pub fn csv_check(name: &str, cells: &[Vec<String>]) -> AppResult<()> {
     Ok(())
 }
 
-/// Rows of cells as CSV. Semicolons and a BOM - Polish Excel opens it with letters and columns
-/// right; every cell safe for Excel (`csv_cell`).
-pub fn csv_text(cells: &[Vec<String>]) -> String {
+/// The column separator Excel expects for the app's language: a semicolon in Polish (a comma is
+/// the decimal mark there), a comma in English. Anything else from the interface is refused.
+pub fn csv_separator(separator: &str) -> AppResult<&'static str> {
+    match separator {
+        ";" => Ok(";"),
+        "," => Ok(","),
+        _ => Err(AppError::Invalid("csv separator".into())),
+    }
+}
+
+/// Rows of cells as CSV with a BOM - Excel opens it with letters and columns right; every cell
+/// safe for Excel (`csv_cell`).
+pub fn csv_text(cells: &[Vec<String>], separator: &str) -> String {
     let mut out = String::from("\u{feff}");
     for row in cells {
-        out.push_str(&row.iter().map(|c| csv_cell(&crate::text::cut(c, CSV_MAX_CELL))).collect::<Vec<_>>().join(";"));
+        out.push_str(&row.iter().map(|c| csv_cell(&crate::text::cut(c, CSV_MAX_CELL))).collect::<Vec<_>>().join(separator));
         out.push_str("\r\n");
     }
     out
@@ -210,12 +221,17 @@ mod tests {
         assert_eq!(csv_cell("-5"), "\"'-5\"");
         assert_eq!(csv_cell("zwykły tekst"), "\"zwykły tekst\"");
         let cells = vec![vec!["Stanowisko".to_string(), "Firma".into()], vec!["=cmd|' /C calc'!A0".into(), "Firma \"Cudzysłów\"".into()]];
-        let text = csv_text(&cells);
+        let text = csv_text(&cells, ";");
         assert!(text.starts_with('\u{feff}'));
         assert!(text.contains("\"'=cmd|' /C calc'!A0\";\"Firma \"\"Cudzysłów\"\"\""));
         assert_eq!(text.lines().count(), 2);
         assert!(csv_check("oferty", &cells).is_ok());
         assert!(csv_check("../x", &cells).is_err());
         assert!(csv_check("", &cells).is_err());
+        // English Excel splits by commas; a quoted comma inside a cell stays in its cell.
+        let english = csv_text(&[vec!["Developer, React".to_string(), "Firma".into()]], ",");
+        assert!(english.contains("\"Developer, React\",\"Firma\""));
+        assert!(csv_separator(",").is_ok() && csv_separator(";").is_ok());
+        assert!(csv_separator("\t").is_err());
     }
 }

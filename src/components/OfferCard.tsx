@@ -1,9 +1,9 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
-import { STAGES, type AssistKind, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
-import { useI18n } from "../i18n";
-import { companyLabel, fullDate, isWebUrl, linksByCity, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
+import { STAGES, type AssistKind, type DupCandidate, type DupVerdict, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
+import { plural, useI18n } from "../i18n";
+import { companyLabel, fullDate, fullDay, isWebUrl, linksByCity, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
-import { LEARN_MAX_POINTS, LOW_KEYWORD_SCORE } from "../lib/limits";
+import { LEARN_MAX_POINTS, LOW_KEYWORD_SCORE, OFFER_NOTES_MAX } from "../lib/limits";
 import { isPhone } from "../lib/platform";
 import { reasonText, sortedReasons } from "../lib/profile";
 import { isNarrowLayout } from "../lib/fit";
@@ -13,6 +13,7 @@ import { IconArrowLeft, IconArrowOut, IconRestore, IconStar, IconTrash, IconWarn
 import { AgendaPart, type AgendaActions } from "./AgendaPart";
 import { Help } from "./Help";
 import { StatusTag } from "./StatusTag";
+import { DupCandidates, type Verdicts } from "./DupCandidates";
 // Official logo from adzuna.com/press.html, scaled down (Adzuna's API terms ask for it next to their offers).
 import adzunaLogo from "../assets/adzuna-logo.png";
 
@@ -28,20 +29,42 @@ interface Props {
   onNotes: (id: number, notes: string) => void;
   onOpenLink: (url: string) => void;
   onTrash: () => void;
+  /** "Restore" in the bin - any kind (not for me, expired, deleted). */
   onRestore: () => void;
   onPurge: () => void;
   /** "Expired" (or "Still open" when it is marked). */
   onExpired: () => void;
+  /** "To own" - shown for a collected offer only. */
+  onOwn: () => void;
+  /** The checkbox "Own offer": on / off for the whole family of ads. */
+  onOwnChange: (own: boolean) => void;
+  /** "Renewed after your CV - send it again?": `true` = sent once more. */
+  onRenewed: (resent: boolean) => void;
+  /** Another ad of the tree chosen on the card (a child, or the parent of a child). */
+  onShowOffer: (id: number) => void;
+  /** "Detach" - a child becomes an offer of its own. */
+  onDetach: () => void;
+  /** "The same company and title - the same ad?": `true` = join as a child, `false` = separate. */
+  onDupAnswer: (join: boolean) => void;
+  /** "Check duplicates": offers that may be the same job (code); `null` = it failed. */
+  onFindDuplicates: () => Promise<DupCandidate[] | null>;
+  /** AI's word about them; `null` = no answer. */
+  onJudgeDuplicates: (ids: number[]) => Promise<DupVerdict[] | null>;
+  /** "Join as a child" with offer `other` (the first added is the parent). */
+  onJoin: (other: number) => void;
   /** What the offer's own page said about being over, when it was taken a moment ago. */
   expiredPage: string | null;
   onKeepExpiredPage: () => void;
-  /** "Bring back to the list" in the archive. */
-  onUnarchive: () => void;
   /** A swipe on the card where it is a screen of its own: right = "very", left = "no", then the next offer. */
   onSwipe: (interest: Interest) => void;
   /** An AI provider is set. */
   aiOn: boolean;
+  /** Claude is turned on - "Rate more precisely" for a collected offer. */
+  claudeOn: boolean;
   onRateAgain: () => void;
+  onRatePrecise: () => void;
+  /** "Translate" the description of an offer in another language. */
+  onTranslate: () => Promise<void>;
   onAssist: (kind: AssistKind) => void;
   /** Settings at the AI section. */
   onOpenAiSettings: () => void;
@@ -56,7 +79,7 @@ interface Props {
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, expiredPage, onKeepExpiredPage, onUnarchive, onSwipe, aiOn, onRateAgain, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
+  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, onOwn, onOwnChange, onRenewed, onShowOffer, onDetach, onDupAnswer, onFindDuplicates, onJudgeDuplicates, onJoin, expiredPage, onKeepExpiredPage, onSwipe, aiOn, claudeOn, onRateAgain, onRatePrecise, onTranslate, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -67,6 +90,10 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   // An offer in another language shows the AI translation; the original is one click away.
   const [showOriginal, setShowOriginal] = useState(false);
   useEffect(() => setShowOriginal(false), [offer?.id]);
+  const [translating, setTranslating] = useState(false);
+  /** "Check duplicates": the offers found and AI's word; `null` = not checked. */
+  const [dups, setDups] = useState<{ id: number; list: DupCandidate[] | "wait"; verdicts: Verdicts } | null>(null);
+  useEffect(() => setDups(null), [offer?.id]);
   /** Where a finger started on the card (a swipe = the next offer). */
   const touch = useRef<{ x: number; y: number; axis: SwipeAxis | null } | null>(null);
   // Another offer chosen - the card changes with a short fade, not a jump.
@@ -91,6 +118,19 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   const translated = hasTranslation && !showOriginal;
   const foreign = offer.ai.offerLanguage !== null && offer.ai.offerLanguage !== lang ? offer.ai.offerLanguage : null;
   const remoteText = t(`remote.${offer.remote}`);
+
+  /** "Check duplicates": the code's list at once, AI's word when it comes (only for this offer). */
+  async function checkDuplicates() {
+    if (!offer) return;
+    const id = offer.id;
+    setDups({ id, list: "wait", verdicts: null });
+    const list = await onFindDuplicates();
+    const ask = Boolean(list && list.length > 0 && aiOn);
+    setDups((d) => (d?.id !== id ? d : list ? { id, list, verdicts: ask ? "wait" : null } : null));
+    if (!list || !ask) return;
+    const verdicts = await onJudgeDuplicates(list.map((c) => c.was.id));
+    setDups((d) => (d?.id === id ? { ...d, verdicts: verdicts ?? "error" } : d));
+  }
 
   return (
     <aside
@@ -128,22 +168,38 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           <h2 id="pass-title" ref={headingRef} tabIndex={-1} className="pass-title" lang={translated && titleTr ? lang : (foreign ?? undefined)}>
             {translated && titleTr ? titleTr : offer.title}
           </h2>
-          {hasTranslation ? (
+          {hasTranslation && (
             <p className="pass-meta pass-translation">
-              {t(translated ? "card.translated" : "card.original")}{" "}
+              {t(!translated ? "card.original" : descriptionTr ? "card.translated" : "card.translatedTitle")}{" "}
               <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowOriginal(!showOriginal)}>
                 {t(translated ? "card.showOriginal" : "card.showTranslation")}
               </button>
             </p>
-          ) : (
-            foreign &&
-            !inTrash && (
-              <p className="pass-meta pass-translation">
-                {t(!aiOn ? (isPhone() ? "card.translateNoAiPhone" : "card.translateNoAi") : offer.ai.status === "done" ? "card.translateAgain" : "card.translateWaiting", {
-                  language: t(`language.${foreign}`),
-                })}
-              </p>
-            )
+          )}
+          {/* A rating translates only the title; the description costs a second answer as long as the
+              offer, so it is translated on a click. */}
+          {foreign && !descriptionTr && !inTrash && (
+            <p className="pass-meta pass-translation">
+              {aiOn ? (
+                <>
+                  {t("card.foreign", { language: t(`language.${foreign}`) })}{" "}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    disabled={translating}
+                    aria-busy={translating}
+                    onClick={() => {
+                      setTranslating(true);
+                      onTranslate().finally(() => setTranslating(false));
+                    }}
+                  >
+                    {t(translating ? "card.translating" : "card.translate")}
+                  </button>
+                </>
+              ) : (
+                t(isPhone() ? "card.translateNoAiPhone" : "card.translateNoAi", { language: t(`language.${foreign}`) })
+              )}
+            </p>
           )}
         </div>
         <div className="pass-field pass-field-wide">
@@ -174,9 +230,12 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
       <div className="perforation" aria-hidden="true" />
 
       <section className="pass-body">
-        {inTrash && <p className="pass-note">{t("card.inTrash")}</p>}
-
-        {inArchive && <p className="pass-note">{t("archive.note")}</p>}
+        {/* In the bin: why it is there, as a mark and in a sentence. */}
+        {offer.bin && (
+          <p className="pass-note">
+            <span className={`row-mark row-mark-bin row-mark-${offer.bin}`}>{t(`row.bin.${offer.bin}`)}</span> {t(`card.bin.${offer.bin}`)}
+          </p>
+        )}
 
         <div className="pass-row">
           <StatusTag offer={offer} />
@@ -187,6 +246,12 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               <>
                 {" · "}
                 {t("card.added")}: {fullDate(offer.addedAt, lang)}
+              </>
+            )}
+            {offer.expiresAt && (
+              <>
+                {" · "}
+                {t("card.expires")}: {fullDay(offer.expiresAt, lang)}
               </>
             )}
           </span>
@@ -216,15 +281,135 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </div>
         )}
 
-        {inArchive && (
-          <div className="pass-actions">
-            <button type="button" className="btn btn-sign" onClick={onUnarchive}>
-              <IconRestore /> {t("archive.restore")}
-            </button>
+        {/* The tree: a child says whose ad it is and can leave; a parent lists its other ads. */}
+        {offer.parentId !== null && !inTrash && (
+          <div className="pass-proposal tree-note">
+            <p>{t("tree.childNote")}</p>
+            <div className="pass-actions">
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(offer.parentId!)}>
+                {t("tree.showParent")}
+              </button>
+              <button type="button" className="btn btn-ghost btn-small" onClick={onDetach} title={t("tree.detachHint")}>
+                {t("tree.detach")}
+              </button>
+            </div>
+          </div>
+        )}
+        {offer.children.length > 0 && (
+          <section className="pass-text">
+            <h3 className="pass-label">{t(plural(lang, "tree.ads", offer.children.length + 1), { count: offer.children.length + 1 })}</h3>
+            {/* Every ad has its own stage; the CV sent through a child counts for the whole job. */}
+            {offer.sentVia && (
+              <p className="same-applied">
+                {t("tree.sentViaCard", { source: sourceLabel(offer.sentVia.source, t), date: fullDay(offer.sentVia.at, lang) })}
+              </p>
+            )}
+            <ol className="tree-ads">
+              <li>
+                <span className="tree-ad-main">{t("tree.first")}</span> {offer.sources.map((s) => sourceLabel(s, t)).join(" · ")}
+                {" · "}
+                <span className="mono">{fullDay(offer.addedAt, lang)}</span>
+                {" · "}
+                <span className="tree-ad-stage">{t(`stage.${offer.stage}`)}</span>
+              </li>
+              {offer.children.map((c) => (
+                <li key={c.id}>
+                  <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(c.id)}>
+                    {c.sources.map((s) => sourceLabel(s, t)).join(" · ")}
+                    {c.city && c.city !== offer.city ? ` - ${c.city}` : ""}
+                  </button>{" "}
+                  <span className="mono">{fullDay(c.addedAt, lang)}</span>
+                  {" · "}
+                  <span className="tree-ad-stage">{t(`stage.${c.stage}`)}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+
+        {/* The same company and title in another city / with other salary: never joined by itself. */}
+        {offer.dup && !inTrash && (
+          <div className="pass-proposal dup-note">
+            <p>
+              <span className="row-mark row-mark-dup">{t("row.dup")}</span>{" "}
+              {t(offer.dup.why === "salary" ? "dup.card.salary" : "dup.card.city", {
+                title: offer.dup.was.title,
+                sources: offer.dup.sources.map((s) => sourceLabel(s, t)).join(" · "),
+                was: offer.dup.why === "salary" ? salaryFull(offer.dup.was, lang, t) : (offer.dup.was.city ?? missing),
+                now: offer.dup.why === "salary" ? salaryFull(offer, lang, t) : (offer.city ?? missing),
+              })}
+            </p>
+            <div className="pass-actions">
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onDupAnswer(true)}>
+                {t("dup.join")}
+              </button>
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(offer.dup!.was.id)}>
+                {t("same.showThat")}
+              </button>
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onDupAnswer(false)}>
+                {t("dup.separate")}
+              </button>
+            </div>
           </div>
         )}
 
-        {inTrash && (
+        {/* "Check duplicates": code finds, AI (when set) says what it thinks, the person decides. */}
+        {offer.parentId === null && !inTrash && (
+          <section className="pass-text dup-check">
+            {dups === null ? (
+              <button type="button" className="btn btn-ghost btn-small" onClick={checkDuplicates} title={t("dup.checkHint")}>
+                {t("dup.check")}
+              </button>
+            ) : dups.list === "wait" ? (
+              <p className="hint" role="status">
+                {t("dup.looking")}
+              </p>
+            ) : dups.list.length === 0 ? (
+              <p className="hint" role="status">
+                {t("dup.none")}
+              </p>
+            ) : (
+              <>
+                <h3 className="pass-label">{t("dup.found")}</h3>
+                <DupCandidates
+                  candidates={dups.list}
+                  verdicts={dups.verdicts}
+                  actions={(c) => (
+                    <>
+                      <button type="button" className="btn btn-ghost btn-small" onClick={() => onJoin(c.was.id)}>
+                        {t("dup.join")}
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(c.was.id)}>
+                        {t("same.showThat")}
+                      </button>
+                    </>
+                  )}
+                />
+                <p className="hint">{t("dup.youDecide")}</p>
+              </>
+            )}
+          </section>
+        )}
+
+        {/* The ad came again after the CV went: the decision is the person's - the app sends nothing. */}
+        {offer.renewAsked && !inTrash && (
+          <div className="pass-proposal">
+            <p>
+              <span className="row-mark row-mark-renewed">{t("row.renewed")}</span>{" "}
+              {t("card.renewedAsk", { date: offer.renewedAt ? fullDay(offer.renewedAt, lang) : "" })}
+            </p>
+            <div className="pass-actions">
+              <button type="button" className="btn btn-sign btn-small" onClick={() => onRenewed(true)}>
+                {t("card.renewedResent")}
+              </button>
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onRenewed(false)}>
+                {t("card.renewedSkip")}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {offer.bin && (
           <div className="pass-actions">
             <button type="button" className="btn btn-sign" onClick={onRestore}>
               <IconRestore /> {t("card.restore")}
@@ -236,7 +421,16 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
         )}
 
         {/* What one comes to the card for goes first: AI's reading, then the offer's own text. */}
-        <AiPart offer={offer} aiOn={aiOn && !inTrash} aiOff={!aiOn && !inTrash && !isPhone()} onRateAgain={onRateAgain} onAssist={onAssist} onOpenAiSettings={onOpenAiSettings} />
+        <AiPart
+          offer={offer}
+          aiOn={aiOn && !inTrash}
+          aiOff={!aiOn && !inTrash && !isPhone()}
+          precise={claudeOn && !offer.manual}
+          onRateAgain={onRateAgain}
+          onRatePrecise={onRatePrecise}
+          onAssist={onAssist}
+          onOpenAiSettings={onOpenAiSettings}
+        />
 
         {/* The job closed on a source whose terms ask to drop it - only the user's own record is left. */}
         {offer.contentRemoved === "himalayas" && (
@@ -279,6 +473,14 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
                 ))}
               </select>
             </label>
+            {/* Own or collected - one for the whole job (every ad of the family); added by hand = own. */}
+            <label className="choice-item own-check">
+              <input type="checkbox" checked={offer.own} onChange={(e) => onOwnChange(e.target.checked)} />
+              <span>
+                {t("own.check")}
+                {(offer.parentId !== null || offer.children.length > 0) && <span className="hint"> {t("own.checkFamily")}</span>}
+              </span>
+            </label>
 
             <AgendaPart key={offer.id} agenda={offer.agenda} actions={agenda} showDates={showDates} showContacts={showContacts} />
 
@@ -287,7 +489,7 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               <textarea
                 rows={3}
                 value={notes.id === offer.id ? notes.text : offer.notes}
-                maxLength={20000}
+                maxLength={OFFER_NOTES_MAX}
                 aria-describedby="notes-hint"
                 onChange={(e) => {
                   const text = e.target.value;
@@ -371,11 +573,16 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
         <section className="pass-text">
           <h3 className="pass-label">{t("card.history")}</h3>
           <ol className="history">
-            {offer.history.map((h, i) => (
-              <li key={i}>
-                <span className="mono">{fullDate(h.at, lang)}</span> {t(`stage.${h.stage}`)}
-              </li>
-            ))}
+            {[
+              ...offer.history.map((h) => ({ at: h.at, text: t(`stage.${h.stage}`) })),
+              ...(offer.renewedAt ? [{ at: offer.renewedAt, text: t("card.historyRenewed") }] : []),
+            ]
+              .sort((a, b) => a.at.localeCompare(b.at))
+              .map((h, i) => (
+                <li key={i}>
+                  <span className="mono">{fullDate(h.at, lang)}</span> {h.text}
+                </li>
+              ))}
           </ol>
         </section>
 
@@ -416,6 +623,11 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
               <IconStar filled={offer.favorite} />
             </button>
           </fieldset>
+          {!offer.own && (
+            <button type="button" className="btn btn-ghost pass-own" onClick={onOwn} title={t("own.hint")}>
+              {!isPhone() && <kbd aria-hidden="true">D</kbd>} {t("own.button")}
+            </button>
+          )}
           <button type="button" className="btn btn-ghost pass-expired" onClick={onExpired} title={offer.expired ? undefined : t("expired.hint")}>
             {!isPhone() && !offer.expired && <kbd aria-hidden="true">W</kbd>} {t(offer.expired ? "expired.undoButton" : "expired.button")}
           </button>
@@ -513,7 +725,9 @@ function AiPart({
   offer,
   aiOn,
   aiOff,
+  precise,
   onRateAgain,
+  onRatePrecise,
   onAssist,
   onOpenAiSettings,
 }: {
@@ -521,7 +735,10 @@ function AiPart({
   aiOn: boolean;
   /** No provider is on and the place to turn one on is at hand. */
   aiOff: boolean;
+  /** "Rate more precisely" with Claude - a collected offer (one added by hand goes to Claude anyway). */
+  precise: boolean;
   onRateAgain: () => void;
+  onRatePrecise: () => void;
   onAssist: (kind: AssistKind) => void;
   onOpenAiSettings: () => void;
 }) {
@@ -532,6 +749,11 @@ function AiPart({
     <section className="pass-text ai-part" aria-labelledby="ai-title">
       <h3 id="ai-title" className="pass-label">
         {t("ai.cardTitle")}
+        {ai.precise && (
+          <span className="row-mark ai-precise-mark" title={t("ai.preciseMarkHint")}>
+            {t("ai.preciseMark")}
+          </span>
+        )}
       </h3>
       {ai.status === null && <p className="pass-meta">{aiOn ? t("ai.waiting") : t(isPhone() ? "ai.offPhone" : "ai.off")}</p>}
       {ai.status === "failed" && (
@@ -595,6 +817,11 @@ function AiPart({
           <button type="button" className="btn btn-ghost btn-small" onClick={onRateAgain}>
             {ai.status === null ? t("ai.rateThis") : t("ai.rateAgain")}
           </button>
+          {precise && (
+            <button type="button" className="btn btn-ghost btn-small" onClick={onRatePrecise}>
+              {t("ai.ratePrecise")}
+            </button>
+          )}
         </div>
       )}
     </section>

@@ -2,13 +2,16 @@ mod agenda;
 mod ai;
 mod backup;
 mod cities;
+mod dates;
 mod clock;
 mod commands;
 mod db;
 mod dedup;
+mod dups;
 mod diag;
 mod error;
 mod extract;
+mod fieldcheck;
 mod filter;
 mod hardware;
 mod keycopy;
@@ -18,14 +21,18 @@ mod offers;
 mod learn;
 mod preview;
 mod profiles;
+mod rating_test;
 mod secrets;
 mod scheduler;
 mod score;
 mod settings;
 mod sources;
+mod same;
 mod sync;
 mod synonyms;
 mod text;
+mod tree;
+mod trim;
 #[cfg(target_os = "android")]
 mod tls;
 mod usage;
@@ -128,13 +135,27 @@ pub fn run() {
             commands::list_offers,
             commands::count_offers,
             commands::get_offer,
+            commands::rating_test_offers,
+            commands::rating_test_answer,
             commands::add_offer,
+            commands::check_same_offer,
+            commands::update_same_offer,
+            commands::answer_renewed,
+            commands::set_offer_parent,
+            commands::compare_offer,
+            commands::find_duplicates,
+            commands::judge_duplicates,
+            commands::join_offers,
+            commands::answer_duplicate,
             commands::set_stage,
             commands::set_interest,
             commands::set_favorite,
+            commands::set_own,
             commands::set_notes,
             commands::trash_offer,
             commands::restore_offer,
+            commands::bring_back_offer,
+            commands::put_back_offer,
             commands::set_expired,
             commands::unset_expired,
             commands::unarchive_offer,
@@ -163,6 +184,7 @@ pub fn run() {
             commands::ollama_install,
             commands::pick_folder,
             commands::ai_rate_offer,
+            commands::ai_translate,
             commands::ai_check,
             commands::ai_free_models,
             commands::ai_assist,
@@ -263,7 +285,9 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
     let say = commands::progress_of(handle);
     // The phone is a helper (zalozenia.md §2): collecting offers and AI stay on the PC.
     let collects = cfg!(desktop);
-    if collects && (background || on("fetch_auto")) {
+    // "Collect offers automatically" off: no fetching and no AI on its own - reminders and sync stay.
+    let gathers = collects && on("collect");
+    if gathers && (background || on("fetch_auto")) {
         match commands::until_done(sources::fetch(&state, false, &say).await, &say) {
             Ok(report) => {
                 new_on_board = report.new_on_board;
@@ -276,9 +300,9 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
         }
     }
     // AI on its own only when turned on, and not more often than its "every" setting.
-    if collects && on("ai_auto") && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false) {
+    if gathers && on("ai_auto") && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false) {
         let _ = commands::with_db(&state, |c| ai::auto_ran(c));
-        match commands::until_done(ai::process(&state, None, Some(ai::PER_RUN), &say).await, &say) {
+        match commands::until_done(ai::process(&state, None, Some(ai::PER_RUN), false, &say).await, &say) {
             Ok(report) if report.rated > 0 => {
                 let _ = handle.emit("offers-rated", &report);
             }

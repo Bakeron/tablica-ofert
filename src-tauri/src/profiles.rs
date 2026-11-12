@@ -7,12 +7,12 @@ use crate::error::{AppError, AppResult};
 use crate::filter::{self, Facts};
 use crate::model::*;
 
-const MAX_NAME: usize = 40;
-const MAX_DESCRIPTION: usize = 10_000;
-const MAX_EXPERIENCE: usize = 20_000;
+pub(crate) const MAX_NAME: usize = 40;
+pub(crate) const MAX_DESCRIPTION: usize = 10_000;
+pub(crate) const MAX_EXPERIENCE: usize = 20_000;
 const MAX_PROFILES: i64 = 12;
 const MAX_LIST: usize = 50;
-const MAX_WORD: usize = 100;
+pub(crate) const MAX_WORD: usize = 100;
 const MAX_CITIES: usize = 20;
 const MAX_RADIUS_KM: u16 = 300;
 const MAX_COMMUTE: u8 = 31;
@@ -280,7 +280,7 @@ fn facts_from(r: &rusqlite::Row) -> rusqlite::Result<(i64, Facts)> {
 /// so even fitting offers rarely show many of the profile's words.
 pub(crate) const LOW_KEYWORD_SCORE: i64 = 30;
 
-fn store(tx: &Transaction, offer_id: i64, facts: &Facts, profiles: &[Profile]) -> AppResult<()> {
+fn store(tx: &Connection, offer_id: i64, facts: &Facts, profiles: &[Profile]) -> AppResult<()> {
     tx.execute("DELETE FROM offer_filters WHERE offer_id = ?1", [offer_id])?;
     let mut results: Vec<FilterResult> = Vec::with_capacity(profiles.len());
     let mut scores: Vec<Option<i64>> = Vec::with_capacity(profiles.len());
@@ -360,7 +360,7 @@ pub fn facts_of(conn: &Connection, offer_id: i64) -> AppResult<Option<Facts>> {
 }
 
 /// Checks one offer (just added or merged) against every profile.
-pub fn recheck_offer(tx: &Transaction, offer_id: i64) -> AppResult<()> {
+pub fn recheck_offer(tx: &Connection, offer_id: i64) -> AppResult<()> {
     let profiles = list(tx)?;
     let facts = tx
         .query_row(&format!("SELECT {FACT_COLUMNS} FROM offers WHERE id = ?1"), [offer_id], facts_from)
@@ -418,6 +418,13 @@ mod tests {
             description: "Szukam pracy jako frontend developer, najlepiej zdalnie.".into(),
             criteria,
         }
+    }
+
+    /// Offers added by hand start as "interested" and stay on the board whatever the filter says;
+    /// these tests look at the filter, so the offers go back to "new".
+    /// The test offers are added by hand (own, "interested"); here they act like collected ones.
+    fn not_chosen_yet(conn: &Connection) {
+        conn.execute("UPDATE offers SET stage = 'new', own = 0", []).unwrap();
     }
 
     fn offer(title: &str, city: &str, remote: Remote) -> OfferInput {
@@ -541,6 +548,12 @@ mod tests {
         assert!(off_topic(&conn).is_empty());
     }
 
+    /// Offers that passed the filter: "All" in Collected without the ones to check.
+    fn passed(conn: &Connection, profile: Option<i64>) -> Vec<String> {
+        let review = ids(&offers::list(conn, View::Review, profile).unwrap());
+        ids(&offers::list(conn, View::Board, profile).unwrap()).into_iter().filter(|t| !review.contains(t)).collect()
+    }
+
     #[test]
     fn low_keyword_score_sends_offers_to_review_until_ai_rates_them() {
         let mut conn = test_db();
@@ -560,7 +573,9 @@ mod tests {
         };
         offers::add(&mut conn, from("Programista WordPress", "WordPress, PHP, ACF i JavaScript, frontend.", "adzuna")).unwrap();
         offers::add(&mut conn, from("Backend Engineer (Go)", "Go i JavaScript.", "manual")).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Backend Engineer (Go)", "Programista WordPress"]);
+        // Added by hand: in "Own" whatever its score.
+        assert_eq!(passed(&conn, None), vec!["Programista WordPress"]);
+        assert_eq!(ids(&offers::list(&conn, View::Own, None).unwrap()), vec!["Backend Engineer (Go)"]);
         let review = offers::list(&conn, View::Review, None).unwrap();
         assert_eq!(ids(&review), vec!["Backend Engineer (Kotlin)"]);
         assert_eq!(review[0].filter_reasons.last().unwrap().code, "low_keyword_score");
@@ -571,7 +586,8 @@ mod tests {
         let tx = conn.transaction().unwrap();
         recheck_offer(&tx, weak).unwrap();
         tx.commit().unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 3);
+        // The two collected ones on the board (the one added by hand is in "Own").
+        assert_eq!(passed(&conn, None), vec!["Backend Engineer (Kotlin)", "Programista WordPress"]);
     }
 
     #[test]
@@ -581,24 +597,27 @@ mod tests {
         offers::add(&mut conn, offer("Biuro Gdynia", "Gdynia", Remote::No)).unwrap();
         offers::add(&mut conn, offer("Biuro Kraków", "Kraków", Remote::No)).unwrap();
         offers::add(&mut conn, offer("Bez informacji", "Wrocław", Remote::Unknown)).unwrap();
+        not_chosen_yet(&conn);
         // No profile yet: nothing is filtered out.
         assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 4);
 
         let a = save(&mut conn, plan("Plan A", remote_only())).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Zdalna"]);
+        assert_eq!(passed(&conn, None), vec!["Zdalna"]);
         assert_eq!(ids(&offers::list(&conn, View::Review, None).unwrap()), vec!["Bez informacji"]);
         assert_eq!(ids(&offers::list(&conn, View::Rejected, None).unwrap()), vec!["Biuro Gdynia", "Biuro Kraków"]);
 
         // A second profile: one fitting profile is enough for the "all profiles" board.
         let b = save(&mut conn, plan("Plan B", gdansk())).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Biuro Gdynia", "Zdalna"]);
-        assert_eq!(ids(&offers::list(&conn, View::Board, Some(a)).unwrap()), vec!["Zdalna"]);
+        assert_eq!(passed(&conn, None), vec!["Biuro Gdynia", "Zdalna"]);
+        assert_eq!(passed(&conn, Some(a)), vec!["Zdalna"]);
         // Plan B wants an office near Gdańsk: a remote offer may still allow the office - unsure.
-        assert_eq!(ids(&offers::list(&conn, View::Board, Some(b)).unwrap()), vec!["Biuro Gdynia"]);
+        assert_eq!(passed(&conn, Some(b)), vec!["Biuro Gdynia"]);
         assert_eq!(ids(&offers::list(&conn, View::Review, Some(b)).unwrap()), vec!["Zdalna"]);
         assert_eq!(ids(&offers::list(&conn, View::Rejected, Some(b)).unwrap()), vec!["Bez informacji", "Biuro Kraków"]);
         let counts = offers::counts(&conn, None).unwrap();
-        assert_eq!(counts, ViewCounts { today: 3, board: 2, review: 1, rejected: 1, declined: 0, trash: 0 });
+        assert_eq!(counts, ViewCounts { to_send: 0, today: 3, board: 3, review: 1, rejected: 1, declined: 0, archive: 0, trash: 0, bin: 0 });
+        // "All" in Collected holds the ones to check too.
+        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Bez informacji", "Biuro Gdynia", "Zdalna"]);
 
         // Reasons travel with the rows and the card.
         let rejected = offers::list(&conn, View::Rejected, Some(a)).unwrap();
@@ -608,7 +627,7 @@ mod tests {
         assert_eq!(detail.filters[0].profile_name, "Plan A");
 
         delete(&mut conn, b).unwrap();
-        assert_eq!(ids(&offers::list(&conn, View::Board, None).unwrap()), vec!["Zdalna"]);
+        assert_eq!(passed(&conn, None), vec!["Zdalna"]);
         delete(&mut conn, a).unwrap();
         assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 4);
     }
@@ -618,6 +637,7 @@ mod tests {
         let mut conn = test_db();
         save(&mut conn, plan("Plan A", remote_only())).unwrap();
         offers::add(&mut conn, offer("Biuro", "Kraków", Remote::No)).unwrap();
+        not_chosen_yet(&conn);
         assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
         // The same offer from another source says "remote" - merged and checked again.
         let mut again = offer("Biuro", "Kraków", Remote::Yes);
@@ -635,6 +655,7 @@ mod tests {
             AddOutcome::Added { id } => id,
             other => panic!("{other:?}"),
         };
+        not_chosen_yet(&conn);
         assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 1);
         offers::set_interest(&conn, id, Some(Interest::High)).unwrap();
         assert_eq!(offers::list(&conn, View::Rejected, None).unwrap().len(), 0);
@@ -646,7 +667,9 @@ mod tests {
         offers::set_stage(&mut conn, id, Stage::Applied).unwrap();
         assert_eq!(offers::list(&conn, View::Declined, None).unwrap().len(), 1);
         offers::set_interest(&conn, id, None).unwrap();
-        assert_eq!(offers::list(&conn, View::Board, None).unwrap().len(), 1);
+        // "Applied" made it the person's own: back in "Own", not among the collected ones.
+        assert_eq!(offers::list(&conn, View::Own, None).unwrap().len(), 1);
+        assert!(offers::list(&conn, View::Board, None).unwrap().is_empty());
     }
 
     #[test]

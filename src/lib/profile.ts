@@ -72,26 +72,42 @@ export function isKept(o: Pick<OfferRow, "stage" | "favorite" | "interest">): bo
   return o.stage !== "new" || o.favorite || o.interest === "high" || o.interest === "maybe";
 }
 
+/** The lists inside "Collected" (the switch). */
+const COLLECTED_LISTS: readonly View[] = ["today", "board", "review", "rejected"];
+
+/** The lists inside "Bin" (the switch): all, not for me, expired (the archive), deleted. */
+export const BIN = ["bin", "declined", "archive", "trash"] as const;
+export type BinView = (typeof BIN)[number];
+export const isBin = (v: View): v is BinView => (BIN as readonly View[]).includes(v);
+
+/** Where an offer is, in words: "Own", "Collected - All", "Bin - Not for me"... (messages, CSV). */
+export function placeName(view: View, t: T): string {
+  if (COLLECTED_LISTS.includes(view)) return t("place.collected", { list: t(`collected.${view}` as TextKey) });
+  if (isBin(view) && view !== "bin") return t("place.bin", { list: t(`bin.${view}`) });
+  return t(`tabs.${view}` as TextKey);
+}
+
 /** Tab an offer lands in, for its filter result ("no" wins over everything, as in Rust). */
-export function viewFor(o: Pick<OfferRow, "stage" | "favorite" | "interest" | "filterResult">) {
+export function viewFor(o: Pick<OfferRow, "stage" | "favorite" | "interest" | "filterResult" | "own">) {
   if (o.interest === "no") return "declined" as const;
+  if (o.own) return "own" as const;
   if (isKept(o) || o.filterResult === "pass") return "board" as const;
   return o.filterResult === "unsure" ? ("review" as const) : ("rejected" as const);
 }
 
 /** The tab an offer goes to after a change, or `null` when it stays in `view` (as the tabs in
- *  offers.rs: "Today" keeps fresh offers until "no", a recruitment or "expired"; the archive and the
- *  trash keep theirs until brought back). */
+ *  offers.rs: "Today" keeps fresh offers until "no", a recruitment or "expired"; the bin keeps
+ *  expired and deleted ones until "Restore", a "not for me" one until the interest changes). */
 export function leavesView(
-  o: Pick<OfferRow, "stage" | "favorite" | "interest" | "filterResult" | "expired">,
+  o: Pick<OfferRow, "stage" | "favorite" | "interest" | "filterResult" | "expired" | "own"> & Partial<Pick<OfferRow, "bin">>,
   view: View,
 ): View | null {
   const target = viewFor(o);
-  if (view === "archive" || view === "trash") return null;
+  if (isBin(view)) return o.bin === "declined" && o.interest !== "no" ? target : null;
   if (view !== "today") return target === view ? null : target;
   const recruiting = o.stage !== "new" && o.stage !== "interested";
   const rejected = o.filterResult === "fail" && !isKept(o);
-  return o.interest === "no" || recruiting || o.expired || rejected ? target : null;
+  return o.interest === "no" || o.own || recruiting || o.expired || rejected ? target : null;
 }
 
 /** Best of several profiles: one profile that fits is enough (as `filter::best` in Rust). */

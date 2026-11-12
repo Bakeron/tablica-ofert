@@ -17,7 +17,7 @@ export type Interest = "high" | "maybe" | "no";
 export type Remote = "yes" | "hybrid" | "no" | "unknown";
 export type SalaryPeriod = "month" | "hour";
 export type FilterResult = "pass" | "fail" | "unsure";
-export type View = "today" | "board" | "review" | "rejected" | "declined" | "archive" | "trash";
+export type View = "own" | "today" | "board" | "review" | "rejected" | "declined" | "archive" | "trash" | "bin";
 export type Contract = "uop" | "b2b" | "mandate";
 export type Level = "junior" | "mid" | "senior";
 export type OfferLanguage = "pl" | "en";
@@ -107,6 +107,8 @@ export interface ProfileFilter {
 }
 
 export interface ViewCounts {
+  /** Own offers the CV is still to be sent to ("new" or "interested") - the number on "Own". */
+  toSend: number;
   /** Offers in "Today" (as many as the setting says, plus the ones added by hand or starred). */
   today: number;
   board: number;
@@ -114,7 +116,11 @@ export interface ViewCounts {
   rejected: number;
   /** Offers marked "no" - out of every other tab until the interest changes. */
   declined: number;
+  /** Expired offers (the archive) - "Expired" in the bin. */
+  archive: number;
   trash: number;
+  /** Everything in the bin: "not for me", expired and deleted. */
+  bin: number;
 }
 
 export interface OfferRow {
@@ -161,10 +167,48 @@ export interface OfferRow {
   learned: number;
   /** The words behind `learned`. */
   learnedWords: string[];
+  /** No link to the offer anywhere - "NO LINK" on the list, below the ones with a link. */
+  noLink: boolean;
+  /** The person's own offer (tab "Own"): added by hand, moved there, or past the stage "new". */
+  own: boolean;
+  /** In the bin - and why; `null` = not there. */
+  bin: BinKind | null;
+  /** The ad was renewed after the CV went - the mark RENEWED and the question on the card. */
+  renewAsked: boolean;
+  /** Set = a child: another ad of the job of that offer (the tree of duplicates). */
+  parentId: number | null;
+  /** The same company and title as another offer, not joined (another city or salary) - the
+   *  mark "SAME?" and the question on the card. */
+  dupAsk: boolean;
+  /** When the CV went (the first stage past "interested"); `null` = not in a recruitment. */
+  sentAt: string | null;
+  /** On a parent: the CV went through one of its children - "sent through: OLX, 5.11". */
+  sentVia: SentVia | null;
+  /** The other ads of this job, the first seen on top - shown under it on the list. */
+  children: OfferRow[];
 }
+
+/** Through which ad of a family the CV went: the ad, its portal (the link's, else the source) and when. */
+export interface SentVia {
+  id: number;
+  source: string;
+  at: string;
+}
+
+/** Why an offer is in the bin: "not for me", expired (archived) or deleted. */
+export type BinKind = "declined" | "expired" | "deleted";
 
 /** What "Expired" did: nobody touched the offer - archived; otherwise marked "expired". */
 export type ExpiredBy = "archived" | "marked";
+
+/** How an offer sat in the bin before "Restore" - "Undo" puts it back exactly so (Rust `BinPlace`). */
+export interface BinPlace {
+  deletedAt: string | null;
+  archivedAt: string | null;
+  keptAt: string | null;
+  /** Marked "not for me". */
+  declined: boolean;
+}
 
 /** One offer for "Export to Excel (CSV)" - raw values (mirrors `model::ExportRow`). */
 export interface ExportRow {
@@ -253,6 +297,8 @@ export interface OfferDetail extends OfferRow {
   deletedAt: string | null;
   /** Source whose text was removed when its job closed (its terms), e.g. "himalayas". */
   contentRemoved: string | null;
+  /** When "Update the existing one" last brought the ad again (the history: "ad renewed"). */
+  renewedAt: string | null;
   links: SourceLink[];
   history: StageEvent[];
   /** Hard filter result for every profile. */
@@ -261,6 +307,8 @@ export interface OfferDetail extends OfferRow {
   ai: OfferAi;
   /** Dates, contacts and contact history. */
   agenda: Agenda;
+  /** "The same company and title as that offer - the same ad?" */
+  dup: DupNote | null;
 }
 
 export interface ScoreView {
@@ -287,11 +335,17 @@ export interface OfferAi {
   descriptionTranslated: string | null;
   /** Language of the offer text when known ("AI would translate it"). */
   offerLanguage: OfferLanguage | null;
+  /** "Rate more precisely" was asked for once - Claude rates it every time (a mark on the card). */
+  precise: boolean;
 }
 
 export type AiProvider = "gemini" | "groq" | "openrouter" | "ollama" | "anthropic" | "openai";
-/** In the order AI is asked (the same as `ai::ORDER` in Rust). */
-export const AI_PROVIDERS: AiProvider[] = ["groq", "openrouter", "ollama", "anthropic", "openai", "gemini"];
+/** Hidden for now (11.11.2026, `ai::HIDDEN` in Rust): Claude won the test - taking one off brings it back. */
+export const AI_HIDDEN: AiProvider[] = ["openai", "gemini"];
+/** In the order AI is asked (the same as `ai::ORDER` in Rust), without the hidden ones. */
+export const AI_PROVIDERS: AiProvider[] = (["groq", "openrouter", "ollama", "anthropic", "openai", "gemini"] as AiProvider[]).filter(
+  (p) => !AI_HIDDEN.includes(p),
+);
 
 export interface AiProviderStatus {
   provider: AiProvider;
@@ -315,6 +369,19 @@ export interface AiStatus {
   rated: number;
   /** Offers "Rate all again" would send to AI. */
   rateAgain: number;
+  /** Of them added by hand or rated more precisely once - Claude reads them when it is turned on (its cost is shown first). */
+  rateAgainClaude: number;
+  /** What the app spent on Claude (in $, counted from tokens and the price list). */
+  claudeSpent: ClaudeSpent;
+  /** Less than 10% of the top-up is left. */
+  claudeLow: LowFunds | null;
+}
+
+/** Claude's spending in $: today, this calendar month and since the top-up day (`null` = no day given). */
+export interface ClaudeSpent {
+  today: number;
+  month: number;
+  sinceTopUp: number | null;
 }
 
 /** AI is set up: at least one provider turned on. */
@@ -329,6 +396,14 @@ export interface RateReport {
   error: { code: AppError["code"]; detail: string } | null;
   /** Every provider that could not be asked in this run and why (also when the next one took over). */
   problems: AiProblem[];
+  /** Claude was asked in this run and less than 10% of the top-up is left. */
+  lowFunds: LowFunds | null;
+}
+
+/** What is left of the last top-up of the Claude account, in $ (mirrors `spend::LowFunds`). */
+export interface LowFunds {
+  left: number;
+  topUp: number;
 }
 
 /** What went wrong with an AI provider (`client::Problem` in Rust). */
@@ -394,6 +469,81 @@ export interface OfferInput {
   requirements?: string | null;
   description?: string | null;
   expiresAt?: string | null;
+  /** When the source published it; none = now, a date in the future becomes now. */
+  publishedAt?: string | null;
+}
+
+/** What "Add offer" finds before saving (`same.rs`): nothing, the same link with the same
+ *  fields, the same link changed, a new link of the portal with almost the same text (the first
+ *  ad gone), a second ad of the portal while the first is open, the same link read before only in
+ *  part ("partial" - empty fields filled in), another portal with the same company and title but
+ *  another city or salary ("ask"), offers that are probably the same ("probable"). "complete" =
+ *  "Fill in that one": what the form would change in the chosen offer. "joined" = another portal,
+ *  joined as a child by itself, but the CV already went for this job - said before saving. */
+export type SameKind = "none" | "identical" | "changed" | "similar" | "second" | "partial" | "ask" | "probable" | "complete" | "joined";
+
+/** Fields "Add offer" compares with the offer on the board. */
+export type SameField = "title" | "company" | "city" | "remote" | "salary" | "contract" | "level" | "published" | "expires" | "description";
+
+/** The offer already on the board, as the form compares it. */
+export interface SameWas {
+  id: number;
+  title: string;
+  company: string;
+  city: string | null;
+  remote: Remote;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  salaryPeriod: SalaryPeriod | null;
+  contract: string | null;
+  level: string | null;
+  publishedAt: string | null;
+  expiresAt: string | null;
+  own: boolean;
+  stage: Stage;
+  /** When the CV went (the first "applied" of the history); `null` before a recruitment. */
+  appliedAt: string | null;
+  /** The CV already went for this job through some ad of its family (the offer, its parent or a
+   *  child) - the warning "you sent your CV on 5.11 through pracuj.pl". */
+  sentVia: SentVia | null;
+}
+
+export interface SameOffer {
+  kind: SameKind;
+  was: SameWas | null;
+  /** Fields of the form that differ from the offer on the board ("ask": "city" or "salary"). */
+  fields: SameField[];
+  /** Of `fields`, the ones the offer on the board does not have yet - filled in, nothing to choose. */
+  filled: SameField[];
+  /** How much of the description is the same, in %. */
+  similarity: number;
+  /** "Probably the same" offers the code found, the closest first. */
+  candidates: DupCandidate[];
+}
+
+/** An offer that may be the same job under another title or a hidden company (`dups.rs`). */
+export interface DupCandidate {
+  was: SameWas;
+  sources: string[];
+  /** What agrees. */
+  reasons: ("company" | "hidden" | "title" | "titleWords" | "city" | "salary" | "text")[];
+  /** How much of the description is the same, in %. */
+  similarity: number;
+}
+
+/** AI's word about one "probably the same" offer. */
+export interface DupVerdict {
+  id: number;
+  same: "yes" | "maybe" | "no";
+  why: string;
+}
+
+/** "The same company and title as that offer, but another city / other salary" on the card. */
+export interface DupNote {
+  was: SameWas;
+  sources: string[];
+  why: "city" | "salary";
 }
 
 export type AddOutcome =
@@ -423,6 +573,9 @@ export interface Settings {
   tilt: "off" | "on";
   /** "First steps" at the first start, until finished or skipped. */
   onboarding: "pending" | "done";
+  /** "Collect offers automatically": off = only own offers ("Collected", "Fetch offers" and the
+   *  sources' settings disappear; collected offers stay in the database). */
+  collect: "on" | "off";
   /** Collect offers at start and every few hours while the app is open. */
   fetch_auto: "on" | "off";
   fetch_every: "3" | "6" | "12";
@@ -468,6 +621,10 @@ export interface Settings {
   ai_auto: "off" | "on";
   /** Minutes between the runs of AI on its own. */
   ai_every: "30" | "60" | "180" | "1440";
+  /** The last top-up of the Claude account in dollars ("5", "20.50"); empty = not given. */
+  ai_topup_usd: string;
+  /** Its day (YYYY-MM-DD) - spending is counted from that day on; empty = not given. */
+  ai_topup_date: string;
   ollama_url: string;
   /** Days after publication an offer stays fresh: then untouched ones leave for the archive. */
   fresh_days: "10" | "7" | "14" | "21" | "30";
@@ -487,6 +644,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: "off",
   tilt: "off",
   onboarding: "done",
+  collect: "on",
   fetch_auto: "on",
   fetch_every: "6",
   background_task: "on",
@@ -519,6 +677,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ai_daily_limit: "200",
   ai_auto: "off",
   ai_every: "30",
+  ai_topup_usd: "",
+  ai_topup_date: "",
   ollama_url: "http://localhost:11434",
   fresh_days: "10",
   today_count: "15",
@@ -642,8 +802,30 @@ export interface Draft {
   level: string | null;
   requirements: string | null;
   description: string | null;
+  /** When the offer was published and until when it is open (RFC 3339) - from its text. */
+  publishedAt: string | null;
+  expiresAt: string | null;
   /** AI filled the fields - the person should check them. */
   byAi: boolean;
+  /** AI also scored the offer in the same call - passed to `addOffer`, so it is not read again. */
+  readingId: string | null;
+  /** "Check" marks and source lines of the fields (mirrors `fieldcheck::FieldNote`). */
+  notes: FieldNote[];
+  /** Claude read the offer and less than 10% of the top-up is left. */
+  lowFunds: LowFunds | null;
+}
+
+export type CheckedField = "title" | "company" | "city" | "remote" | "salary" | "contract" | "level" | "published" | "expires";
+
+/** A field of "Add offer" checked against the offer's text by plain code. */
+export interface FieldNote {
+  field: CheckedField;
+  /** notInText - the value is not in the text; missing - the text has it, the field is empty;
+   *  more - the text names more than the field (`more`). */
+  problem: "notInText" | "missing" | "more" | null;
+  /** The line of the offer the value comes from. */
+  fragment: string | null;
+  more: string | null;
 }
 
 /** Text taken from the page in the preview window. */
@@ -690,4 +872,22 @@ export interface Upcoming {
   at: string;
   title: string;
   company: string;
+}
+
+/** TEMPORARY - the author's blind rating of 10 offers for the test of AI ratings (`rating_test.rs`); removed after the test. */
+export type RatingTestVerdict = "yes" | "maybe" | "no";
+
+export interface RatingTestOffer {
+  id: number;
+  title: string;
+  company: string;
+  city: string | null;
+  remote: Remote;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  salaryPeriod: SalaryPeriod | null;
+  description: string;
+  url: string | null;
+  answer: { verdict: RatingTestVerdict; why: string } | null;
 }

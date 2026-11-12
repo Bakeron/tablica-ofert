@@ -24,8 +24,8 @@ describe("score learned from ratings", () => {
 
 describe("salary", () => {
   it("shows monthly PLN in thousands", () => {
-    expect(salaryShort({ salaryMin: 12000, salaryMax: 16000, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("12-16 tys");
-    expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("9,5 tys");
+    expect(salaryShort({ salaryMin: 12000, salaryMax: 16000, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("12-16 tys.");
+    expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("9,5 tys.");
     expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "en", (k) => translate("en", k))).toBe("9.5 k");
   });
 

@@ -15,6 +15,10 @@ import {
   type Interest,
   type OfferDetail,
   type OfferInput,
+  type SameOffer,
+  type SameField,
+  type DupCandidate,
+  type DupVerdict,
   type OfferRow,
   type Profile,
   type ProfileInput,
@@ -30,7 +34,7 @@ import { Board, DEFAULT_SORT, sortRows, type Sort, type SortKey } from "./compon
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
 import { ErrorContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
-import { IconArchive, IconBoard, IconBriefcase, IconDownload, IconFilter, IconGear, IconNoEntry, IconPlus, IconQuestion, IconSun, IconTrash, IconWarning } from "./components/Icons";
+import { IconBoard, IconBriefcase, IconDownload, IconGear, IconHome, IconPlus, IconTrash, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
@@ -43,21 +47,61 @@ import { isWebUrl } from "./lib/format";
 import { isNarrowLayout, useFitLevels } from "./lib/fit";
 import { onBack } from "./lib/back";
 import { keepOrder } from "./lib/browse";
-import { leavesView, viewFor } from "./lib/profile";
-import { csvCells, csvName } from "./lib/csv";
+import { BIN, isBin, leavesView, placeName, viewFor, type BinView } from "./lib/profile";
+import { csvCells, csvName, csvSeparator } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
 import { rateSummary } from "./lib/aiProblem";
 import { sourceProblem } from "./lib/sourceProblem";
+import { lostFields, type LostField } from "./lib/savedCheck";
 
-const VIEWS: View[] = ["today", "board", "review", "rejected", "declined", "archive", "trash"];
-const TAB_ICONS: Record<View, ReactNode> = {
-  today: <IconSun />,
-  board: <IconBoard />,
-  review: <IconQuestion />,
-  rejected: <IconFilter />,
-  declined: <IconNoEntry />,
-  archive: <IconArchive />,
-  trash: <IconTrash />,
+const LOST_LABEL: Record<LostField, TextKey> = {
+  title: "add.fieldTitle",
+  company: "add.fieldCompany",
+  url: "add.fieldUrl",
+  city: "add.fieldCity",
+  remote: "add.fieldRemote",
+  salary: "add.lostSalary",
+  contract: "add.fieldContract",
+  level: "add.fieldLevel",
+  published: "add.fieldPublished",
+  expires: "add.fieldExpires",
+  description: "add.fieldDescription",
+};
+
+/** The tabs on top. "Collected" holds four lists - best today, all, to check, rejected by the
+ *  filter (`COLLECTED`, the switch inside it); "Bin" four too - all, not for me, expired, deleted. */
+type Tab = "own" | "collected" | "bin";
+const TABS: Tab[] = ["own", "collected", "bin"];
+const COLLECTED = ["today", "board", "review", "rejected"] as const;
+type CollectedView = (typeof COLLECTED)[number];
+const isCollected = (v: View): v is CollectedView => (COLLECTED as readonly View[]).includes(v);
+const tabOf = (v: View): Tab => (isCollected(v) ? "collected" : isBin(v) ? "bin" : "own");
+
+/** The list of "Bin" chosen last - kept between starts of the app (only a convenience). */
+const BIN_KEY = "tablica.bin";
+function savedBin(): BinView {
+  try {
+    const v = localStorage.getItem(BIN_KEY) as View | null;
+    return v && isBin(v) ? v : "bin";
+  } catch {
+    return "bin";
+  }
+}
+
+/** The list of "Collected" chosen last - kept between starts of the app (only a convenience). */
+const COLLECTED_KEY = "tablica.collected";
+function savedCollected(): CollectedView {
+  try {
+    const v = localStorage.getItem(COLLECTED_KEY) as View | null;
+    return v && isCollected(v) ? v : "today";
+  } catch {
+    return "today";
+  }
+}
+const TAB_ICONS: Record<Tab, ReactNode> = {
+  own: <IconHome />,
+  collected: <IconBoard />,
+  bin: <IconTrash />,
 };
 
 const TOPBAR_FIT = ["", "is-compact", "is-stacked", "is-stacked is-compact"];
@@ -69,7 +113,37 @@ export default function App() {
   const [api, setApi] = useState<Api | null>(null);
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [view, setView] = useState<View>("today");
+  // The person's own offers first - that is what the app is for now; collected ones are an extra.
+  const [view, setView] = useState<View>("own");
+  /** The list of "Collected" chosen last - the tab opens on it again. */
+  const [lastCollected, setLastCollected] = useState<CollectedView>(savedCollected);
+  useEffect(() => {
+    if (!isCollected(view)) return;
+    setLastCollected(view);
+    try {
+      localStorage.setItem(COLLECTED_KEY, view);
+    } catch {
+      // No storage (private mode): the choice lasts until the app closes.
+    }
+  }, [view]);
+  /** The list of "Bin" chosen last - the tab opens on it again. */
+  const [lastBin, setLastBin] = useState<BinView>(savedBin);
+  useEffect(() => {
+    if (!isBin(view)) return;
+    setLastBin(view);
+    try {
+      localStorage.setItem(BIN_KEY, view);
+    } catch {
+      // No storage (private mode): the choice lasts until the app closes.
+    }
+  }, [view]);
+  /** "Collect offers automatically" off: only own offers - no "Collected" and no "Fetch offers"
+   *  (the collected offers stay in the database and come back when it is on again). */
+  const collecting = settings.collect === "on";
+  const shownTabs = collecting ? TABS : TABS.filter((tab) => tab !== "collected");
+  useEffect(() => {
+    if (!collecting && isCollected(view)) setView("own");
+  }, [collecting, view]);
   const [rows, setRows] = useState<OfferRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<OfferDetail | null>(null);
@@ -78,8 +152,8 @@ export default function App() {
   /** Quick browsing (cards, keys 1 / 2 / 3): the order it started with (`keepOrder`), else `null`. */
   const [browseOrder, setBrowseOrder] = useState<number[] | null>(null);
   const listScroll = useRef<number[]>([]);
-  /** What the archive's search box holds (title, company or city). */
-  const [archiveQuery, setArchiveQuery] = useState("");
+  /** What the bin's search box holds (title, company or city). */
+  const [binQuery, setBinQuery] = useState("");
   /** `null` = the tab's own order: "Today" as Rust ranks it, the others the newest first. */
   const [sort, setSort] = useState<Sort | null>(null);
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
@@ -224,7 +298,9 @@ export default function App() {
         const [list, numbers] = await Promise.all([api.listOffers(view, profileId), api.countOffers(profileId)]);
         setRows(list);
         setCounts(numbers);
-        setSelectedId((id) => (keepSelection && id !== null && list.some((r) => r.id === id) ? id : (list[0]?.id ?? null)));
+        // A child of the tree stays chosen too (it is under its parent).
+        const there = (id: number) => list.some((r) => r.id === id || r.children.some((c) => c.id === id));
+        setSelectedId((id) => (keepSelection && id !== null && there(id) ? id : (list[0]?.id ?? null)));
       } catch (e) {
         fail(e);
       }
@@ -245,7 +321,7 @@ export default function App() {
   }, [view, profileId]);
 
   useEffect(() => {
-    if (pendingSelect !== null && rows.some((r) => r.id === pendingSelect)) {
+    if (pendingSelect !== null && rows.some((r) => r.id === pendingSelect || r.children.some((c) => c.id === pendingSelect))) {
       setSelectedId(pendingSelect);
       setPendingSelect(null);
     }
@@ -281,7 +357,23 @@ export default function App() {
   useEffect(() => setBrowseOrder(null), [view, profileId, sort]);
 
   // Android "back" leaves the card like "Back to the list" does (an open window goes first).
-  useEffect(() => (cardOpen ? onBack(() => setCardOpen(false)) : undefined), [cardOpen]);
+  // The field in use loses focus first - a note saves on leaving its field, so it is kept.
+  useEffect(
+    () =>
+      cardOpen
+        ? onBack(() => {
+            (document.activeElement as HTMLElement | null)?.blur();
+            setCardOpen(false);
+          })
+        : undefined,
+    [cardOpen],
+  );
+  // On the list: "back" clears the bin's search, then goes from "Collected" or "Bin" to "Own" -
+  // the app is left only from "Own" with nothing open.
+  const currentTab = tabOf(view);
+  useEffect(() => (currentTab !== "own" ? onBack(() => setView("own"), true) : undefined), [currentTab]);
+  const searching = isBin(view) && binQuery !== "";
+  useEffect(() => (searching ? onBack(() => setBinQuery(""), true) : undefined), [searching]);
   // No offer left (the list emptied, or the layout is wide again after turning the phone): the card
   // closes - otherwise "back" would close an invisible card and the next offer's card open by itself.
   useEffect(() => {
@@ -397,7 +489,7 @@ export default function App() {
     api
       .onRated((report) => {
         reloadRef.current();
-        if (report.error) setToast({ text: rateSummary(report, t) });
+        if (report.error || report.lowFunds) setToast({ text: rateSummary(report, t, lang) });
       })
       .then((unlisten) => (alive ? (stopRated = unlisten) : unlisten()));
     let stopProgress: (() => void) | undefined;
@@ -411,13 +503,13 @@ export default function App() {
     };
   }, [api, t]);
 
-  async function rateAgain(id: number) {
+  async function rateAgain(id: number, precise = false) {
     if (!api) return;
     setToast({ text: t("ai.working") });
     try {
-      const report = await api.aiRateOffer(id);
+      const report = await api.aiRateOffer(id, precise);
       await reload();
-      setToast({ text: rateSummary(report, t) });
+      setToast({ text: rateSummary(report, t, lang) });
     } catch (e) {
       fail(e);
     }
@@ -559,13 +651,14 @@ export default function App() {
       .catch(() => {});
   }, [api, rows, settings.notify_reminders, replan, lang, t]);
 
-  const shownSort = sort ?? (view === "today" ? null : DEFAULT_SORT);
+  // "Today" as Rust ranks it, the bin the last thrown in on top; the others the newest first.
+  const shownSort = sort ?? (view === "today" || isBin(view) ? null : DEFAULT_SORT);
   const sorted = useMemo(() => {
     const list = keepOrder(shownSort === null ? rows : sortRows(rows, shownSort), browseOrder);
-    const q = archiveQuery.trim().toLocaleLowerCase();
-    if (view !== "archive" || !q) return list;
+    const q = binQuery.trim().toLocaleLowerCase();
+    if (!isBin(view) || !q) return list;
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
-  }, [rows, shownSort, view, archiveQuery, browseOrder]);
+  }, [rows, shownSort, view, binQuery, browseOrder]);
 
   // ----- actions -----
   async function run(action: () => Promise<unknown>, after?: () => void) {
@@ -585,7 +678,7 @@ export default function App() {
     try {
       const all = new Map((await api.exportRows(null)).map((r) => [r.id, r]));
       const shown = sorted.flatMap((r) => all.get(r.id) ?? []);
-      const path = await api.saveCsv(csvName(view, lang), csvCells(shown, lang));
+      const path = await api.saveCsv(csvName(view, lang), csvCells(shown, lang), csvSeparator(lang));
       if (path) setToast({ text: t("data.csvSaved", { path }) });
     } catch (e) {
       fail(e);
@@ -624,25 +717,49 @@ export default function App() {
       () => api!.setInterest(id, next),
       () =>
         setToast({
-          text: t("board.movedTo", { tab: t(`tabs.${target}`) }),
+          text: t("board.movedTo", { tab: placeName(target, t) }),
           undo: () => run(() => api!.setInterest(id, before)),
         }),
     );
   };
   /** A stage or a star keeps a filtered-out offer, so it can leave this tab like with interest. */
-  const changeKept = (id: number, change: Partial<Pick<OfferRow, "stage" | "favorite">>, save: () => Promise<unknown>, back: () => Promise<unknown>) => {
+  const changeKept = (id: number, change: Partial<Pick<OfferRow, "stage" | "favorite" | "own">>, save: () => Promise<unknown>, back: () => Promise<unknown>) => {
     const row = rows.find((r) => r.id === id);
-    const target = row ? leavesView({ ...row, ...change }, view) : null;
-    if (!row || target === null) return run(save);
-    selectNeighbour(id);
-    return run(save, () => setToast({ text: t("board.movedTo", { tab: t(`tabs.${target}`) }), undo: () => run(back) }));
+    // A child: "own" is the family's, so its parent's row leaves (or stays) - with the child's "own" only.
+    const parent = row ? undefined : rows.find((r) => r.children.some((c) => c.id === id));
+    const target = row ? leavesView({ ...row, ...change }, view) : parent && change.own !== undefined ? leavesView({ ...parent, own: change.own }, view) : null;
+    if ((!row && !parent) || target === null || target === undefined) return run(save);
+    if (row) selectNeighbour(id);
+    else if (parent && (selectedId === id || selectedId === parent.id)) {
+      const i = sorted.findIndex((r) => r.id === parent.id);
+      const neighbour = sorted[i + 1] ?? sorted[i - 1];
+      setSelectedId(neighbour?.id ?? null);
+      if (!neighbour) setCardOpen(false);
+    }
+    return run(save, () => setToast({ text: t("board.movedTo", { tab: placeName(target, t) }), undo: () => run(back) }));
   };
+  /** A stage past "new" makes the offer the person's own (Rust `set_stage`) - it moves to "Own";
+   *  "Undo" brings back the stage and, for a collected offer, its place in "Collected". */
   const setStage = (id: number, next: Stage) => {
-    const before = rows.find((r) => r.id === id)?.stage ?? next;
-    return changeKept(id, { stage: next }, () => api!.setStage(id, next), () => api!.setStage(id, before));
+    const row = rows.find((r) => r.id === id);
+    const before = row?.stage ?? next;
+    const wasOwn = row?.own ?? true;
+    return changeKept(
+      id,
+      { stage: next, own: wasOwn || next !== "new" },
+      () => api!.setStage(id, next),
+      async () => {
+        await api!.setStage(id, before);
+        if (!wasOwn) await api!.setOwn(id, false);
+      },
+    );
   };
   const setFavorite = (id: number, next: boolean) =>
     changeKept(id, { favorite: next }, () => api!.setFavorite(id, next), () => api!.setFavorite(id, !next));
+  /** "To own": the offer leaves "Collected" for "Own" - the message can undo it. */
+  const toOwn = (id: number) => changeKept(id, { own: true }, () => api!.setOwn(id, true), () => api!.setOwn(id, false));
+  /** The checkbox off: the whole job back to "Collected" - the message can undo it. */
+  const toCollected = (id: number) => changeKept(id, { own: false }, () => api!.setOwn(id, false), () => api!.setOwn(id, true));
   const toggleInterest = (id: number, interest: Interest) => {
     const row = rows.find((r) => r.id === id);
     return setInterest(id, row?.interest === interest ? null : interest);
@@ -702,14 +819,6 @@ export default function App() {
     );
   };
 
-  const unarchive = (id: number) => {
-    selectNeighbour(id);
-    return run(
-      () => api!.unarchiveOffer(id),
-      () => setToast({ text: t("board.movedTo", { tab: t("tabs.board") }) }),
-    );
-  };
-
   const trash = (id: number) => {
     selectNeighbour(id);
     return run(
@@ -722,38 +831,152 @@ export default function App() {
     );
   };
 
+  /** "Restore" in the bin, one for every kind: back where the offer came from ("Own" or
+   *  "Collected"); "Undo" puts it back in the bin exactly as it was. */
   const restore = (id: number) => {
     const row = rows.find((r) => r.id === id);
     selectNeighbour(id);
-    return run(
-      () => api!.restoreOffer(id),
-      () =>
-        row &&
-        setToast({
-          text: t("board.movedTo", { tab: t(`tabs.${viewFor(row)}`) }),
-          undo: () => run(() => api!.trashOffer(id)),
-        }),
-    );
+    return run(async () => {
+      const place = await api!.bringBackOffer(id);
+      const back = row && viewFor({ ...row, interest: row.interest === "no" ? null : row.interest });
+      setToast({
+        text: back ? t("board.movedTo", { tab: placeName(back, t) }) : t("bin.restored"),
+        undo: () => run(() => api!.putBackOffer(id, place)),
+      });
+    });
   };
 
-  async function addOffer(offer: OfferInput): Promise<boolean> {
+  /** Selects offer `id` in the tab where it is now (all profiles together). */
+  async function showOnBoard(id: number) {
+    const shown = await api!.getOffer(id);
+    const target = viewFor(shown);
+    setFreshIds(new Set([id]));
+    if (view !== target || profileId !== null) {
+      setPendingSelect(id);
+      setProfileId(null);
+      setView(target);
+    } else {
+      await reload();
+      setSelectedId(id);
+    }
+  }
+
+  /** "Add offer" asks before saving: is the same offer of the same portal already there? */
+  async function checkSame(offer: OfferInput): Promise<SameOffer | null> {
+    if (!api) return null;
+    try {
+      return await api.checkSameOffer(offer);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  /** "Show it" - an identical offer collected before goes to "Own" first (the person chose it). */
+  async function showSame(id: number, own: boolean): Promise<boolean> {
     if (!api) return false;
     try {
-      const outcome = await api.addOffer(offer);
+      if (own) await api.setOwn(id, true);
+      setToast({ text: t(own ? "same.movedOwn" : "same.shown") });
+      await showOnBoard(id);
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  }
+
+  async function updateSame(id: number, offer: OfferInput, reading: string | null, keep: SameField[], renew: boolean): Promise<boolean> {
+    if (!api) return false;
+    try {
+      await api.updateSameOffer(id, offer, reading, keep, renew);
+      setToast({ text: t(renew ? "same.updated" : "same.filled") });
+      await showOnBoard(id);
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  }
+
+  /** "Fill in that one": what the form would change in offer `id`. */
+  async function compareSame(id: number, offer: OfferInput): Promise<SameOffer | null> {
+    if (!api) return null;
+    try {
+      return await api.compareOffer(id, offer);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  /** AI's word about "probably the same" offers - no answer is said in place, not in a message. */
+  async function judgeDuplicates(of: { offer: OfferInput } | { id: number }, ids: number[]): Promise<DupVerdict[] | null> {
+    if (!api) return null;
+    try {
+      return await api.judgeDuplicates(of, ids);
+    } catch {
+      return null;
+    }
+  }
+
+  /** "Check duplicates" on the card. */
+  async function findDuplicates(id: number): Promise<DupCandidate[] | null> {
+    if (!api) return null;
+    try {
+      return await api.findDuplicates(id);
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  /** "Join as a child": one tree; the card shows the parent (the child is under it). */
+  const joinOffers = (id: number, other: number) =>
+    run(
+      () => api!.joinOffers(id, other),
+      () => setToast({ text: t("dup.joined") }),
+    );
+
+  /** "The same company and title - the same ad?" answered on the card. */
+  const answerDuplicate = (id: number, join: boolean) =>
+    run(
+      () => api!.answerDuplicate(id, join),
+      () => setToast({ text: t(join ? "dup.joined" : "dup.keptSeparate") }),
+    );
+
+  /** "Detach" a child of the tree: an offer of its own; "Undo" puts it back under its parent. */
+  const detach = (id: number, parent: number) =>
+    run(
+      () => api!.setOfferParent(id, null),
+      () => setToast({ text: t("tree.detached"), undo: () => run(() => api!.setOfferParent(id, parent)) }),
+    );
+
+  /** "Renewed after your CV - send it again?" on the card. */
+  const answerRenewed = (id: number, resent: boolean) => run(() => api!.answerRenewed(id, resent));
+
+  async function addOffer(offer: OfferInput, reading: string | null, place?: { separate: true } | { parent: number }): Promise<boolean> {
+    if (!api) return false;
+    try {
+      const outcome = await api.addOffer(offer, reading, place);
       if (outcome.status === "blocked") {
         setToast({ text: t("add.blocked") });
         return true;
       }
       // Show the offer in the tab where the filter put it (all profiles together).
       const added = await api.getOffer(outcome.id);
-      // Added by hand = always at the top of "Today" (unless the filter rejected it).
-      const target = view === "today" && added.filterResult !== "fail" ? "today" : viewFor(added);
+      // Added by hand = own (tab "Own"); a collected one stays in "Today" unless the filter rejected it.
+      const target = !added.own && view === "today" && added.filterResult !== "fail" ? "today" : viewFor(added);
+      // A new offer is read back: every field as the person confirmed it on the screen.
+      const lost = outcome.status === "added" ? lostFields(offer, added) : [];
       const text =
-        outcome.status === "merged"
+        lost.length > 0
+          ? t("add.lost", { fields: lost.map((f) => t(LOST_LABEL[f])).join(", ") })
+          : outcome.status === "merged"
           ? t("add.merged")
           : outcome.status === "unchanged"
             ? t("add.known")
-            : target === "board" || target === "today"
+            : target === "own" || target === "board" || target === "today"
             ? t("add.added")
             : t(target === "review" ? "add.landed.review" : "add.landed.rejected");
       setToast({ text });
@@ -861,8 +1084,6 @@ export default function App() {
   }
 
   const locked = status !== null && !status.ok;
-  // The filter's rejects stay on the PC, so on the phone this tab is empty - unless an offer added here landed there.
-  const shownViews = VIEWS.filter((v) => v !== "rejected" || !isPhone() || view === v || (counts?.rejected ?? 0) > 0);
 
   /** Phone: the first date is when the question about notifications makes sense. */
   async function addEvent(event: Parameters<Api["addEvent"]>[1]): Promise<boolean> {
@@ -871,6 +1092,25 @@ export default function App() {
     if (added && isPhone() && settings.notify_reminders === "on" && (await askNotifications())) setReplan((n) => n + 1);
     return added;
   }
+
+  /** "Empty the bin": what the bin's switch shows (all, or one kind), after a question with the number. */
+  const emptyBin = isBin(view) && rows.length > 0 && (
+    <button
+      type="button"
+      className="btn btn-danger"
+      onClick={() =>
+        setConfirm({
+          message: t(view === "bin" ? "bin.confirmAll" : "bin.confirmKind", { count: rows.length, list: t(`bin.${view}`) }),
+          action: () => {
+            setSelectedId(null);
+            return run(() => api!.purgeOffers(null, view), () => setToast({ text: t("trash.purged") }));
+          },
+        })
+      }
+    >
+      {t("trash.empty")}
+    </button>
+  );
 
   return (
     <I18nContext.Provider value={i18n}>
@@ -886,37 +1126,33 @@ export default function App() {
             <h1>{t("app.name")}</h1>
           </div>
           <nav className="tabs" aria-label={t("tabs.label")} data-own-row>
-            {shownViews.map((v) => (
-              <button key={v} type="button" className="tab" aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>
+            {shownTabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                className={tab === "own" ? "tab tab-own" : "tab"}
+                aria-current={tabOf(view) === tab ? "page" : undefined}
+                onClick={() =>
+                  setView(tab === "collected" ? (isCollected(view) ? view : lastCollected) : tab === "bin" ? (isBin(view) ? view : lastBin) : tab)
+                }
+              >
                 {/* The phone's bottom bar: a pictogram and a short name (the full one stays for a screen reader). */}
-                <span className="tab-icon">{TAB_ICONS[v]}</span>
-                <span className="tab-name">{t(`tabs.${v}`)}</span>
+                <span className="tab-icon">{TAB_ICONS[tab]}</span>
+                <span className="tab-name">{t(`tabs.${tab}`)}</span>
                 <span className="tab-short" aria-hidden="true">
-                  {t(`tabs.short.${v}`)}
+                  {t(`tabs.short.${tab}`)}
                 </span>
-                {counts && v === "board" && <span className="tab-count tab-count-narrow">{view === "board" ? rows.length : counts.board}</span>}
-                {counts && (v === "today" || v === "rejected" || v === "declined") && counts[v] > 0 && (
-                  <span className="tab-count">{counts[v]}</span>
-                )}
+                {/* "Own": how many CVs are still to be sent. */}
+                {counts && tab === "own" && counts.toSend > 0 && <span className="tab-count">{counts.toSend}</span>}
+                {/* "Collected": always how many offers "Best today" has - the number does not jump with the switch. */}
+                {counts && tab === "collected" && <span className="tab-count tab-count-narrow">{counts.today}</span>}
               </button>
             ))}
           </nav>
           <div className="topbar-actions">
-            {view === "trash" && rows.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={() =>
-                  setConfirm({
-                    message: t("trash.confirmAll", { count: rows.length }),
-                    action: () => run(() => api!.purgeOffers(null), () => setToast({ text: t("trash.purged") })),
-                  })
-                }
-              >
-                {t("trash.empty")}
-              </button>
-            )}
-            {!isPhone() && (
+            {/* Empties what the bin's switch shows; on a phone it stands by the bin's search, so the top bar keeps one row. */}
+            {!isPhone() && emptyBin}
+            {!isPhone() && collecting && (
               <button type="button" className="btn btn-ghost btn-fetch" onClick={fetchNow} disabled={locked || fetching} aria-busy={fetching}>
                 <IconDownload /> {fetching ? t("fetch.busy") : t("fetch.button")}
               </button>
@@ -987,7 +1223,8 @@ export default function App() {
 
         <main className="split">
           <section className="board-panel" aria-labelledby="board-heading">
-            {view !== "trash" && (
+            {/* Profiles sort out collected offers; the bin keeps everything, whatever the profile. */}
+            {!isBin(view) && (
               <ProfileTabs
                 profiles={profiles}
                 current={profileId}
@@ -999,14 +1236,14 @@ export default function App() {
             )}
             <div className="board-head">
               <h2 id="board-heading">
-                {t(`tabs.${view}`)}
-                {view !== "trash" && profileId !== null && (
+                {t(`tabs.${tabOf(view)}`)}
+                {!isBin(view) && profileId !== null && (
                   <span className="count"> · {profiles.find((p) => p.id === profileId)?.name}</span>
                 )}{" "}
                 <span className="count">· {t(plural(lang, "board.count", sorted.length), { count: sorted.length })}</span>
               </h2>
               <div className="board-tools">
-                {settings.feature_keys === "on" && !isPhone() && view !== "archive" && view !== "trash" && <p className="keys-hint">{t("board.keys")}</p>}
+                {settings.feature_keys === "on" && !isPhone() && <p className="keys-hint">{t(isBin(view) ? "board.keysBin" : view === "own" ? "board.keysOwn" : "board.keys")}</p>}
                 {!isPhone() && (
                   <button
                     type="button"
@@ -1020,16 +1257,39 @@ export default function App() {
                 )}
               </div>
             </div>
-            {view === "archive" && (
+            {/* "Collected": best today / all / to check / rejected by the filter, with their numbers. */}
+            {isCollected(view) && (
+              <div className="collected-switch" role="group" aria-label={t("collected.label")}>
+                {COLLECTED.map((v) => (
+                  <button key={v} type="button" className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
+                    {t(`collected.${v}`)}
+                    {counts && <span className="seg-count">{counts[v]}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* "Bin": all / not for me / expired / deleted, with their numbers. */}
+            {isBin(view) && (
+              <div className="collected-switch" role="group" aria-label={t("bin.label")}>
+                {BIN.map((v) => (
+                  <button key={v} type="button" className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
+                    {t(`bin.${v}`)}
+                    {counts && <span className="seg-count">{counts[v]}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {isBin(view) && (
               <div className="archive-search">
                 <input
                   type="search"
-                  value={archiveQuery}
-                  onChange={(e) => setArchiveQuery(e.target.value)}
-                  placeholder={t("archive.search")}
-                  aria-label={t("archive.search")}
+                  value={binQuery}
+                  onChange={(e) => setBinQuery(e.target.value)}
+                  placeholder={t(isPhone() ? "bin.searchShort" : "bin.search")}
+                  aria-label={t("bin.search")}
                   maxLength={100}
                 />
+                {isPhone() && emptyBin}
               </div>
             )}
             <Board
@@ -1047,7 +1307,9 @@ export default function App() {
               onOpen={() => (isNarrowLayout() ? openCard() : cardHeading.current?.focus())}
               onInterest={toggleInterest}
               onTrash={trash}
+              onRestore={restore}
               onExpired={expire}
+              onOwn={toOwn}
               onNext={goNext}
             />
           </section>
@@ -1058,6 +1320,15 @@ export default function App() {
             onStage={(stage: Stage) => cardId !== null && setStage(cardId, stage)}
             onInterest={(i) => cardId !== null && setInterest(cardId, i)}
             onFavorite={(f) => cardId !== null && setFavorite(cardId, f)}
+            onOwn={() => cardId !== null && toOwn(cardId)}
+            onOwnChange={(own) => cardId !== null && (own ? toOwn(cardId) : toCollected(cardId))}
+            onRenewed={(resent) => cardId !== null && answerRenewed(cardId, resent)}
+            onShowOffer={(id) => setSelectedId(id)}
+            onDetach={() => cardId !== null && detail?.parentId != null && detach(cardId, detail.parentId)}
+            onDupAnswer={(join) => cardId !== null && answerDuplicate(cardId, join)}
+            onFindDuplicates={() => (cardId !== null ? findDuplicates(cardId) : Promise.resolve(null))}
+            onJudgeDuplicates={(ids) => (cardId !== null ? judgeDuplicates({ id: cardId }, ids) : Promise.resolve(null))}
+            onJoin={(other) => cardId !== null && joinOffers(cardId, other)}
             onNotes={(id, n) => run(() => api!.setNotes(id, n), () => setToast({ text: t("card.notesSaved") }))}
             onOpenLink={openLink}
             onTrash={() => cardId !== null && trash(cardId)}
@@ -1068,7 +1339,6 @@ export default function App() {
             }}
             expiredPage={expiredPage?.id === cardId ? expiredPage.phrase : null}
             onKeepExpiredPage={() => setExpiredPage(null)}
-            onUnarchive={() => cardId !== null && unarchive(cardId)}
             onSwipe={(value) => cardId !== null && swipeCard(cardId, value)}
             onPurge={() =>
               cardId !== null &&
@@ -1076,7 +1346,7 @@ export default function App() {
                 message: t("trash.confirmOne"),
                 action: () => {
                   selectNeighbour(cardId);
-                  return run(() => api!.purgeOffers(cardId), () => setToast({ text: t("trash.purged") }));
+                  return run(() => api!.purgeOffers(cardId, "bin"), () => setToast({ text: t("trash.purged") }));
                 },
               })
             }
@@ -1100,7 +1370,10 @@ export default function App() {
             }}
             showDates={settings.feature_dates === "on"}
             showContacts={settings.feature_contacts === "on"}
+            claudeOn={settings.ai_providers.split(",").includes("anthropic")}
             onRateAgain={() => selectedId !== null && rateAgain(selectedId)}
+            onRatePrecise={() => selectedId !== null && rateAgain(selectedId, true)}
+            onTranslate={() => (selectedId === null || !api ? Promise.resolve() : api.aiTranslate(selectedId).then(() => reload(), fail))}
             onAssist={(kind) => selectedId !== null && runAssist(selectedId, kind)}
           />
         </main>
@@ -1118,6 +1391,11 @@ export default function App() {
             api?.closePreview().catch(() => {});
           }}
           onSave={addOffer}
+          onCheck={checkSame}
+          onShow={showSame}
+          onUpdate={updateSame}
+          onCompare={compareSame}
+          onJudge={(offer, ids) => judgeDuplicates({ offer }, ids)}
           onOpenPreview={openPreview}
           onCapture={capturePage}
           onFill={fillOffer}
@@ -1135,7 +1413,13 @@ export default function App() {
           onSave={saveProfile}
           onDelete={deleteProfile}
         />
-        <FirstSteps open={firstSteps} onSaveProfile={saveProfile} onFinish={finishFirstSteps} />
+        <FirstSteps
+          open={firstSteps}
+          collect={settings.collect === "on"}
+          onCollect={(on) => changeSetting("collect", on ? "on" : "off")}
+          onSaveProfile={saveProfile}
+          onFinish={finishFirstSteps}
+        />
         <SettingsDialog
           open={settingsOpen}
           api={api}

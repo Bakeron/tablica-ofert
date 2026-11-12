@@ -11,8 +11,8 @@ use crate::clock;
 use crate::error::{AppError, AppResult};
 use crate::text::{cut, one_line};
 
-const MAX_NOTE: usize = 2_000;
-const MAX_FIELD: usize = 200;
+pub(crate) const MAX_NOTE: usize = 2_000;
+pub(crate) const MAX_FIELD: usize = 200;
 /// Offers scored at least this high by AI get a notification.
 pub const HIGH_SCORE: i64 = 80;
 /// Days after "applied" with no later stage before a follow-up reminder.

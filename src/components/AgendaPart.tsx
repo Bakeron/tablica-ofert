@@ -5,6 +5,7 @@ import { fullDate, isWebUrl, localInputToUtc, nowLocalInput } from "../lib/forma
 import { isPhone } from "../lib/platform";
 import { IconPlus, IconTrash } from "./Icons";
 import { Reveal } from "./Reveal";
+import { AGENDA_FIELD_MAX, AGENDA_NOTE_MAX } from "../lib/limits";
 
 const EVENT_KINDS: EventKind[] = ["interview", "deadline", "other"];
 const LOG_KINDS: LogKind[] = ["call", "mail", "meeting", "message"];
@@ -115,7 +116,7 @@ export function AgendaPart({
             </label>
             <label className="field agenda-note">
               <span>{t("agenda.note")}</span>
-              <input maxLength={2000} value={eventForm.note} onChange={(e) => setEventForm({ ...eventForm, note: e.target.value })} />
+              <input maxLength={AGENDA_NOTE_MAX} value={eventForm.note} onChange={(e) => setEventForm({ ...eventForm, note: e.target.value })} />
             </label>
             <div className="agenda-buttons">
               <button type="button" className="btn btn-ghost btn-small" onClick={() => setEventForm(null)}>
@@ -186,7 +187,7 @@ export function AgendaPart({
                 <input
                   required={key === "name"}
                   type={key === "email" ? "email" : key === "linkedin" ? "url" : key === "phone" ? "tel" : "text"}
-                  maxLength={200}
+                  maxLength={AGENDA_FIELD_MAX}
                   value={contactForm[key]}
                   onChange={(e) => setContactForm({ ...contactForm, [key]: e.target.value })}
                 />
@@ -245,7 +246,7 @@ export function AgendaPart({
             </label>
             <label className="field agenda-note">
               <span>{t("agenda.note")}</span>
-              <input maxLength={2000} value={logForm.note} onChange={(e) => setLogForm({ ...logForm, note: e.target.value })} />
+              <input maxLength={AGENDA_NOTE_MAX} value={logForm.note} onChange={(e) => setLogForm({ ...logForm, note: e.target.value })} />
             </label>
             <div className="agenda-buttons">
               <button type="button" className="btn btn-ghost btn-small" onClick={() => setLogForm(null)}>

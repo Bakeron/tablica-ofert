@@ -34,7 +34,16 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/018_reread_alerts.sql"),
     include_str!("migrations/019_user_changed_at.sql"),
     include_str!("migrations/020_offer_links.sql"),
+    include_str!("migrations/021_ai_precise.sql"),
+    include_str!("migrations/022_ai_spend.sql"),
+    include_str!("migrations/023_own.sql"),
+    include_str!("migrations/024_renewed.sql"),
+    include_str!("migrations/025_tree.sql"),
+    include_str!("migrations/026_dup.sql"),
 ];
+
+/// The version with the tree of duplicates (`025_tree.sql`).
+const TREE_VERSION: usize = 25;
 
 /// Schema version this app writes (copies from newer versions are refused).
 pub fn latest_version() -> i64 {
@@ -68,6 +77,11 @@ pub fn migrate(conn: &mut Connection) -> AppResult<()> {
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        // Version 25: the links merged into one offer become children - in the same transaction,
+        // so the step is done completely or not at all.
+        if index + 1 == TREE_VERSION {
+            crate::tree::convert(&tx)?;
+        }
         tx.pragma_update(None, "user_version", (index + 1) as i64)?;
         tx.commit()?;
     }
@@ -357,6 +371,53 @@ pub mod tests {
         assert_eq!(events, 1);
     }
 
+    /// Part 1 of 11.11.2026 on a database of version 20 (before it): offers with merged links
+    /// become a tree, recruitments and offers added by hand become own - the whole family alike.
+    #[test]
+    fn upgrade_from_version_20_makes_trees_and_own_offers() {
+        let mut conn = open(&temp_dir("upgrade20").join(DB_FILE), TEST_KEY).unwrap();
+        for (index, sql) in MIGRATIONS.iter().enumerate().take(20) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        let at = "2026-11-01T00:00:00Z";
+        let offer = |uid: &str, stage: &str, links: &[(&str, &str)]| -> i64 {
+            conn.execute(
+                "INSERT INTO offers (uid, fingerprint, title, company, stage, stage_changed_at, added_at, updated_at)
+                 VALUES (?1, ?1, 'Tester', 'Firma Przykładowa', ?2, ?3, ?3, ?3)",
+                rusqlite::params![uid, stage, at],
+            )
+            .unwrap();
+            let id = conn.last_insert_rowid();
+            for (source, url) in links {
+                conn.execute(
+                    "INSERT INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![id, source, url, at],
+                )
+                .unwrap();
+            }
+            id
+        };
+        let sent = offer("u-sent", "applied", &[("jjit", "https://justjoin.it/job-offer/a"), ("nfj", "https://nofluffjobs.com/job/a")]);
+        let manual = offer("u-manual", "new", &[("manual", "https://www.praca.pl/b.html")]);
+        let collected = offer("u-collected", "new", &[("jjit", "https://justjoin.it/job-offer/c"), ("nfj", "https://nofluffjobs.com/job/c")]);
+
+        migrate(&mut conn).unwrap();
+
+        let own_of = |id: i64| crate::offers::detail(&conn, id).unwrap().row.own;
+        let sent_row = crate::offers::detail(&conn, sent).unwrap().row;
+        assert!(sent_row.own);
+        assert_eq!(sent_row.children.len(), 1);
+        assert!(sent_row.children[0].own, "a child is own like its parent");
+        assert_eq!(sent_row.children[0].stage, crate::model::Stage::New);
+        assert!(own_of(manual));
+        let collected_row = crate::offers::detail(&conn, collected).unwrap().row;
+        assert!(!collected_row.own && !collected_row.children[0].own);
+        let own: Vec<i64> = crate::offers::list(&conn, crate::model::View::Own, None).unwrap().iter().map(|r| r.id).collect();
+        assert_eq!(own, vec![manual, sent], "to send first, then the recruitment");
+        assert_eq!(crate::offers::counts(&conn, None).unwrap().to_send, 1);
+    }
+
     /// The clean start of 6.11.2026: what came by itself goes to the trash, what the user
     /// worked on stays.
     #[test]
@@ -409,12 +470,56 @@ pub mod tests {
         assert_eq!(kept, 7);
     }
 
+    /// Version 23: offers added by hand or past the stage "new" become the person's own; the rest
+    /// (also a starred or "Very" one still at "new") stays collected.
+    #[test]
+    fn own_offers_are_marked_by_the_migration() {
+        let mut conn = open(&temp_dir("own").join(DB_FILE), TEST_KEY).unwrap();
+        for (index, sql) in MIGRATIONS.iter().enumerate().take(22) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        let offer = |title: &str, source: &str, stage: &str| {
+            conn.execute(
+                "INSERT INTO offers (uid, fingerprint, title, company, stage, stage_changed_at, added_at, updated_at, favorite)
+                 VALUES ('u-' || ?1, 'fp-' || ?1, ?1, 'Firma', ?2, '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z',
+                    '2026-11-01T00:00:00Z', ?1 = 'Gwiazdka')",
+                rusqlite::params![title, stage],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO offer_sources (offer_id, source, first_seen) VALUES (?1, ?2, '2026-11-01T00:00:00Z')",
+                rusqlite::params![conn.last_insert_rowid(), source],
+            )
+            .unwrap();
+        };
+        offer("Zebrana", "adzuna", "new");
+        offer("Gwiazdka", "jooble", "new");
+        offer("Recznie", "manual", "interested");
+        offer("Zainteresowany", "mail", "interested");
+        offer("Wyslana", "jooble", "applied");
+        offer("Odrzucona", "adzuna", "rejected");
+
+        migrate(&mut conn).unwrap();
+
+        let own: Vec<String> = conn
+            .prepare("SELECT title FROM offers WHERE own = 1 ORDER BY title")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(own, vec!["Odrzucona", "Recznie", "Wyslana", "Zainteresowany"]);
+        let collected: i64 = conn.query_row("SELECT count(*) FROM offers WHERE own = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(collected, 2);
+    }
+
     /// Fails when an existing migration is edited - a schema change must be a new file.
     #[test]
     fn existing_migrations_are_frozen() {
-        // FNV-1a over migrations 001-017, line endings normalized (Git may check out CRLF).
-        const EXISTING: usize = 17;
-        const HASH: u64 = 7_133_150_456_869_224_036;
+        // FNV-1a over migrations 001-020 (all in released versions), line endings normalized (Git may check out CRLF).
+        const EXISTING: usize = 20;
+        const HASH: u64 = 11_219_189_190_065_471_435;
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for sql in &MIGRATIONS[..EXISTING] {
             for b in sql.bytes().filter(|&b| b != b'\r').chain([0u8]) {

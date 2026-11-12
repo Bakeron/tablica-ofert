@@ -1,8 +1,9 @@
 import { useId, useState, type FormEvent } from "react";
 import type { Api } from "../api";
-import { useI18n, type TextKey } from "../i18n";
-import { CSV_LISTS, csvCells, csvName, type CsvList } from "../lib/csv";
-import { PASSWORD_MIN } from "../lib/limits";
+import { useI18n } from "../i18n";
+import { CSV_LISTS, csvCells, csvName, csvSeparator, type CsvList } from "../lib/csv";
+import { placeName } from "../lib/profile";
+import { PASSWORD_MAX, PASSWORD_MIN } from "../lib/limits";
 import { IconWarning } from "./Icons";
 import { ShowToggle } from "./SecretField";
 
@@ -75,7 +76,7 @@ export function DataSettings({
     setBusy(true);
     try {
       const rows = await api.exportRows(csvList === "all" ? null : csvList);
-      const path = await api.saveCsv(csvName(csvList, lang), csvCells(rows, lang));
+      const path = await api.saveCsv(csvName(csvList, lang), csvCells(rows, lang), csvSeparator(lang));
       if (path) onToast(t("data.csvSaved", { path }));
     } catch (err) {
       onError(err);
@@ -95,14 +96,14 @@ export function DataSettings({
               <label htmlFor={`${id}-save`}>{t("data.password")}</label>
               <ShowToggle controls={`${id}-save`} shown={shown.save} onToggle={(v) => setShown({ ...shown, save: v })} />
             </div>
-            <input id={`${id}-save`} type={shown.save ? "text" : "password"} autoComplete="new-password" minLength={PASSWORD_MIN} maxLength={200} value={savePass} onChange={(e) => setSavePass(e.target.value)} />
+            <input id={`${id}-save`} type={shown.save ? "text" : "password"} autoComplete="new-password" minLength={PASSWORD_MIN} maxLength={PASSWORD_MAX} value={savePass} onChange={(e) => setSavePass(e.target.value)} />
           </div>
           <div className="field">
             <div className="secret-head">
               <label htmlFor={`${id}-save2`}>{t("data.password2")}</label>
               <ShowToggle controls={`${id}-save2`} shown={shown.save2} onToggle={(v) => setShown({ ...shown, save2: v })} />
             </div>
-            <input id={`${id}-save2`} type={shown.save2 ? "text" : "password"} autoComplete="new-password" maxLength={200} value={savePass2} aria-invalid={mismatch} onChange={(e) => setSavePass2(e.target.value)} />
+            <input id={`${id}-save2`} type={shown.save2 ? "text" : "password"} autoComplete="new-password" maxLength={PASSWORD_MAX} value={savePass2} aria-invalid={mismatch} onChange={(e) => setSavePass2(e.target.value)} />
             {mismatch && <span className="source-warn">{t("data.mismatch")}</span>}
           </div>
         </div>
@@ -122,7 +123,7 @@ export function DataSettings({
             <label htmlFor={`${id}-load`}>{t("data.password")}</label>
             <ShowToggle controls={`${id}-load`} shown={shown.load} onToggle={(v) => setShown({ ...shown, load: v })} />
           </div>
-          <input id={`${id}-load`} type={shown.load ? "text" : "password"} autoComplete="off" maxLength={200} value={loadPass} onChange={(e) => setLoadPass(e.target.value)} />
+          <input id={`${id}-load`} type={shown.load ? "text" : "password"} autoComplete="off" maxLength={PASSWORD_MAX} value={loadPass} onChange={(e) => setLoadPass(e.target.value)} />
         </div>
         <div>
           <button type="submit" className="btn btn-ghost btn-small" disabled={busy || !loadPass}>
@@ -140,7 +141,7 @@ export function DataSettings({
             <select value={csvList} onChange={(e) => setCsvList(e.target.value as CsvList)}>
               {CSV_LISTS.map((l) => (
                 <option key={l} value={l}>
-                  {t(l === "all" ? "data.csvAll" : (`tabs.${l}` as TextKey))}
+                  {l === "all" ? t("data.csvAll") : placeName(l, t)}
                 </option>
               ))}
             </select>

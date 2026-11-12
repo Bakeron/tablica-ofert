@@ -53,7 +53,7 @@ pub const FORMAT: u32 = 1;
 /// stage history goes with the stage. All other fields are the data, timed by `updated_at`.
 pub const OFFER_USER_FIELDS: &[&str] = &[
     "stage", "stage_changed_at", "interest", "favorite", "notes", "deleted_at", "archived_at", "kept_at", "expired",
-    "expired_by_user", "user_changed_at", "history",
+    "expired_by_user", "user_changed_at", "history", "own", "renew_asked", "parent_uid", "dup_of_uid", "dup_why",
 ];
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -110,6 +110,14 @@ fn offer_group(r: &Row, user: bool) -> String {
     let picked: Vec<(&String, &Value)> =
         fields.iter().filter(|(k, _)| OFFER_USER_FIELDS.contains(&k.as_str()) == user).collect::<BTreeMap<_, _>>().into_iter().collect();
     serde_json::to_string(&picked).unwrap_or_default()
+}
+
+/// A row's fields in one fixed order - the same text on both devices for the same content.
+fn content(r: &Row) -> String {
+    match r.data.as_object() {
+        Some(fields) => serde_json::to_string(&fields.iter().collect::<BTreeMap<_, _>>()).unwrap_or_default(),
+        None => r.data.to_string(),
+    }
 }
 
 /// One offer from both sides: the data from the side where it changed last, the user's fields
@@ -184,7 +192,8 @@ pub fn merge(local: &Snapshot, remote: &Snapshot, now: &str) -> (Snapshot, Merge
                     }
                     rows.insert(r.uid.clone(), both);
                 }
-                Some(mine) if mine.at >= candidate.at => {}
+                // A tie in time goes by the content, so both devices keep the same row.
+                Some(mine) if mine.at > candidate.at || (mine.at == candidate.at && content(mine) >= content(&candidate)) => {}
                 _ => {
                     rows.insert(r.uid.clone(), candidate);
                     stats.changed += 1;

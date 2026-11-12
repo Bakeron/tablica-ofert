@@ -4,6 +4,7 @@ import { describeError, type DeviceCode, type SecretHints, type Settings, type S
 import { useI18n } from "../i18n";
 import { fullDate } from "../lib/format";
 import { onBack } from "../lib/back";
+import { stoppedConnect } from "../lib/syncConnect";
 import { cancelScan, isPhone, openAppSettings, scanSyncKey } from "../lib/platform";
 import { TEXT_MAX } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
@@ -116,6 +117,8 @@ export function SyncSettings({
         } catch (e) {
           if ((e as { code?: string })?.code !== "net" || ++netFails >= POLL_NET_FAILS) throw e;
         }
+        // Stopped with "back" meanwhile - `stopConnect` says how it ended.
+        if (!polling.current) return;
         if (done) {
           polling.current = false;
           setCode(null);
@@ -131,6 +134,16 @@ export function SyncSettings({
       onError(e);
     }
   }
+
+  /** Android "back" while waiting for Google: the waiting stops - after one last look, so a login
+   *  approved a moment ago is kept, and a message says which way it ended. */
+  async function stopConnect(c: DeviceCode) {
+    polling.current = false;
+    setCode(null);
+    onToast(t(await stoppedConnect(() => api.syncLoginPoll(c.deviceCode), () => api.syncStatus())));
+    await load();
+  }
+  useEffect(() => (code ? onBack(() => void stopConnect(code)) : undefined), [code]);
 
   async function syncNow(confirm = false) {
     setBusy(true);

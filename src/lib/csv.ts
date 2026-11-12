@@ -1,8 +1,13 @@
 import type { ExportRow } from "../api/types";
 import { DICTS, translate, type Lang, type TextKey } from "../i18n";
+import { placeName } from "./profile";
+
+/** The column separator Excel expects for the language: a semicolon in Polish (a comma is the
+ *  decimal mark there), a comma in English. */
+export const csvSeparator = (lang: Lang) => (lang === "pl" ? ";" : ",");
 
 /** What "Export to Excel (CSV)" can save: one tab (in the order of the tabs) or every offer. */
-export const CSV_LISTS = ["today", "board", "review", "rejected", "declined", "archive", "trash", "all"] as const;
+export const CSV_LISTS = ["own", "today", "board", "review", "rejected", "bin", "declined", "archive", "trash", "all"] as const;
 export type CsvList = (typeof CSV_LISTS)[number];
 
 const HEADERS: TextKey[] = [
@@ -72,7 +77,7 @@ export function csvCells(rows: ExportRow[], lang: Lang): string[][] {
       csvDate(r.publishedAt),
       csvDate(r.addedAt),
       r.notes ?? "",
-      word(lang, "tabs", r.list),
+      placeName(r.list, (key, params) => translate(lang, key, params)),
     ]),
   ];
 }

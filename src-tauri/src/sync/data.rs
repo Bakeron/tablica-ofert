@@ -16,7 +16,8 @@ const OFFER_COLS: &[&str] = &[
     "salary_period", "contract", "level", "language", "requirements", "description", "notes", "interest", "favorite",
     "stage", "stage_changed_at", "expires_at", "expired", "added_at", "updated_at", "deleted_at", "ai_status", "ai_at",
     "ai_summary", "ai_flags", "ai_remote_quote", "ai_tr_lang", "ai_title_tr", "ai_description_tr", "content_removed",
-    "published_at", "archived_at", "kept_at", "user_changed_at", "expired_by_user",
+    "published_at", "archived_at", "kept_at", "user_changed_at", "expired_by_user", "ai_precise",
+    "own", "renewed_at", "renew_asked", "dup_why",
 ];
 const PROFILE_COLS: &[&str] = &["name", "position", "description", "criteria", "description_prev", "created_at", "updated_at"];
 const EVENT_COLS: &[&str] = &["kind", "at", "minutes", "note", "created_at"];
@@ -99,6 +100,15 @@ pub fn export(conn: &Connection, device: &str, now: &str) -> AppResult<Snapshot>
                 Ok(json!({ "profile": r.get::<_, String>(0)?, "score": r.get::<_, i64>(1)?, "why": r.get::<_, Option<String>>(2)?, "quote": r.get::<_, Option<String>>(3)? }))
             })?
             .collect::<Result<_, _>>()?;
+        // The parent in the tree and the offer asked about ("The same?") by their uids - ids
+        // differ between devices.
+        let (parent, dup_of): (Option<String>, Option<String>) = conn.query_row(
+            "SELECT p.uid, d.uid FROM offers o LEFT JOIN offers p ON p.id = o.parent_id LEFT JOIN offers d ON d.id = o.dup_of WHERE o.id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        data.insert("parent_uid".into(), parent.map_or(Value::Null, Value::String));
+        data.insert("dup_of_uid".into(), dup_of.map_or(Value::Null, Value::String));
         data.insert("sources".into(), Value::Array(sources));
         data.insert("history".into(), Value::Array(history));
         data.insert("ai_scores".into(), Value::Array(scores));
@@ -265,6 +275,38 @@ fn offer_id(tx: &Transaction, uid: &str) -> AppResult<Option<i64>> {
     Ok(tx.query_row("SELECT id FROM offers WHERE uid = ?1", [uid], |r| r.get(0)).optional()?)
 }
 
+/// A local child of the same parent with the same link as the incoming child, under another id.
+fn twin_child(tx: &Transaction, uid: &str, data: &Value) -> AppResult<Option<String>> {
+    let (Some(parent), Some(url)) = (data.get("parent_uid").and_then(Value::as_str), data.get("url").and_then(Value::as_str)) else {
+        return Ok(None);
+    };
+    let key = crate::sources::alerts::link_key(url);
+    let mut stmt = tx.prepare(
+        "SELECT c.uid, c.url FROM offers c JOIN offers p ON p.id = c.parent_id
+         WHERE p.uid = ?1 AND c.uid != ?2 AND c.url IS NOT NULL ORDER BY c.uid",
+    )?;
+    let found: Vec<(String, String)> = stmt.query_map(params![parent, uid], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    Ok(found.into_iter().find(|(_, u)| crate::sources::alerts::link_key(u) == key).map(|(uid, _)| uid))
+}
+
+/// One level only: changes from two devices can put a parent under another offer, or two offers
+/// under each other - a grandchild goes under the top offer, an offer under itself goes to the top.
+fn flatten_tree(tx: &Transaction) -> AppResult<()> {
+    tx.execute("UPDATE offers SET parent_id = NULL WHERE parent_id = id", [])?;
+    for _ in 0..10_000 {
+        let deeper: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT c.id, p.parent_id FROM offers c JOIN offers p ON p.id = c.parent_id WHERE p.parent_id IS NOT NULL LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((child, top)) = deeper else { break };
+        tx.execute("UPDATE offers SET parent_id = ?2 WHERE id = ?1", params![child, (top != child).then_some(top)])?;
+    }
+    Ok(())
+}
+
 /// Writes the merged snapshot into this device's database: newer rows replace older ones,
 /// tombstones delete. Rows missing from the snapshot are never deleted (the phone keeps
 /// only a part of the offers). Ends with a full filter re-check.
@@ -278,7 +320,8 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
 
     // Profiles first (scores point to them), then offers, then what belongs to offers.
     for r in table("profiles") {
-        if local_at(&tx, "profiles", "updated_at", &r.uid)?.is_some_and(|mine| mine >= r.at) {
+        // At the same time the merged row is taken: the merge picked it on both devices alike.
+        if local_at(&tx, "profiles", "updated_at", &r.uid)?.is_some_and(|mine| mine > r.at) {
             continue;
         }
         // The same field rules as on this device; a bad row is skipped, the local copy stays.
@@ -296,6 +339,8 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
     // the other side (newer, or the same time and another content).
     let mine: std::collections::HashMap<String, Row> =
         export(&tx, "", now)?.tables.remove("offers").unwrap_or_default().into_iter().map(|r| (r.uid.clone(), r)).collect();
+    // The parent and "The same?" point to other offers - set after all offers are here.
+    let mut links: Vec<(i64, Option<Value>, Option<Value>)> = Vec::new();
     for r in table("offers") {
         // The same field rules as data from outside; a bad row is skipped, the local copy stays.
         if crate::offers::check_synced(&r.data).is_err() {
@@ -317,6 +362,12 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         let twin: Option<String> = tx
             .query_row("SELECT uid FROM offers WHERE fingerprint = ?1 AND uid != ?2", params![fingerprint, r.uid], |x| x.get(0))
             .optional()?;
+        // The same ad as a child on both devices: each device split its offers with several links
+        // into children by itself (version 25), so one link got a different id on each.
+        let twin = match twin {
+            Some(t) => Some(t),
+            None => twin_child(&tx, &r.uid, &r.data)?,
+        };
         if let Some(twin) = twin {
             // Unless the merge already chose this one (the twin has its tombstone) - the devices
             // could have kept different twins when they joined duplicates on their own.
@@ -331,6 +382,10 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
                 // and contact history move to the one that stays.
                 for child in ["events", "contacts", "contact_log"] {
                     tx.execute(&format!("UPDATE {child} SET offer_id = ?1 WHERE offer_id = (SELECT id FROM offers WHERE uid = ?2)"), params![keep, twin])?;
+                }
+                // Its children and the questions about it too.
+                for col in ["parent_id", "dup_of"] {
+                    tx.execute(&format!("UPDATE offers SET {col} = ?1 WHERE {col} = (SELECT id FROM offers WHERE uid = ?2)"), params![keep, twin])?;
                 }
                 tx.execute("DELETE FROM offers WHERE uid = ?1", [&twin])?;
             } else {
@@ -365,6 +420,7 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         let id = offer_id(&tx, &r.uid)?.ok_or(AppError::NotFound)?;
         if write_user {
             write_history(&tx, id, &r.data)?;
+            links.push((id, r.data.get("parent_uid").cloned(), r.data.get("dup_of_uid").cloned()));
         }
         if !write_data {
             continue;
@@ -390,6 +446,27 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
         }
     }
 
+    // A key missing from the row (a file from an older app version) keeps the local value; an
+    // offer this device does not have (not synced from the other side) leaves the field empty.
+    for (id, parent, dup_of) in links {
+        let local = |v: &Value| -> AppResult<Option<i64>> {
+            Ok(match v.as_str() {
+                Some(uid) => offer_id(&tx, uid)?.filter(|other| *other != id),
+                None => None,
+            })
+        };
+        if let Some(parent) = parent {
+            tx.execute("UPDATE offers SET parent_id = ?2 WHERE id = ?1", params![id, local(&parent)?])?;
+        }
+        if let Some(dup_of) = dup_of {
+            match local(&dup_of)? {
+                Some(other) => tx.execute("UPDATE offers SET dup_of = ?2 WHERE id = ?1", params![id, other])?,
+                None => tx.execute("UPDATE offers SET dup_of = NULL, dup_why = NULL WHERE id = ?1", [id])?,
+            };
+        }
+    }
+    flatten_tree(&tx)?;
+
     for (name, db_table, cols, at_col) in [
         ("events", "events", EVENT_COLS, "created_at"),
         ("contacts", "contacts", CONTACT_COLS, "updated_at"),
@@ -401,7 +478,7 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
             }
             let Some(offer) = r.data.get("offer_uid").and_then(Value::as_str) else { continue };
             let Some(id) = offer_id(&tx, offer)? else { continue };
-            if local_at(&tx, db_table, at_col, &r.uid)?.is_some_and(|mine| mine >= r.at) {
+            if local_at(&tx, db_table, at_col, &r.uid)?.is_some_and(|mine| mine > r.at) {
                 continue;
             }
             // The log's time is the date the person chose, not a time of change - it stays.
@@ -412,7 +489,7 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
 
     if let Some(r) = table("experience").first().filter(|r| crate::profiles::check_synced_experience(&r.data).is_ok()) {
         let mine: Option<String> = tx.query_row("SELECT updated_at FROM candidate WHERE id = 1", [], |x| x.get(0)).optional()?;
-        if mine.is_none_or(|m| m < r.at) {
+        if mine.is_none_or(|m| m <= r.at) {
             tx.execute(
                 "INSERT INTO candidate (id, experience, updated_at) VALUES (1, ?1, ?2)
                  ON CONFLICT (id) DO UPDATE SET experience = excluded.experience, updated_at = excluded.updated_at",
@@ -423,7 +500,7 @@ pub fn apply(conn: &mut Connection, merged: &Snapshot, now: &str) -> AppResult<(
 
     for r in table("settings") {
         let Some(value) = r.data.get("value").and_then(Value::as_str) else { continue };
-        if crate::settings::changed_at(&tx, &r.uid)?.is_none_or(|mine| mine < r.at) {
+        if crate::settings::changed_at(&tx, &r.uid)?.is_none_or(|mine| mine <= r.at) {
             crate::settings::apply_synced(&tx, &r.uid, value, &r.at)?;
         }
     }
@@ -472,7 +549,12 @@ mod tests {
     }
 
     fn titles(conn: &Connection) -> Vec<String> {
-        let mut t: Vec<String> = crate::offers::list(conn, View::Board, None).unwrap().into_iter().map(|r| r.title).collect();
+        // Own and collected offers on the board.
+        let mut t: Vec<String> = [View::Own, View::Board]
+            .into_iter()
+            .flat_map(|v| crate::offers::list(conn, v, None).unwrap())
+            .map(|r| r.title)
+            .collect();
         t.sort();
         t
     }
@@ -577,7 +659,7 @@ mod tests {
         round(&mut pc, &mut phone);
         let phone_id = only_id(&phone);
         crate::offers::trash(&phone, phone_id).unwrap();
-        crate::offers::purge(&mut phone, Some(phone_id)).unwrap();
+        crate::offers::purge(&mut phone, Some(phone_id), crate::model::View::Trash).unwrap();
         phone.execute("UPDATE sync_deleted SET at = '2026-11-08T10:00:00Z'", []).unwrap();
         // The PC fetched the same offer later - data only, no change of the user's.
         let again = OfferInput { title: "Frontend Developer".into(), company: "Firma Testowa".into(), source: "jjit".into(), ..Default::default() };
@@ -604,6 +686,40 @@ mod tests {
         assert_eq!(notes(&pc), notes(&phone));
     }
 
+    /// The same second for a profile, the experience and a synced setting (audit T8 of 8.11.2026):
+    /// both devices end with one version instead of each keeping its own.
+    #[test]
+    fn profiles_experience_and_settings_at_the_same_second_end_the_same() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let input = |id: Option<i64>, name: &str| ProfileInput { id, name: name.into(), description: "Frontend".into(), criteria: Criteria::default() };
+        crate::profiles::save(&mut pc, input(None, "Plan A")).unwrap();
+        round(&mut pc, &mut phone);
+        let id_of = |c: &Connection| crate::profiles::list(c).unwrap()[0].id;
+        let (pc_id, phone_id) = (id_of(&pc), id_of(&phone));
+        crate::profiles::save(&mut pc, input(Some(pc_id), "Plan A - komputer")).unwrap();
+        crate::profiles::save(&mut phone, input(Some(phone_id), "Plan A - telefon")).unwrap();
+        crate::profiles::set_experience(&pc, "z komputera").unwrap();
+        crate::profiles::set_experience(&phone, "z telefonu").unwrap();
+        crate::settings::set(&pc, "fresh_days", "14").unwrap();
+        crate::settings::set(&phone, "fresh_days", "21").unwrap();
+        for c in [&pc, &phone] {
+            c.execute_batch(
+                "UPDATE profiles SET updated_at = '2026-11-08T10:00:00Z';
+                 UPDATE candidate SET updated_at = '2026-11-08T10:00:00Z';
+                 UPDATE settings SET value = '2026-11-08T10:00:00Z' WHERE key = 'fresh_days_changed_at';",
+            )
+            .unwrap();
+        }
+        round(&mut pc, &mut phone);
+        let name = |c: &Connection| crate::profiles::list(c).unwrap()[0].name.clone();
+        assert_eq!(name(&pc), name(&phone));
+        assert_eq!(crate::profiles::experience(&pc).unwrap(), crate::profiles::experience(&phone).unwrap());
+        assert_eq!(crate::settings::get(&pc, "fresh_days").unwrap(), crate::settings::get(&phone, "fresh_days").unwrap());
+        // The next round changes nothing - the versions stay agreed.
+        round(&mut pc, &mut phone);
+        assert_eq!(name(&pc), name(&phone));
+    }
+
     /// "Load a copy" on the PC after the phone deleted things: the copy wins on both devices.
     #[test]
     fn a_loaded_copy_wins_over_later_deletions_on_the_other_device() {
@@ -619,7 +735,7 @@ mod tests {
         crate::offers::trash(&phone, id_of(&phone, "Frontend Developer")).unwrap();
         let qa = id_of(&phone, "QA Engineer");
         crate::offers::trash(&phone, qa).unwrap();
-        crate::offers::purge(&mut phone, Some(qa)).unwrap();
+        crate::offers::purge(&mut phone, Some(qa), crate::model::View::Trash).unwrap();
         for sql in ["UPDATE offers SET user_changed_at = '2026-11-05T00:00:00Z'", "UPDATE sync_deleted SET at = '2026-11-05T00:00:00Z'", "UPDATE removed_offers SET removed_at = '2026-11-05T00:00:00Z'"] {
             phone.execute(sql, []).unwrap();
         }
@@ -731,7 +847,7 @@ mod tests {
         let id = add(&mut pc, "QA Engineer");
         round(&mut pc, &mut phone);
         crate::offers::trash(&pc, id).unwrap();
-        crate::offers::purge(&mut pc, Some(id)).unwrap();
+        crate::offers::purge(&mut pc, Some(id), crate::model::View::Trash).unwrap();
         round(&mut pc, &mut phone);
         assert!(titles(&phone).is_empty());
         // The phone also remembers the fingerprint - alerts will not bring it back there either.
@@ -921,7 +1037,9 @@ mod tests {
             AddOutcome::Added { id } => id,
             other => panic!("{other:?}"),
         };
-        crate::offers::add(&mut pc, input("Gdańsk", "https://example.com/oferta/2")).unwrap();
+        // Another source without a link: one more link row of the same offer (another ad with a
+        // link is a child - the tree travels from part 2 of zmiany.md, T1).
+        crate::offers::add(&mut pc, OfferInput { source: "jjit".into(), url: None, ..input("Gdańsk", "https://example.com/oferta/2") }).unwrap();
         crate::offers::set_interest(&pc, id, Some(crate::model::Interest::High)).unwrap();
         crate::offers::set_notes(&pc, id, "Zadzwonić we wtorek".into()).unwrap();
         crate::offers::set_stage(&mut pc, id, Stage::Applied).unwrap();
@@ -938,7 +1056,7 @@ mod tests {
         crate::agenda::add_log(&pc, id, log).unwrap();
         let gone = add(&mut pc, "Tester");
         crate::offers::trash(&pc, gone).unwrap();
-        crate::offers::purge(&mut pc, Some(gone)).unwrap();
+        crate::offers::purge(&mut pc, Some(gone), crate::model::View::Trash).unwrap();
 
         round(&mut pc, &mut phone);
         let (a, b) = (export(&pc, "pc", NOW).unwrap(), export(&phone, "phone", NOW).unwrap());
@@ -954,5 +1072,109 @@ mod tests {
         assert_eq!(stats.changed + stats.removed, 0);
         let (_, stats) = merge(&a, &b, NOW);
         assert_eq!(stats.changed + stats.removed, 0);
+    }
+
+    fn linked(conn: &mut Connection, source: &str, url: &str) -> i64 {
+        let input = OfferInput { title: "Tester".into(), company: "Firma Testowa".into(), source: source.into(), url: Some(url.into()), ..Default::default() };
+        match crate::offers::add(conn, input).unwrap() {
+            AddOutcome::Added { id } | AddOutcome::Merged { id } | AddOutcome::Unchanged { id } => id,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn id_by_uid(conn: &Connection, uid: &str) -> i64 {
+        conn.query_row("SELECT id FROM offers WHERE uid = ?1", [uid], |r| r.get(0)).unwrap()
+    }
+
+    fn uid_of(conn: &Connection, id: i64) -> String {
+        conn.query_row("SELECT uid FROM offers WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    }
+
+    fn children(conn: &Connection) -> Vec<(String, String)> {
+        let mut stmt = conn.prepare("SELECT c.uid, p.uid FROM offers c JOIN offers p ON p.id = c.parent_id ORDER BY c.uid").unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
+    }
+
+    /// Part 2, T1: a child travels under its parent (named by uid - ids differ), and "Detach" on
+    /// the phone reaches the PC.
+    #[test]
+    fn the_tree_travels_and_detach_on_the_phone_reaches_the_pc() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let parent = linked(&mut pc, "jjit", "https://justjoin.it/job-offer/firma-tester");
+        linked(&mut pc, "nfj", "https://nofluffjobs.com/job/tester-firma");
+        assert_eq!(children(&pc).len(), 1);
+        round(&mut pc, &mut phone);
+        assert_eq!(children(&phone), children(&pc));
+        let rows = crate::offers::list(&phone, View::Board, None).unwrap();
+        assert_eq!((rows.len(), rows[0].children.len()), (1, 1));
+
+        let (child_uid, _) = children(&phone)[0].clone();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        crate::tree::set_parent(&phone, id_by_uid(&phone, &child_uid), None).unwrap();
+        round(&mut pc, &mut phone);
+        assert!(children(&pc).is_empty() && children(&phone).is_empty());
+        assert!(id_by_uid(&phone, &uid_of(&pc, parent)) > 0);
+    }
+
+    /// "The same?" (the same company and title, another city) points to the other offer by uid.
+    #[test]
+    fn the_same_question_travels() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let first = linked(&mut pc, "jjit", "https://justjoin.it/job-offer/firma-tester");
+        let second = add(&mut pc, "Tester Gdańsk");
+        pc.execute(
+            "UPDATE offers SET dup_of = ?1, dup_why = 'city', user_changed_at = '2026-11-12T10:00:00Z' WHERE id = ?2",
+            params![first, second],
+        )
+        .unwrap();
+        round(&mut pc, &mut phone);
+        let on_phone = id_by_uid(&phone, &uid_of(&pc, second));
+        let note = crate::dups::note(&phone, on_phone).unwrap().unwrap();
+        assert_eq!((uid_of(&phone, note.was.id), note.why.as_str()), (uid_of(&pc, first), "city"));
+        // "A separate offer" on the phone - the question goes on the PC too.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        crate::dups::answer(&mut phone, on_phone, false).unwrap();
+        round(&mut pc, &mut phone);
+        assert!(crate::dups::note(&pc, second).unwrap().is_none());
+    }
+
+    /// Both devices split an offer with two links into a parent and a child by themselves
+    /// (version 25) - each child got its own id. After a sync there is one child, on both.
+    #[test]
+    fn children_made_on_both_devices_become_one() {
+        let (mut pc, mut phone) = (test_db(), test_db());
+        let parent = linked(&mut pc, "jjit", "https://justjoin.it/job-offer/firma-tester");
+        // The old way: one offer with two links.
+        pc.execute(
+            "INSERT INTO offer_sources (offer_id, source, url, first_seen) VALUES (?1, 'nfj', 'https://nofluffjobs.com/job/tester-firma', '2026-11-01T00:00:00Z')",
+            [parent],
+        )
+        .unwrap();
+        round(&mut pc, &mut phone);
+        assert_eq!((crate::tree::convert(&pc).unwrap(), crate::tree::convert(&phone).unwrap()), (1, 1));
+        assert_ne!(children(&pc), children(&phone));
+        round(&mut pc, &mut phone);
+        round(&mut pc, &mut phone);
+        assert_eq!(children(&pc).len(), 1);
+        assert_eq!(children(&pc), children(&phone));
+    }
+
+    /// Two devices' changes can make two levels (a parent put under another offer) - one level stays.
+    #[test]
+    fn the_tree_stays_one_level_deep() {
+        let mut pc = test_db();
+        let a = add(&mut pc, "Tester A");
+        let b = add(&mut pc, "Tester B");
+        let c = add(&mut pc, "Tester C");
+        pc.execute("UPDATE offers SET parent_id = ?1 WHERE id = ?2", params![b, a]).unwrap();
+        pc.execute("UPDATE offers SET parent_id = ?1 WHERE id = ?2", params![c, b]).unwrap();
+        pc.execute("UPDATE offers SET parent_id = ?1 WHERE id = ?2", params![a, c]).unwrap();
+        let tx = pc.transaction().unwrap();
+        flatten_tree(&tx).unwrap();
+        tx.commit().unwrap();
+        let deeper: i64 = pc
+            .query_row("SELECT count(*) FROM offers c JOIN offers p ON p.id = c.parent_id WHERE p.parent_id IS NOT NULL OR c.parent_id = c.id", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(deeper, 0);
     }
 }

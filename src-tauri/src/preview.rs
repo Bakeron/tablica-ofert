@@ -1,6 +1,8 @@
 //! Offer page preview: a link opens in a separate window, like in a browser - a person looks
 //! at the page and clicks "Take the text from the page". Not a robot: one page, on a click.
 //!
+//! The window works like a private (incognito) one: nothing stays after it is closed.
+//!
 //! The preview window has no access to the app (it is not in any capability). The text comes
 //! back by a navigation to a made-up address with a one-time code, which the app cancels and
 //! reads - the page itself never gets a way to call the app.
@@ -60,6 +62,33 @@ const EXPIRED_PHRASES: &[&str] = &[
     "applications have closed",
 ];
 
+/// Run in the preview page: the page text without the menu, the page footer and cookie banners
+/// (hidden for the moment of reading, then shown again - nothing on the page changes for good).
+/// Nothing that holds the `<h1>` is hidden, nor a header or footer inside the offer itself
+/// (`main`, `article`). When too little is left, the whole text is taken - `trim.rs` cleans it.
+const CAPTURE_SCRIPT: &str = r#"(function(){try{
+var hidden=[],seen=new Set();
+function hide(el){if(!el||seen.has(el)||el===document.body||el===document.documentElement||el.querySelector('h1'))return;
+seen.add(el);hidden.push([el,el.getAttribute('style')]);el.style.setProperty('display','none','important');}
+function inOffer(el){return !!(el.parentElement&&el.parentElement.closest('main,article,[role=main]'));}
+var cookieName=/cookie|consent|gdpr|onetrust|cookiebot|didomi|usercentrics/i,cookieText=/cookie|prywatno|privacy|consent|zgod/i;
+var full=document.body?document.body.innerText:'',b=full;
+try{
+document.querySelectorAll('nav,[role=navigation]').forEach(hide);
+document.querySelectorAll('header,[role=banner]').forEach(function(el){if(el.getAttribute('role')==='banner'||(!inOffer(el)&&el.querySelector('nav,[role=navigation],[role=search],input')))hide(el);});
+document.querySelectorAll('footer,[role=contentinfo]').forEach(function(el){if(el.getAttribute('role')==='contentinfo'||!inOffer(el))hide(el);});
+document.querySelectorAll('dialog,[role=dialog],[role=alertdialog],[aria-modal=true],[id],[class]').forEach(function(el){
+var modal=el.matches('dialog,[role=dialog],[role=alertdialog],[aria-modal=true]');
+if(!modal){var name=(el.id||'')+' '+(typeof el.className==='string'?el.className:'');if(!cookieName.test(name))return;
+var p=getComputedStyle(el).position;if(p!=='fixed'&&p!=='sticky')return;}
+if(cookieText.test(el.textContent||''))hide(el);});
+b=document.body.innerText;
+}finally{for(var i=hidden.length-1;i>=0;i--){var x=hidden[i];if(x[1]===null)x[0].removeAttribute('style');else x[0].setAttribute('style',x[1]);}}
+if(b.length<200&&full.length>b.length)b=full;
+var h=document.querySelector('h1');h=h?h.innerText:document.title;
+var d=JSON.stringify({u:location.href,h:String(h||'').slice(0,300),t:String(b).slice(0,__MAX__)});
+location.href='https://__HOST__/__CODE__#'+encodeURIComponent(d);}catch(e){}})();"#;
+
 /// Waiting for the text of the page: one-time code and where to send the answer.
 #[derive(Default)]
 pub struct Pending(pub Mutex<Option<(String, oneshot::Sender<Captured>)>>);
@@ -104,6 +133,9 @@ pub fn open(app: &AppHandle, url: &str) -> AppResult<()> {
     WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(parsed))
         .title(if polish { "Tablica Ofert - podgląd strony" } else { "Tablica Ofert - page preview" })
         .inner_size(1100.0, 800.0)
+        // Like a private window: no cookies, history or logins of earlier visits, and nothing
+        // left after it is closed - the page text never holds the person's data.
+        .incognito(true)
         .on_navigation(move |target| {
             if target.host_str() != Some(CAPTURE_HOST) {
                 // Only web pages - no `file:`, no custom schemes.
@@ -144,7 +176,8 @@ pub fn parse_capture(json: &str) -> Option<Captured> {
     }
     let raw: Raw = serde_json::from_str(json).ok()?;
     let url = crate::offers::safe_url(Some(raw.u)).ok().flatten()?;
-    let (title, text) = (one_line(&raw.h, 300), cut(&squeeze(&raw.t), MAX_TEXT));
+    let title = one_line(&raw.h, 300);
+    let text = crate::trim::page_text(&cut(&squeeze(&raw.t), MAX_TEXT), Some(&title));
     let expired_phrase = expired_phrase(&title, &text);
     Some(Captured { url, title, text, expired_phrase })
 }
@@ -180,12 +213,7 @@ pub async fn capture(app: &AppHandle) -> AppResult<Captured> {
         *slot = Some((code.clone(), sender));
     }
     // `code` is hex - safe inside the script.
-    let script = format!(
-        "(function(){{try{{var b=document.body?document.body.innerText:'';\
-var h=document.querySelector('h1');h=h?h.innerText:document.title;\
-var d=JSON.stringify({{u:location.href,h:String(h||'').slice(0,300),t:String(b).slice(0,{MAX_TEXT})}});\
-location.href='https://{CAPTURE_HOST}/{code}#'+encodeURIComponent(d);}}catch(e){{}}}})();"
-    );
+    let script = CAPTURE_SCRIPT.replace("__MAX__", &MAX_TEXT.to_string()).replace("__HOST__", CAPTURE_HOST).replace("__CODE__", &code);
     window.eval(&script).map_err(|e| AppError::Invalid(e.to_string()))?;
     match tokio::time::timeout(Duration::from_secs(8), receiver).await {
         Ok(Ok(captured)) => Ok(captured),

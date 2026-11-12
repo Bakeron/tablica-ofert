@@ -24,15 +24,25 @@ pub struct Draft {
     pub level: Option<String>,
     pub requirements: Option<String>,
     pub description: Option<String>,
+    /// When the offer was published and until when it is open (RFC 3339) - from its text.
+    pub published_at: Option<String>,
+    pub expires_at: Option<String>,
     pub by_ai: bool,
+    /// AI also scored the offer in the same call - the scores are stored when it is saved
+    /// (`add_offer` with this id), so it does not go to AI a second time.
+    pub reading_id: Option<String>,
+    /// "Check" marks and source lines of the fields (`fieldcheck`).
+    pub notes: Vec<crate::fieldcheck::FieldNote>,
+    /// Claude read the offer and less than 10% of the top-up is left.
+    pub low_funds: Option<crate::ai::spend::LowFunds>,
 }
 
-fn contract_of(text: &str) -> Option<String> {
+pub(crate) fn contract_of(text: &str) -> Option<String> {
     let n = format!(" {} ", normalize(text));
     let mut found = Vec::new();
     // Polish cases: "umowa / umowę / umowy / umowie o pracę".
     let uop = ["umowa", "umowe", "umowy", "umowie"].iter().any(|u| n.contains(&format!(" {u} o prace ")));
-    if uop || n.contains(" uop ") || n.contains(" employment contract ") {
+    if uop || n.contains(" uop ") || n.contains(" employment contract ") || n.contains(" contract of employment ") {
         found.push("UoP");
     }
     if n.contains(" b2b ") {
@@ -78,6 +88,9 @@ pub fn from_text(text: &str, title_hint: Option<&str>) -> Draft {
             }
         }
     }
+    let now = time::OffsetDateTime::now_utc();
+    d.published_at = crate::dates::find(&text, crate::dates::Kind::Published, now).map(|(date, _)| date);
+    d.expires_at = crate::dates::find(&text, crate::dates::Kind::Expires, now).map(|(date, _)| date);
     d.contract = contract_of(&text);
     d.level = title.as_deref().and_then(level_of);
     d.description = (!text.is_empty()).then(|| cut(&text, 60_000));

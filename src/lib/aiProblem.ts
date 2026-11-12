@@ -1,5 +1,6 @@
-import type { AiProblem, RateReport } from "../api/types";
+import type { AiProblem, LowFunds, RateReport } from "../api/types";
 import type { TextKey } from "../i18n";
+import { usdText } from "./aiCost";
 
 type T = (key: TextKey, params?: Record<string, string | number>) => string;
 
@@ -12,10 +13,20 @@ export function problemLine(p: AiProblem, t: T): string {
   });
 }
 
+/** "About $0.40 of the $5.00 Claude top-up is left…" */
+export function lowFundsLine(low: LowFunds, t: T, lang: string): string {
+  return t("ai.lowFunds", { left: usdText(low.left, lang), topUp: usdText(low.topUp, lang) });
+}
+
+/** The run left collected offers waiting: Claude is the only provider on (`ai::NO_FREE`). */
+export const noFreeProvider = (report: RateReport) => report.error?.code === "missing" && report.error.detail.endsWith("free ai provider");
+
 /** One sentence about an AI run, with every provider that failed and why. */
-export function rateSummary(report: RateReport, t: T): string {
+export function rateSummary(report: RateReport, t: T, lang: string): string {
   const parts: string[] = [];
-  if (report.error) {
+  if (noFreeProvider(report)) {
+    parts.push(t("ai.rated", { count: report.rated, waiting: report.waiting }), t("ai.noFree"));
+  } else if (report.error) {
     parts.push(t("ai.stopped"));
     // An error that came before any provider was asked (e.g. a busy run) has no problem line.
     if (report.problems.length === 0) {
@@ -27,6 +38,7 @@ export function rateSummary(report: RateReport, t: T): string {
   }
   parts.push(...report.problems.map((p) => problemLine(p, t)));
   if (report.noProfile > 0) parts.push(t("ai.noProfile", { count: report.noProfile }));
+  if (report.lowFunds) parts.push(lowFundsLine(report.lowFunds, t, lang), t("ai.lowFundsWhere"));
   // "AI rated…" has no full stop of its own - it gets one when more sentences follow.
   return parts.map((part, i) => (i < parts.length - 1 && !/[.!?…]$/.test(part) ? `${part}.` : part)).join(" ");
 }

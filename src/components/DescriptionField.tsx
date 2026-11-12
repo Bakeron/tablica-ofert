@@ -2,6 +2,7 @@ import { useI18n, type TextKey } from "../i18n";
 import { isPhone } from "../lib/platform";
 import { IconWarning } from "./Icons";
 import { FieldError, useField } from "./FieldError";
+import { PROFILE_DESCRIPTION_MAX } from "../lib/limits";
 
 const QUESTIONS: TextKey[] = ["profile.q1", "profile.q2", "profile.q3", "profile.q4", "profile.q5"];
 
@@ -26,7 +27,7 @@ export function DescriptionField({
         <textarea
           required
           rows={6}
-          maxLength={10000}
+          maxLength={PROFILE_DESCRIPTION_MAX}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           data-autofocus={autoFocus ? "" : undefined}

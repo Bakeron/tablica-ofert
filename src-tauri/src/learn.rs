@@ -419,6 +419,8 @@ mod tests {
         let plain = add(&mut conn, "Księgowa", "Biuro rachunkowe");
         let liked = add(&mut conn, "Frontend", "WordPress i React");
         conn.execute("UPDATE offer_sources SET source = 'adzuna' WHERE offer_id IN (?1, ?2)", [plain, liked]).unwrap();
+        // Collected ones now - "Today" is the switch inside "Collected".
+        conn.execute("UPDATE offers SET own = 0, stage = 'new' WHERE id IN (?1, ?2)", [plain, liked]).unwrap();
         conn.execute("UPDATE offers SET score = 60, score_source = 'ai' WHERE id = ?1", [plain]).unwrap();
         conn.execute("UPDATE offers SET score = 58, score_source = 'ai' WHERE id = ?1", [liked]).unwrap();
         let order = |conn: &Connection| offers::list(conn, View::Today, None).unwrap().iter().map(|o| o.id).collect::<Vec<_>>();

@@ -52,6 +52,8 @@ const fit: DemoFilter = { result: "pass" };
 export interface DemoOffer {
   input: OfferInput;
   extraSources?: string[];
+  /** The CV went through this one of `extraSources` (the child is "applied", the family is own). */
+  sentThrough?: string;
   /** The same job in several cities of `input.source`: city and link of each (the city field lists them all). */
   linkCities?: [string, string][];
   stage?: Stage;
@@ -70,11 +72,18 @@ export interface DemoOffer {
   event?: { kind: "interview" | "deadline" | "other"; inHours: number; note: string };
   contact?: { name: string; role: string; email: string; phone: string; linkedin: string };
   /** What AI "read" (made up); scores use the profile index instead of the id. */
-  ai?: Omit<OfferAi, "scores" | "descriptionTranslated" | "offerLanguage"> & {
+  ai?: Omit<OfferAi, "scores" | "descriptionTranslated" | "offerLanguage" | "precise"> & {
     scores: { profile: number; score: number; why: string; quote: string | null }[];
   };
   /** Made-up AI translation into Polish (an offer in English). */
   translation?: { title: string; description: string };
+  /** Deleted ("To trash") so many hours ago - the bin's "Deleted" list. */
+  deletedHoursAgo?: number;
+  /** "Update the existing one" so many hours ago, after the CV went - the mark RENEWED. */
+  renewedHoursAgo?: number;
+  /** The same company and title as the offer with this title, but another city or salary - the
+   *  question "the same ad?" on the card (`dups.rs`). */
+  dupOf?: { title: string; why: "city" | "salary" };
 }
 
 export const DEMO_OFFERS: DemoOffer[] = [
@@ -85,6 +94,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
     learned: 8,
     learnedWords: ["React", "TypeScript"],
     extraSources: ["jjit", "nfj"],
+    sentThrough: "nfj",
     filters: [fit, fit],
     ai: {
       status: "done",
@@ -147,6 +157,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
     scoreSource: "keywords",
     stage: "applied",
     interest: "maybe",
+    renewedHoursAgo: 3,
     notes: "Wysłane przez formularz na stronie firmy.",
     filters: [
       {
@@ -501,6 +512,47 @@ export const DEMO_OFFERS: DemoOffer[] = [
       language: "en",
       description:
         "We build WordPress plugins and themes for a network of independent bookshops. We are looking for someone who knows PHP and ACF well and likes tidy code.\n\nFully remote, anywhere in Europe.",
+    },
+  },
+  {
+    hoursAgo: 30,
+    deletedHoursAgo: 3,
+    score: 22,
+    scoreSource: "keywords",
+    filters: [
+      { result: "fail", reasons: [{ kind: "fail", code: "office_not_wanted" }] },
+      { result: "unsure", reasons: [{ kind: "unsure", code: "no_salary" }] },
+    ],
+    input: {
+      title: "Specjalista ds. wsparcia IT",
+      company: "Latarnia Serwis",
+      source: "pracuj",
+      url: "https://example.com/oferty/latarnia-wsparcie",
+      city: "Wrocław",
+      remote: "no",
+      contract: "umowa o pracę",
+      description: "Pierwsza linia wsparcia dla biura rachunkowego: konta, drukarki, poczta. Praca na miejscu, zmiany 8-16 i 12-20.",
+    },
+  },
+  {
+    hoursAgo: 30,
+    score: 52,
+    scoreSource: "keywords",
+    filters: [fit, fit],
+    dupOf: { title: "Android Developer", why: "city" },
+    input: {
+      title: "Android Developer",
+      company: "Bursztyn Soft",
+      source: "olx",
+      url: "https://example.com/oferty/bursztyn-android-gdansk",
+      city: "Gdańsk",
+      remote: "hybrid",
+      salaryMin: 10000,
+      salaryMax: 13000,
+      contract: "UoP",
+      level: "mid",
+      language: "pl",
+      description: "Rozwój systemu rezerwacji dla sieci hosteli. Biuro w Gdańsku raz w tygodniu.",
     },
   },
 ];

@@ -3,6 +3,7 @@
 //! - Anthropic Messages API (Claude).
 //! Keys come from the credential store and go only into the request header.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use reqwest::{Client, Response};
@@ -10,6 +11,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::spend::Tokens;
 use crate::error::{AppError, AppResult};
 use crate::net;
 use crate::text::one_line;
@@ -56,7 +58,8 @@ impl Provider {
             // Picks a free model that is not busy at the moment (one popular model is often rate-limited upstream).
             Self::OpenRouter => "openrouter/free",
             Self::Ollama => "llama3.1:8b",
-            Self::Anthropic => "claude-opus-5-5",
+            // Reads fields and rates as well as Opus here, at half its price (test of 11.11.2026).
+            Self::Anthropic => "claude-sonnet-5-5",
             Self::OpenAi => "gpt-6-luna",
         }
     }
@@ -75,7 +78,8 @@ impl Provider {
     /// Pause between calls, so free per-minute limits are not hit.
     pub fn pause(self) -> Duration {
         Duration::from_millis(match self {
-            Self::Groq => 2_500,
+            // Its free plan reads 8 thousand tokens a minute and one rating takes about 4 thousand.
+            Self::Groq => 30_000,
             Self::OpenRouter => 3_500,
             Self::Ollama => 0,
             // Paid (Gemini too: Google gives its free plan only to some accounts and projects).
@@ -106,6 +110,10 @@ pub struct Ai {
     /// Only for Ollama.
     base_url: String,
     http: Client,
+    /// Claude's `effort` - how long the model thinks before it answers.
+    pub effort: &'static str,
+    /// Tokens of Claude's answers not yet written to the spending counter (`take_spent`).
+    spent: Mutex<Vec<(String, Tokens)>>,
 }
 
 impl Ai {
@@ -113,7 +121,8 @@ impl Ai {
         if provider.key_name().is_some() && key.is_none() {
             return Err(AppError::Missing("ai key".into()));
         }
-        Ok(Ai { provider, model, key, base_url: ollama_url.trim_end_matches('/').to_string(), http: net::client()? })
+        // Reading one offer is a simple task - low effort keeps it fast and cheap.
+        Ok(Ai { provider, model, key, base_url: ollama_url.trim_end_matches('/').to_string(), http: net::client()?, effort: "low", spent: Mutex::default() })
     }
 
     fn chat_url(&self) -> String {
@@ -132,12 +141,35 @@ impl Ai {
         Ok(self.ask_full(system, user, json).await?.0)
     }
 
+    /// One question whose beginning (`stable`) is the same in many calls and whose end (`varying`)
+    /// changes. Claude is told to keep the beginning in its prompt cache (read back about 10 times
+    /// cheaper within 5 minutes); OpenAI-compatible providers cache the same beginning on their own.
+    pub async fn ask_cached(&self, system: &str, stable: &str, varying: &str, json: bool) -> AppResult<String> {
+        Ok(self.ask_cached_usage(system, stable, varying, json).await?.0)
+    }
+
+    /// `ask_cached` with the provider's token counts (`usage` of its answer, when it gives one).
+    pub async fn ask_cached_usage(&self, system: &str, stable: &str, varying: &str, json: bool) -> AppResult<(String, Option<Value>)> {
+        let (text, _, usage) = match self.provider {
+            Provider::Anthropic => {
+                let content = json!([
+                    { "type": "text", "text": stable, "cache_control": { "type": "ephemeral" } },
+                    { "type": "text", "text": varying },
+                ]);
+                self.ask_anthropic(system, content).await?
+            }
+            _ => self.ask_openai(system, &format!("{stable}\n\n{varying}"), json).await?,
+        };
+        Ok((text, usage))
+    }
+
     /// The answer and the model that wrote it (as the provider names it).
     async fn ask_full(&self, system: &str, user: &str, json: bool) -> AppResult<(String, Option<String>)> {
-        match self.provider {
-            Provider::Anthropic => self.ask_anthropic(system, user, json).await,
-            _ => self.ask_openai(system, user, json).await,
-        }
+        let (text, model, _) = match self.provider {
+            Provider::Anthropic => self.ask_anthropic(system, json!(user)).await?,
+            _ => self.ask_openai(system, user, json).await?,
+        };
+        Ok((text, model))
     }
 
     /// "Check connection": one tiny question with the model from the settings. Returns the model
@@ -150,7 +182,7 @@ impl Ai {
         }
     }
 
-    async fn ask_openai(&self, system: &str, user: &str, json: bool) -> AppResult<(String, Option<String>)> {
+    async fn ask_openai(&self, system: &str, user: &str, json: bool) -> AppResult<(String, Option<String>, Option<Value>)> {
         let mut body = json!({
             "model": self.model,
             "messages": [
@@ -178,24 +210,24 @@ impl Ai {
             req = req.header("X-Title", "Tablica Ofert");
         }
         let answer: OpenAiAnswer = answer(req.send().await.map_err(net::net_error)?).await?;
-        let model = answer.model;
+        let (model, usage) = (answer.model, answer.usage);
         let choice = answer.choices.into_iter().next().ok_or_else(|| AppError::Net(EMPTY.into()))?;
         if choice.finish_reason.as_deref() == Some("content_filter") {
             return Err(AppError::Net("the provider refused to answer".into()));
         }
         let text = choice.message.content.filter(|c| !c.trim().is_empty()).ok_or_else(|| AppError::Net(EMPTY.into()))?;
-        Ok((text, model))
+        Ok((text, model, usage))
     }
 
     /// Claude: JSON is asked for in the prompt (the answer is checked field by field anyway).
-    async fn ask_anthropic(&self, system: &str, user: &str, _json: bool) -> AppResult<(String, Option<String>)> {
+    /// `content` - the user's text, or its blocks (with a prompt-cache mark).
+    async fn ask_anthropic(&self, system: &str, content: Value) -> AppResult<(String, Option<String>, Option<Value>)> {
         let body = json!({
             "model": self.model,
             "max_tokens": 16000,
             "system": system,
-            "messages": [{ "role": "user", "content": user }],
-            // Reading one offer is a simple task - low effort keeps it fast and cheap.
-            "output_config": { "effort": "low" },
+            "messages": [{ "role": "user", "content": content }],
+            "output_config": { "effort": self.effort },
             // A safety decline is retried on a fallback model chosen by the API.
             "fallbacks": "default",
         });
@@ -207,6 +239,8 @@ impl Ai {
             .header("anthropic-beta", "server-side-fallback-2026-07-01")
             .json(&body);
         let answer: AnthropicAnswer = answer(req.send().await.map_err(net::net_error)?).await?;
+        // Paid even when the answer turns out refused or empty.
+        self.note_spent(answer.model.as_deref(), answer.usage.as_ref());
         if answer.stop_reason.as_deref() == Some("refusal") {
             return Err(AppError::Net("the model refused to answer".into()));
         }
@@ -220,7 +254,21 @@ impl Ai {
         if text.trim().is_empty() {
             return Err(AppError::Net(EMPTY.into()));
         }
-        Ok((text, answer.model))
+        Ok((text, answer.model, answer.usage))
+    }
+
+    /// Keeps the token counts of one answer. The model that answered sets the price (a safety
+    /// fallback may answer instead of the one asked); without its name - the one asked.
+    pub(super) fn note_spent(&self, answered_by: Option<&str>, usage: Option<&Value>) {
+        if let Some(tokens) = usage.and_then(Tokens::from_usage) {
+            let model = answered_by.filter(|m| !m.trim().is_empty()).unwrap_or(&self.model).to_string();
+            self.spent.lock().unwrap_or_else(|e| e.into_inner()).push((model, tokens));
+        }
+    }
+
+    /// Claude's token counts since the last call of this (model, tokens) - for the spending counter.
+    pub fn take_spent(&self) -> Vec<(String, Tokens)> {
+        std::mem::take(&mut *self.spent.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
     /// Free models this key can use, as the provider lists them today (paid providers: none).
@@ -456,6 +504,8 @@ struct OpenAiAnswer {
     choices: Vec<OpenAiChoice>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    usage: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -479,6 +529,8 @@ struct AnthropicAnswer {
     stop_reason: Option<String>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    usage: Option<Value>,
 }
 
 /// The JSON object inside an answer - models sometimes wrap it in ``` fences or add a sentence.

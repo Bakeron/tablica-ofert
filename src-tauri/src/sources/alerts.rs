@@ -249,6 +249,18 @@ fn portal_of_host(host: &str) -> Option<&'static Portal> {
     PORTALS.iter().find(|p| p.domains.iter().any(|d| host_matches(host, d)))
 }
 
+/// The portal a link leads to: a known one by its source name (also through a redirect), any
+/// other by its host without "www." - "the same portal" for two offers added by hand.
+pub fn portal_of_link(link: &str) -> Option<String> {
+    let url = Url::parse(link).ok().filter(is_web)?;
+    let known = candidates(&url)
+        .iter()
+        .filter(|c| is_web(c))
+        .find_map(|c| c.host_str().and_then(|h| portal_of_host(&h.to_ascii_lowercase())))
+        .map(|p| p.source.to_string());
+    known.or_else(|| url.host_str().map(|h| h.to_ascii_lowercase().trim_start_matches("www.").to_string()))
+}
+
 /// Portal of a sender address (`alerty@justjoin.it`).
 pub fn portal_of_sender(address: &str) -> Option<&'static Portal> {
     let domain = address.rsplit('@').next()?.trim().trim_end_matches('>').to_ascii_lowercase();
@@ -288,6 +300,10 @@ fn offer_url(url: &Url, portal: &Portal) -> Option<String> {
             .or_else(|| param("topdoc_id"))
             .filter(|id| digits(id))
             .map(|id| format!("https://{host}/land/ad/{id}")),
+        // `/redir/jdp?uid=<id>&token=…`: a whole card is this link, the same offer as `/away/<id>`
+        // in other mails. Unknown, it was taken for a tracking link and its card went into the
+        // offer above it (another company's salary and text).
+        s if s == super::jooble::SOURCE => jooble_redirect_uid(url).map(|_| clean_url(url)),
         _ => None,
     };
     known.or_else(|| {
@@ -885,10 +901,23 @@ fn search_radius(line: &str) -> bool {
 fn offer_key(url: &str) -> String {
     match Url::parse(url) {
         Ok(u) if u.host_str().and_then(portal_of_host).is_some_and(|p| p.source == super::jooble::SOURCE) => {
-            format!("{}{}", u.host_str().unwrap_or_default(), u.path())
+            match jooble_redirect_uid(&u) {
+                Some(uid) => format!("{}/away/{uid}", u.host_str().unwrap_or_default()),
+                None => format!("{}{}", u.host_str().unwrap_or_default(), u.path()),
+            }
         }
         _ => url.to_string(),
     }
+}
+
+/// The offer number of Jooble's `/redir/jdp?uid=<id>` (`-123` too, like `/away/-123`).
+fn jooble_redirect_uid(url: &Url) -> Option<String> {
+    if url.path() != "/redir/jdp" {
+        return None;
+    }
+    let uid = url.query_pairs().find(|(k, _)| k == "uid").map(|(_, v)| v.into_owned())?;
+    let digits = uid.strip_prefix('-').unwrap_or(&uid);
+    (!digits.is_empty() && digits.len() <= 25 && digits.bytes().all(|b| b.is_ascii_digit())).then_some(uid)
 }
 
 fn short_id(url: &str) -> String {
@@ -1221,6 +1250,48 @@ mod tests {
         assert_eq!(offers[0].company, "Zmyślona Firma");
         assert_eq!((offers[0].salary_min, offers[0].salary_period), (Some(100), Some(SalaryPeriod::Hour)));
         assert_eq!(parse_salary("9000 zł").map(|s| s.3), Some(SalaryPeriod::Month));
+    }
+
+    // The shape of a real Jooble alert (11.11.2026): the whole card is one link, and some cards
+    // link through `/redir/jdp?uid=…&token=…` instead of `/away/<id>`. Companies are made up.
+    #[test]
+    fn a_jooble_card_behind_a_redirect_is_its_own_offer() {
+        let card = |href: &str, title: &str, salary: &str, company: &str, city: &str, tags: &str| {
+            format!(
+                r#"<a id="job-card-link" href="{href}" target="_blank"><table><tr><td><h2><strong>{title}</strong></h2></td></tr>
+                <tr><td><h2 id="salary"><strong>{salary}</strong></h2></td></tr>
+                <tr><td><p id="company-name">{company}</p><p>•</p><p>{city}</p></td></tr>
+                <tr><td><p>{tags}</p></td></tr></table></a>"#
+            )
+        };
+        let html = [
+            card("https://pl.jooble.org/away/-308?ed=1&amp;pos=7&amp;mid=a", "Programista Fullstack (PHP)", "", "Zmyślona Sp. z o.o.", "Gdynia", "💼 Umowa 💼 Praca hybrydowa"),
+            card(
+                "https://pl.jooble.org/redir/jdp?uid=8097&amp;token=eyJhbGciOiJIUzI1NiJ9.e30.x&amp;pos=8&amp;mid=a&amp;utm_source=letter",
+                "Starszy Programista Java",
+                "14500 zł",
+                "Przykładowa Firma",
+                "Sopot",
+                "💼 Umowa o pracę 📅 Praca zmianowa",
+            ),
+        ]
+        .concat();
+        let offers = offers_in_mail("Jooble <subscribe@pl.jooble.org>", Some(&html), None);
+        assert_eq!(offers.len(), 2, "{offers:#?}");
+        let (php, java) = (&offers[0], &offers[1]);
+        assert_eq!((php.title.as_str(), php.company.as_str()), ("Programista Fullstack (PHP)", "Zmyślona Sp. z o.o."));
+        assert_eq!(php.salary_min, None);
+        let php_text = format!("{:?} {:?}", php.description, php.requirements);
+        assert!(!php_text.contains("Przykładowa") && !php_text.contains("Java") && !php_text.contains("zmianowa"), "{php_text}");
+        assert_eq!((java.title.as_str(), java.company.as_str(), java.salary_min), ("Starszy Programista Java", "Przykładowa Firma", Some(14500)));
+        // The token stays (the link must lead somewhere), tracking parameters go.
+        let url = java.url.as_deref().unwrap();
+        assert!(url.contains("uid=8097") && url.contains("token=") && !url.contains("utm_source"), "{url}");
+        // In another mail the same offer comes as `/away/8097`.
+        assert_eq!(same_offer_key(url), same_offer_key("https://pl.jooble.org/away/8097?mid=b&pos=1"));
+        assert_ne!(same_offer_key(url), same_offer_key("https://pl.jooble.org/away/8098?mid=b"));
+        assert_eq!(same_offer_key("https://pl.jooble.org/redir/jdp?uid=abc&token=x"), None);
+        assert_eq!(same_offer_key("https://pl.jooble.org/redir/unsubscribe?id=1"), None);
     }
 
     #[test]

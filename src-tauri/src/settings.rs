@@ -43,6 +43,9 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("tilt", Rule::One(&["off", "on"])),
     // "First steps" shown at the first start until finished or skipped.
     ("onboarding", Rule::One(&["pending", "done"])),
+    // "Collect offers automatically" (sources, mail alerts, AI on its own); off = only the
+    // person's own offers - "Collected", "Fetch offers" and the sources' settings disappear.
+    ("collect", Rule::One(&["on", "off"])),
     // Collect offers at start and every few hours while the app is open.
     ("fetch_auto", Rule::One(&["on", "off"])),
     ("fetch_every", Rule::One(&["6", "3", "12"])),
@@ -87,6 +90,10 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("ai_auto", Rule::One(&["off", "on"])),
     // Minutes between the AI runs on its own.
     ("ai_every", Rule::One(&["30", "60", "180", "1440"])),
+    // Spending counter: the last top-up of the Claude account in dollars (as Anthropic counts;
+    // empty = not given) and its day - spending is counted from that day on.
+    ("ai_topup_usd", Rule::Text { max: 8, default: "", check: is_dollars }),
+    ("ai_topup_date", Rule::Text { max: 10, default: "", check: is_day }),
     ("ollama_url", Rule::Text { max: 200, default: "http://localhost:11434", check: is_base_url }),
     // Days after publication an offer stays fresh: then it leaves for the archive when nobody
     // touched it, or gets "probably expired". Also how far back sources and the mailbox look.
@@ -114,6 +121,27 @@ fn is_provider_list(v: &str) -> bool {
 
 fn is_limit(v: &str) -> bool {
     v.parse::<u32>().is_ok_and(|n| (1..=10_000).contains(&n))
+}
+
+/// A top-up in dollars: empty, or 0.01 to 10000 with at most two digits after the dot.
+fn is_dollars(v: &str) -> bool {
+    if v.is_empty() {
+        return true;
+    }
+    let (whole, cents) = v.split_once('.').unwrap_or((v, ""));
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    !whole.is_empty()
+        && digits(whole)
+        && digits(cents)
+        && cents.len() <= 2
+        && !v.ends_with('.')
+        && v.parse::<f64>().is_ok_and(|n| (0.01..=10_000.0).contains(&n))
+}
+
+/// A day `YYYY-MM-DD` (a real one), or empty.
+fn is_day(v: &str) -> bool {
+    v.is_empty()
+        || (v.len() == 10 && time::Date::parse(v, time::macros::format_description!("[year]-[month]-[day]")).is_ok())
 }
 
 /// Address of a local AI server: http(s), a host and maybe a port - nothing else.
@@ -286,6 +314,17 @@ mod tests {
         assert_eq!(numbers["PASSWORD_MIN"], crate::backup::MIN_PASSWORD);
         assert_eq!(numbers["LEARN_MIN_RATINGS"] as i64, crate::learn::MIN_RATINGS);
         assert_eq!(numbers["LEARN_MAX_POINTS"] as i64, crate::learn::MAX_POINTS);
+        assert_eq!(numbers["PASSWORD_MAX"], crate::backup::MAX_PASSWORD);
+        assert_eq!(numbers["OFFER_SHORT_MAX"], crate::offers::MAX_SHORT);
+        assert_eq!(numbers["OFFER_URL_MAX"], crate::offers::MAX_URL);
+        assert_eq!(numbers["OFFER_LONG_MAX"], crate::offers::MAX_LONG);
+        assert_eq!(numbers["OFFER_NOTES_MAX"], crate::offers::MAX_NOTES);
+        assert_eq!(numbers["PROFILE_NAME_MAX"], crate::profiles::MAX_NAME);
+        assert_eq!(numbers["PROFILE_DESCRIPTION_MAX"], crate::profiles::MAX_DESCRIPTION);
+        assert_eq!(numbers["PROFILE_EXPERIENCE_MAX"], crate::profiles::MAX_EXPERIENCE);
+        assert_eq!(numbers["PROFILE_WORD_MAX"], crate::profiles::MAX_WORD);
+        assert_eq!(numbers["AGENDA_NOTE_MAX"], crate::agenda::MAX_NOTE);
+        assert_eq!(numbers["AGENDA_FIELD_MAX"], crate::agenda::MAX_FIELD);
         for (key, rule) in ALLOWED {
             // The list of providers comes from check boxes, not from a text field.
             let Rule::Text { max, .. } = rule else { continue };
@@ -317,6 +356,8 @@ mod tests {
         assert_eq!(get(&conn, "adzuna_country").unwrap(), "pl");
         assert!(!is_on(&conn, "source_adzuna").unwrap());
         assert!(is_on(&conn, "fetch_auto").unwrap());
+        // Collecting is on unless the person says no (first steps or the settings).
+        assert!(is_on(&conn, "collect").unwrap());
     }
 
     #[test]
@@ -335,6 +376,24 @@ mod tests {
 AI").is_err());
         set(&conn, "search_words", " WordPress, WordPress AI ").unwrap();
         assert_eq!(get(&conn, "search_words").unwrap(), "WordPress, WordPress AI");
+    }
+
+    #[test]
+    fn a_top_up_is_dollars_and_a_real_day() {
+        let conn = test_db();
+        assert_eq!(get(&conn, "ai_topup_usd").unwrap(), "");
+        assert_eq!(get(&conn, "ai_topup_date").unwrap(), "");
+        for ok in ["5", "5.5", "20.25", "10000", "0.01", ""] {
+            set(&conn, "ai_topup_usd", ok).unwrap();
+        }
+        for wrong in ["0", "0.00", "5.", ".5", "5,50", "5.555", "-5", "10000.01", "1e3", "$5", "5 USD"] {
+            assert!(set(&conn, "ai_topup_usd", wrong).is_err(), "{wrong}");
+        }
+        set(&conn, "ai_topup_date", "2026-11-11").unwrap();
+        set(&conn, "ai_topup_date", "").unwrap();
+        for wrong in ["2026-02-30", "2026-11-1", "11.11.2026", "2026-11-11T10:00"] {
+            assert!(set(&conn, "ai_topup_date", wrong).is_err(), "{wrong}");
+        }
     }
 
     #[test]

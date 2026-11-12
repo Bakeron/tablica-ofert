@@ -1,12 +1,13 @@
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, TouchEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
-import { useI18n, type TextKey } from "../i18n";
-import { addedLabel, companyLabel, placeLabel, salaryShort, translatedTitle, shownScore } from "../lib/format";
+import { plural, useI18n, type TextKey } from "../i18n";
+import { addedLabel, companyLabel, placeLabel, salaryShort, shortDay, translatedTitle, shownScore } from "../lib/format";
 import { isNarrowLayout } from "../lib/fit";
+import { onBack } from "../lib/back";
 import { isPhone } from "../lib/platform";
 import { motionReduced } from "../lib/presence";
-import { reasonText, sortedReasons } from "../lib/profile";
+import { isBin, reasonText, sortedReasons } from "../lib/profile";
 import { SWIPE_AT, isSwipe, lockAxis, swipeOffset, type SwipeAxis } from "../lib/swipe";
 import { Flap } from "./Flap";
 import { IconStar } from "./Icons";
@@ -78,33 +79,93 @@ interface Props {
   onInterest: (id: number, interest: Interest) => void;
   onTrash: (id: number) => void;
   onExpired: (id: number) => void;
+  /** "To own" (key D) - only for a collected offer. */
+  onOwn: (id: number) => void;
+  /** "Restore" in the bin (key P, in English R). */
+  onRestore: (id: number) => void;
   /** Quick browsing: the next offer after a decision made with a key. */
   onNext: (id: number) => void;
 }
 
-export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onNext }: Props) {
+/** How long the children slide out when the tree folds (as `tree-out` in app.css). */
+const TREE_OUT_MS = 160;
+
+export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onOwn, onRestore, onNext }: Props) {
   const touch = useRef<{ id: number; x: number; y: number; axis: SwipeAxis | null } | null>(null);
   /** The row whose interest mark just came from a swipe - the mark flips in. */
   const [flipped, setFlipped] = useState<number | null>(null);
   const { t, lang } = useI18n();
-  const index = rows.findIndex((r) => r.id === selectedId);
-  // In the archive everything is old - no group of finished offers there.
-  const firstClosed = view === "archive" ? -1 : rows.findIndex(isClosed);
+  /** Parents shown with their children - the tree starts folded (only the first ads). */
+  const [unfolded, setUnfolded] = useState<Set<number>>(new Set());
+  /** Parents folding right now - their children slide out before they go (not with reduced motion). */
+  const [folding, setFolding] = useState<Set<number>>(new Set());
+  const change = (set: typeof setUnfolded, id: number, on: boolean) =>
+    set((now) => {
+      const next = new Set(now);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const fold = (id: number, open: boolean) => {
+    change(setFolding, id, false);
+    if (open || document.documentElement.dataset.motion === "reduced") {
+      change(setUnfolded, id, open);
+      return;
+    }
+    change(setFolding, id, true);
+    window.setTimeout(() => {
+      // Unfolded again meanwhile - it stays open.
+      setFolding((now) => {
+        if (now.has(id)) change(setUnfolded, id, false);
+        const next = new Set(now);
+        next.delete(id);
+        return next;
+      });
+    }, TREE_OUT_MS);
+  };
+  /** Open on the screen: unfolded and not folding. */
+  const isOpen = (id: number) => unfolded.has(id) && !folding.has(id);
+  // Android "back" folds the tree unfolded last (one on this list - another tab's stays as it was).
+  const lastOpen = [...unfolded].filter((id) => !folding.has(id) && rows.some((r) => r.id === id)).pop();
+  const foldBack = (id: number) => {
+    // A chosen child would open its parent again at once - the parent becomes the chosen row.
+    if (rows.find((r) => r.id === id)?.children.some((c) => c.id === selectedId)) onSelect(id);
+    fold(id, false);
+  };
+  const foldRef = useRef(foldBack);
+  foldRef.current = foldBack;
+  useEffect(() => (lastOpen !== undefined ? onBack(() => foldRef.current(lastOpen), true) : undefined), [lastOpen]);
+  /** Rows as they stand on the screen: every parent, its children when unfolded. */
+  const shown = rows.flatMap((r) => [r, ...(unfolded.has(r.id) ? r.children : [])]);
+  // A child chosen elsewhere (the card's list of ads) - its parent opens to show it.
+  const chosenChildOf = rows.find((r) => r.children.some((c) => c.id === selectedId));
+  if (chosenChildOf && !unfolded.has(chosenChildOf.id)) fold(chosenChildOf.id, true);
+  const index = shown.findIndex((r) => r.id === selectedId);
+  // The bin: the last thrown in on top - no group of finished offers there.
+  const firstClosed = isBin(view) ? -1 : rows.findIndex(isClosed);
   const closedCount = firstClosed < 0 ? 0 : rows.length - firstClosed;
 
   function onKeyDown(e: KeyboardEvent) {
-    if (e.target !== e.currentTarget || rows.length === 0) return;
+    if (e.target !== e.currentTarget || shown.length === 0) return;
     const go = (i: number) => {
-      const row = rows[Math.max(0, Math.min(rows.length - 1, i))];
+      const row = shown[Math.max(0, Math.min(shown.length - 1, i))];
       onSelect(row.id);
       document.getElementById(`offer-${row.id}`)?.scrollIntoView({ block: "nearest" });
     };
     const interests: Record<string, Interest> = { "1": "high", "2": "maybe", "3": "no" };
-    const editable = selectedId !== null && view !== "trash" && view !== "archive";
+    // The bin only restores (the card can delete for good, after a question).
+    const editable = selectedId !== null && !isBin(view);
+    const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+    const current = shown[index];
     if (e.key === "ArrowDown") go(index + 1);
+    // The tree: right unfolds the other ads, left folds them (from a child - back to its parent).
+    else if (e.key === "ArrowRight" && current && current.children.length > 0 && !isOpen(current.id)) fold(current.id, true);
+    else if (e.key === "ArrowLeft" && current?.parentId != null) go(shown.findIndex((r) => r.id === current.parentId));
+    else if (e.key === "ArrowLeft" && current && isOpen(current.id)) fold(current.id, false);
+    else if (e.key.toLowerCase() === (lang === "pl" ? "p" : "r") && plain && selectedId !== null && isBin(view)) onRestore(selectedId);
     else if (e.key === "ArrowUp") go(index < 0 ? 0 : index - 1);
     else if (e.key === "Home") go(0);
-    else if (e.key === "End") go(rows.length - 1);
+    else if (e.key === "End") go(shown.length - 1);
     else if (e.key === "Enter" && selectedId !== null) onOpen();
     else if (interests[e.key] && editable) {
       // A decision made - straight on to the next offer.
@@ -112,6 +173,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
       onNext(selectedId);
     } else if ((e.key === "w" || e.key === "W") && !e.ctrlKey && !e.metaKey && !e.altKey && editable) onExpired(selectedId);
     else if (e.key === "Delete" && editable) onTrash(selectedId);
+    else if ((e.key === "d" || e.key === "D") && !e.ctrlKey && !e.metaKey && !e.altKey && editable && !shown[index]?.own) onOwn(selectedId);
     else return;
     e.preventDefault();
   }
@@ -160,9 +222,9 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
     <div className="board-wrap">
       <table
         className="board"
-        role="grid"
+        role="treegrid"
         aria-label={t("board.label")}
-        aria-rowcount={rows.length + 1 + (closedCount > 0 ? 1 : 0)}
+        aria-rowcount={shown.length + 1 + (closedCount > 0 ? 1 : 0)}
         aria-activedescendant={selectedId !== null ? `offer-${selectedId}` : undefined}
         tabIndex={0}
         onKeyDown={onKeyDown}
@@ -197,13 +259,14 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
           </tr>
         </thead>
         <tbody role="rowgroup">
-          {rows.map((o, i) => {
+          {rows.map((parent, i) => [parent, ...(unfolded.has(parent.id) ? parent.children : [])].map((o) => {
+            const child = o.parentId !== null && o.id !== parent.id;
             const fresh = freshIds.has(o.id);
             const selected = o.id === selectedId;
             const sourceNames = o.sources.map((s) => sourceLabel(s, t));
             return (
               <Fragment key={o.id}>
-              {i === firstClosed && (
+              {i === firstClosed && !child && (
                 <tr role="row" className="board-group">
                   <th role="columnheader" colSpan={COLUMNS.length} scope="colgroup">
                     {t("board.closed", { count: closedCount })}
@@ -214,10 +277,18 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                 role="row"
                 id={`offer-${o.id}`}
                 aria-selected={selected}
+                aria-level={child ? 2 : 1}
+                aria-expanded={!child && o.children.length > 0 ? isOpen(o.id) : undefined}
                 className={[
                   selected && "is-selected",
-                  o.interest === "no" && "is-dim",
-                  (o.expired || o.stale) && !o.inRecruitment && view !== "archive" && "is-expired",
+                  child && "is-child",
+                  // The tree folds and unfolds smoothly - the children slide in and out.
+                  child && (folding.has(parent.id) ? "tree-out" : "tree-in"),
+                  // The person's own offer: the yellow stripe everywhere (in "Own" every row has it).
+                  o.own && "is-own",
+                  // In the bin every row is thrown out - its mark says why, no greying.
+                  o.interest === "no" && !isBin(view) && "is-dim",
+                  (o.expired || o.stale) && !o.inRecruitment && !isBin(view) && "is-expired",
                   i >= firstClosed && firstClosed >= 0 && "is-closed",
                 ]
                   .filter(Boolean)
@@ -228,8 +299,8 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                   if (isNarrowLayout()) onOpen();
                 }}
                 onDoubleClick={onOpen}
-                // No rating in the Trash or the Archive - like the keys and the card.
-                onTouchStart={(e) => (touch.current = view === "trash" || view === "archive" ? null : { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null })}
+                // No rating in the bin - like the keys.
+                onTouchStart={(e) => (touch.current = isBin(view) ? null : { id: o.id, x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null })}
                 onTouchMove={(e) => followFinger(e, o)}
                 onTouchCancel={(e) => {
                   touch.current = null;
@@ -265,7 +336,12 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     <Flap className="offer-title" text={translatedTitle(o, lang) ?? o.title} fresh={fresh} />
                   </span>
                   <span className="offer-line">
-                    <span className="offer-company">{companyLabel(o.company, t)}</span>
+                    {/* A child: which ad it is - the portal says it better than the repeated company. */}
+                    {child ? (
+                      <span className="offer-company">{t("tree.childOf", { source: sourceNames.join(" · ") })}</span>
+                    ) : (
+                      <span className="offer-company">{companyLabel(o.company, t)}</span>
+                    )}
                     {o.interest && (
                       <span key={o.interest} className={`interest interest-${o.interest}${flipped === o.id ? " flap-in" : ""}`}>
                         <span className="sr-only">{t("interest.label")}: </span>
@@ -273,7 +349,25 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                       </span>
                     )}
                   </span>
-                  {o.sources.length > 1 ? (
+                  {!child && o.children.length > 0 && (
+                    <button
+                      type="button"
+                      className="tree-toggle"
+                      aria-expanded={isOpen(o.id)}
+                      onClick={(e) => {
+                        // Folding is not choosing the row.
+                        e.stopPropagation();
+                        fold(o.id, !isOpen(o.id));
+                      }}
+                    >
+                      {/* One arrow that turns down - smoothly, with the children. */}
+                      <span className={`tree-mark${isOpen(o.id) ? " is-open" : ""}`} aria-hidden="true">
+                        ▸
+                      </span>{" "}
+                      {t(plural(lang, "tree.ads", o.children.length + 1), { count: o.children.length + 1 })}
+                    </button>
+                  )}
+                  {child ? null : o.sources.length > 1 ? (
                     <span className="offer-sources">
                       {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}
                     </span>
@@ -284,7 +378,23 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
                     )
                   )}
                   {(view === "review" || view === "rejected") && <RowReasons row={o} />}
-                  {view === "today" && o.manual && <span className="offer-sources">{t("row.manual")}</span>}
+                  {/* "OWN" only where own and collected offers mix (the bin) - in "Own" every one is.
+                      In the bin also why the offer is there, in words. */}
+                  {((o.own && view !== "own") || o.noLink || o.renewAsked || o.dupAsk || o.sentVia || (isBin(view) && o.bin)) && (
+                    <span className="offer-line row-marks">
+                      {isBin(view) && o.bin && <span className={`row-mark row-mark-bin row-mark-${o.bin}`}>{t(`row.bin.${o.bin}`)}</span>}
+                      {o.own && view !== "own" && <span className="row-mark row-mark-own">{t("row.own")}</span>}
+                      {o.noLink && <span className="row-mark row-mark-nolink">{t("row.noLink")}</span>}
+                      {o.renewAsked && <span className="row-mark row-mark-renewed">{t("row.renewed")}</span>}
+                      {o.dupAsk && <span className="row-mark row-mark-dup">{t("row.dup")}</span>}
+                      {/* The CV went through a child: the parent keeps its own stage, the family is one recruitment. */}
+                      {o.sentVia && (
+                        <span className="row-mark row-mark-sent">
+                          {t("tree.sentVia", { source: sourceLabel(o.sentVia.source, t), date: shortDay(o.sentVia.at, lang) })}
+                        </span>
+                      )}
+                    </span>
+                  )}
                   {/* AI orders "Today" and never hides: one sentence says why the score. */}
                   {view === "today" && o.scoreSource === "ai" && o.scoreWhy && (
                     <span className="offer-why">{t("row.why", { why: o.scoreWhy })}</span>
@@ -323,7 +433,7 @@ export function Board({ rows, view, selectedId, freshIds, sort, onSort, onSelect
               </tr>
               </Fragment>
             );
-          })}
+          }))}
         </tbody>
       </table>
     </div>

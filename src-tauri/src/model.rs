@@ -55,6 +55,9 @@ word_enum!(SalaryPeriod { Month => "month", Hour => "hour" });
 word_enum!(FilterResult { Pass => "pass", Fail => "fail", Unsure => "unsure" });
 
 word_enum!(View {
+    Own => "own",
+    // "Not for me", expired (the archive) and deleted together - one bin.
+    Bin => "bin",
     Today => "today",
     Board => "board",
     Review => "review",
@@ -63,6 +66,9 @@ word_enum!(View {
     Archive => "archive",
     Trash => "trash",
 });
+
+// Why an offer is in the bin: "not for me", expired (archived) or deleted.
+word_enum!(BinKind { Declined => "declined", Expired => "expired", Deleted => "deleted" });
 
 word_enum!(Contract { Uop => "uop", B2b => "b2b", Mandate => "mandate" });
 
@@ -215,13 +221,19 @@ pub struct ProfileFilter {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewCounts {
+    /// Own offers the CV is still to be sent to ("new" or "interested") - the number on "Own".
+    pub to_send: i64,
     pub today: i64,
     pub board: i64,
     pub review: i64,
     pub rejected: i64,
     /// Offers the user marked "no" - out of every other tab until the interest changes.
     pub declined: i64,
+    /// Expired offers (the archive) - "Expired" in the bin.
+    pub archive: i64,
     pub trash: i64,
+    /// Everything in the bin: "not for me", expired and deleted.
+    pub bin: i64,
 }
 
 /// One line on the board.
@@ -272,6 +284,26 @@ pub struct OfferRow {
     pub learned: i64,
     /// The words behind `learned`.
     pub learned_words: Vec<String>,
+    /// No link to the offer anywhere - "NO LINK" on the list, below the ones with a link.
+    pub no_link: bool,
+    /// The person's own offer (tab "Own"): added by hand, moved there, or past the stage "new".
+    pub own: bool,
+    /// In the bin - and why; `None` = not there.
+    pub bin: Option<BinKind>,
+    /// The ad was renewed after the CV went - the mark RENEWED and the question on the card.
+    pub renew_asked: bool,
+    /// Set = a child: another ad of the job of that offer (the tree of duplicates).
+    pub parent_id: Option<i64>,
+    /// The same company and title as another offer, not joined (another city or salary) - the
+    /// mark "SAME?" and the question on the card.
+    pub dup_ask: bool,
+    /// When the CV went (the first stage past "interested"); `None` = not in a recruitment. On a
+    /// child it gives the parent's "sent through: OLX, 5.11".
+    pub sent_at: Option<String>,
+    /// On a parent: the CV went through one of its children - "sent through: OLX, 5.11".
+    pub sent_via: Option<SentVia>,
+    /// The other ads of this job, the first seen on top - shown under it on the list.
+    pub children: Vec<OfferRow>,
 }
 
 /// One offer for "Export to Excel (CSV)" - raw values; the interface turns them into words of
@@ -338,6 +370,8 @@ pub struct OfferDetail {
     pub deleted_at: Option<String>,
     /// The source whose text was removed when its job closed (its terms), e.g. "himalayas".
     pub content_removed: Option<String>,
+    /// When "Update the existing one" last brought the ad again (the history: "ad renewed").
+    pub renewed_at: Option<String>,
     pub links: Vec<SourceLink>,
     pub history: Vec<StageEvent>,
     /// Hard filter result for every profile.
@@ -346,6 +380,8 @@ pub struct OfferDetail {
     pub ai: crate::ai::OfferAi,
     /// Dates, contacts and contact history.
     pub agenda: crate::agenda::Agenda,
+    /// "The same company and title as that offer - the same ad?" (`dups`).
+    pub dup: Option<crate::dups::DupNote>,
 }
 
 /// A new offer - typed in by hand now, later also from e-mail alerts and aggregators.
@@ -384,6 +420,85 @@ pub enum AddOutcome {
     Unchanged { id: i64 },
     /// The user deleted this offer before - it does not come back.
     Blocked,
+}
+
+word_enum!(SameKind {
+    // Nothing like it from this portal - a plain save.
+    None => "none",
+    // The same link, the same fields and text - nothing new is saved.
+    Identical => "identical",
+    // The same link with other fields (a newer date, other salary...) - "Update the existing one".
+    Changed => "changed",
+    // A new link of the same portal, the first ad gone, the text almost the same - the person
+    // says whether it is the same offer.
+    Similar => "similar",
+    // A new link of the same portal while the first ad is still open - a second ad.
+    Second => "second",
+    // The same link, only empty fields filled in and the full text (read before in part, e.g.
+    // from an alert) - "Fill in".
+    Partial => "partial",
+    // Another portal, the same company and title, but another city or clearly other salary - the
+    // person says whether it is one job.
+    Ask => "ask",
+    // "Probably the same" offers (another title, a hidden company) - `candidates`.
+    Probable => "probable",
+    // "Fill in that one": what the form would change in the chosen offer.
+    Complete => "complete",
+    // Another portal, joined as a child by itself, but the CV already went for this job - said
+    // before saving.
+    Joined => "joined",
+});
+
+/// The offer already on the board, as "Add offer" compares it with the form.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SameWas {
+    pub id: i64,
+    pub title: String,
+    pub company: String,
+    pub city: Option<String>,
+    pub remote: Remote,
+    pub salary_min: Option<i64>,
+    pub salary_max: Option<i64>,
+    pub salary_currency: Option<String>,
+    pub salary_period: Option<SalaryPeriod>,
+    pub contract: Option<String>,
+    pub level: Option<String>,
+    pub published_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub own: bool,
+    pub stage: Stage,
+    /// When the CV went (the first "applied" of the history) - `None` before a recruitment.
+    pub applied_at: Option<String>,
+    /// The CV already went for this job through some ad of its family (the offer, its parent or a
+    /// child) - the warning "you sent your CV on 5.11 through pracuj.pl".
+    pub sent_via: Option<SentVia>,
+}
+
+/// Through which ad of a family the CV went: the ad, its portal (the link's, else the source) and when.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentVia {
+    pub id: i64,
+    pub source: String,
+    pub at: String,
+}
+
+/// What "Add offer" finds before saving (`same::check`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SameOffer {
+    pub kind: SameKind,
+    pub was: Option<SameWas>,
+    /// Fields of the form that differ from the offer on the board ("title", "salary",
+    /// "description" ...); only fields the form fills.
+    pub fields: Vec<String>,
+    /// Of `fields`, the ones the offer on the board does not have yet - filled in, nothing to choose.
+    pub filled: Vec<String>,
+    /// How much of the description is the same, in % (without "1 hour ago" and the like).
+    pub similarity: u8,
+    /// "Probably the same" offers the code found (`Probable`), the closest first.
+    pub candidates: Vec<crate::dups::DupCandidate>,
 }
 
 /// What the work in the background is doing now - the line at the bottom of the window.

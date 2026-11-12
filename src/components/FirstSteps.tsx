@@ -14,10 +14,15 @@ const STEPS: TextKey[] = ["first.s1", "first.s2", "first.s3"];
  */
 export function FirstSteps({
   open,
+  collect,
+  onCollect,
   onSaveProfile,
   onFinish,
 }: {
   open: boolean;
+  /** "Collect offers automatically" - asked in the last step, saved at once. */
+  collect: boolean;
+  onCollect: (on: boolean) => void;
   onSaveProfile: (input: ProfileInput, experience: string) => Promise<boolean>;
   /** Finished or skipped - do not show again. */
   onFinish: () => void;
@@ -85,7 +90,18 @@ export function FirstSteps({
         {step === 1 && <p className="first-text">{t("first.s2Text")}</p>}
         {step === 2 && (
           <>
-            <p className="first-text">{t("first.s3Text")}</p>
+            <fieldset className="choice">
+              <legend>{t("first.collectQuestion")}</legend>
+              <div className="seg-strip">
+                {[true, false].map((on) => (
+                  <label key={String(on)} className="seg seg-radio">
+                    <input type="radio" className="sr-only" name="collect" checked={collect === on} onChange={() => onCollect(on)} />
+                    {t(on ? "first.collectYes" : "first.collectNo")}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <p className="first-text">{t(collect ? "first.s3Text" : "first.s3Own")}</p>
             <p className="hint">{t("first.criteriaTip")}</p>
           </>
         )}

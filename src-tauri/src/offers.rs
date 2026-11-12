@@ -11,10 +11,10 @@ use crate::profiles;
 use crate::error::{AppError, AppResult};
 use crate::model::*;
 
-const MAX_SHORT: usize = 300;
-const MAX_URL: usize = 2_000;
-const MAX_LONG: usize = 100_000;
-const MAX_NOTES: usize = 20_000;
+pub(crate) const MAX_SHORT: usize = 300;
+pub(crate) const MAX_URL: usize = 2_000;
+pub(crate) const MAX_LONG: usize = 100_000;
+pub(crate) const MAX_NOTES: usize = 20_000;
 const MAX_SALARY: i64 = 10_000_000;
 
 // ---------- validation of data coming from outside ----------
@@ -118,7 +118,7 @@ pub fn published(value: Option<&str>, now: &str) -> Option<String> {
 }
 
 /// Validated and trimmed copy of the input.
-fn clean(input: OfferInput) -> AppResult<OfferInput> {
+pub(crate) fn clean(input: OfferInput) -> AppResult<OfferInput> {
     let mut salary_min = salary(input.salary_min)?;
     let mut salary_max = salary(input.salary_max)?;
     if let (Some(a), Some(b)) = (salary_min, salary_max) {
@@ -187,6 +187,12 @@ pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
     for key in ["ai_status", "ai_tr_lang"] {
         text(word(d, key)?, 32, key)?;
     }
+    for key in ["parent_uid", "dup_of_uid"] {
+        text(word(d, key)?, 64, key)?;
+    }
+    if !matches!(word(d, "dup_why")?.as_deref(), None | Some("city") | Some("salary")) {
+        return Err(AppError::Invalid("dup_why has an unknown value".into()));
+    }
     if let Some(source) = word(d, "content_removed")? {
         source_name(&source)?;
     }
@@ -197,12 +203,12 @@ pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
     one_of(word(d, "remote")?, Remote::parse, "remote")?;
     one_of(word(d, "interest")?, Interest::parse, "interest")?;
     Stage::parse(&word(d, "stage")?.unwrap_or_default()).ok_or_else(|| AppError::Invalid("stage has an unknown value".into()))?;
-    for key in ["favorite", "expired", "expired_by_user"] {
+    for key in ["favorite", "expired", "expired_by_user", "renew_asked"] {
         if !matches!(number(d, key)?, None | Some(0) | Some(1)) {
             return Err(AppError::Invalid(format!("{key} must be 0 or 1")));
         }
     }
-    for key in ["stage_changed_at", "added_at", "updated_at", "user_changed_at", "expires_at", "deleted_at", "ai_at", "published_at", "archived_at", "kept_at"] {
+    for key in ["stage_changed_at", "added_at", "updated_at", "user_changed_at", "expires_at", "deleted_at", "ai_at", "published_at", "archived_at", "kept_at", "renewed_at"] {
         utc_time(word(d, key)?)?;
     }
     let list = |key: &str| d.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
@@ -228,7 +234,23 @@ pub fn check_synced(data: &serde_json::Value) -> AppResult<()> {
 
 // ---------- adding ----------
 
+/// Where a new offer goes: by the duplicate rules, or where the person said in "Add offer".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placement {
+    /// The rules decide (`dups`): the same job joins its first ad, the same company and title in
+    /// another city or with other salary is saved separately with a question.
+    Auto,
+    /// "Separate offer": the person says it is another job - saved on its own, nothing asked.
+    Separate,
+    /// "Join as a child": under this offer (a top-level one), whatever the rules say.
+    Under(i64),
+}
+
 pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
+    add_placed(conn, input, Placement::Auto)
+}
+
+pub fn add_placed(conn: &mut Connection, input: OfferInput, placement: Placement) -> AppResult<AddOutcome> {
     let input = clean(input)?;
     let fingerprint = dedup::fingerprint(&input.company, &input.title);
     let now = clock::now();
@@ -242,6 +264,42 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         return Ok(AddOutcome::Blocked);
     }
 
+    if let Placement::Under(parent) = placement {
+        let top: bool = tx
+            .query_row("SELECT parent_id IS NULL AND deleted_at IS NULL FROM offers WHERE id = ?1", [parent], |r| r.get(0))
+            .optional()?
+            .unwrap_or(false);
+        if !top {
+            return Err(AppError::Invalid("a child goes only under an offer on the board".into()));
+        }
+        let place = match input.url.as_deref() {
+            Some(url) => crate::tree::place(&tx, parent, url)?,
+            None => crate::tree::Place::New,
+        };
+        match place {
+            crate::tree::Place::Child(child) => {
+                merge_into(&tx, child, &input, &now)?;
+            }
+            crate::tree::Place::Parent => {
+                merge_into(&tx, parent, &input, &now)?;
+                add_link(&tx, parent, &input, &now)?;
+            }
+            crate::tree::Place::New => {
+                crate::tree::add_child(&tx, parent, &input, &now)?;
+            }
+        }
+        if input.source == "manual" {
+            tx.execute(
+                "UPDATE offers SET own = 1, user_changed_at = ?2 WHERE id = ?1 AND COALESCE(own, 0) = 0",
+                params![parent, now],
+            )?;
+        }
+        tx.execute("UPDATE offers SET updated_at = ?2 WHERE id = ?1", params![parent, now])?;
+        profiles::recheck_offer(&tx, parent)?;
+        tx.commit()?;
+        return Ok(AddOutcome::Merged { id: parent });
+    }
+
     let existing: Option<(i64, bool)> = tx
         .query_row(
             "SELECT id, deleted_at IS NOT NULL FROM offers WHERE fingerprint = ?1",
@@ -250,14 +308,90 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
         )
         .optional()?;
 
+    // A child or an offer saved separately is found by its link, not its fingerprint.
+    let marked = match (existing, input.url.as_deref()) {
+        (None, Some(url)) | (Some((_, false)), Some(url)) => crate::dups::marked_by_link(&tx, url)?,
+        _ => None,
+    };
+    if let Some((other, deleted)) = marked {
+        let in_family = match existing {
+            Some((id, _)) => tx.query_row("SELECT id = ?1 OR parent_id IS ?1 FROM offers WHERE id = ?2", params![id, other], |r| r.get(0))?,
+            None => false,
+        };
+        if !in_family {
+            if deleted {
+                return Ok(AddOutcome::Blocked);
+            }
+            let filled = merge_into(&tx, other, &input, &now)?;
+            if filled {
+                tx.execute("UPDATE offers SET updated_at = ?2 WHERE id = ?1", params![other, now])?;
+                profiles::recheck_offer(&tx, other)?;
+            }
+            tx.commit()?;
+            return Ok(if filled { AddOutcome::Merged { id: other } } else { AddOutcome::Unchanged { id: other } });
+        }
+    }
+
     if existing.is_none() && in_trash_by_link(&tx, &input)? {
         return Ok(AddOutcome::Blocked);
     }
     let outcome = match existing {
         // In the trash: only the user brings it back.
         Some((_, true)) => return Ok(AddOutcome::Blocked),
+        // "Separate offer": the person's word - on its own, under a marked fingerprint.
+        Some((_, false)) if placement == Placement::Separate => {
+            let marked = format!("{fingerprint}#{}", crate::secrets::random_hex(8)?);
+            AddOutcome::Added { id: insert_new(&tx, &input, &marked, &now, None)? }
+        }
         Some((id, false)) => {
+            // Another ad of the same job (a link the family does not know): a child under the
+            // first one; the same link of a child: that child.
+            let place = match input.url.as_deref() {
+                Some(url) => crate::tree::place(&tx, id, url)?,
+                None => crate::tree::Place::Parent,
+            };
+            if let crate::tree::Place::Child(child) = place {
+                merge_into(&tx, child, &input, &now)?;
+                tx.commit()?;
+                return Ok(AddOutcome::Unchanged { id });
+            }
+            if place == crate::tree::Place::New {
+                // The same company and title: one job only in the same place with salaries that
+                // do not contradict each other (`dups`) - else a separate offer and a question.
+                let family = crate::dups::family(&tx, &fingerprint)?;
+                let parent = match crate::dups::first_fit(&tx, &crate::dups::Ad::of(&input), &family)? {
+                    Ok(parent) => parent,
+                    Err(misfit) => {
+                        let marked = format!("{fingerprint}#{}", crate::secrets::random_hex(8)?);
+                        let dup = misfit.map(|(other, fit)| (other, fit.why()));
+                        let new = insert_new(&tx, &input, &marked, &now, dup)?;
+                        add_link(&tx, new, &input, &now)?;
+                        profiles::recheck_offer(&tx, new)?;
+                        tx.commit()?;
+                        return Ok(AddOutcome::Added { id: new });
+                    }
+                };
+                merge_into(&tx, parent, &input, &now)?;
+                if input.source == "manual" {
+                    tx.execute(
+                        "UPDATE offers SET own = 1, user_changed_at = ?2 WHERE id = ?1 AND COALESCE(own, 0) = 0",
+                        params![parent, now],
+                    )?;
+                }
+                crate::tree::add_child(&tx, parent, &input, &now)?;
+                tx.execute("UPDATE offers SET updated_at = ?2 WHERE id = ?1", params![parent, now])?;
+                profiles::recheck_offer(&tx, parent)?;
+                tx.commit()?;
+                return Ok(AddOutcome::Merged { id: parent });
+            }
             let filled = merge_into(&tx, id, &input, &now)?;
+            // A collected offer added by hand now: the person chose it - it becomes their own.
+            if input.source == "manual" {
+                tx.execute(
+                    "UPDATE offers SET own = 1, user_changed_at = ?2 WHERE id = ?1 AND COALESCE(own, 0) = 0",
+                    params![id, now],
+                )?;
+            }
             // The source whose text was removed brings the job again (open once more): its link
             // comes back and the offer is checked against that source's terms again.
             let revived = tx.execute(
@@ -274,33 +408,7 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
             tx.execute("UPDATE offers SET updated_at = ?2 WHERE id = ?1", params![id, now])?;
             AddOutcome::Merged { id }
         }
-        None => {
-            let uid = crate::secrets::random_hex(16)?;
-            tx.execute(
-                "INSERT INTO offers (uid, fingerprint, title, company, url, city, remote,
-                    salary_min, salary_max, salary_currency, salary_period, contract, level, language,
-                    requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at, published_at,
-                    user_changed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                    'new', ?18, ?18, ?18, COALESCE(?19, ?18), ?20)",
-                params![
-                    uid, fingerprint, input.title, input.company, input.url, input.city,
-                    input.remote.unwrap_or(Remote::Unknown), input.salary_min, input.salary_max,
-                    input.salary_currency, input.salary_period, input.contract, input.level,
-                    input.language, input.requirements, input.description, input.expires_at, now,
-                    input.published_at,
-                    // Added by hand: the person's own act. Collected: no user change yet - the
-                    // same offer worked on the other device in the meantime keeps that work (sync).
-                    if input.source == "manual" { now.as_str() } else { NOT_BY_USER }
-                ],
-            )?;
-            let id = tx.last_insert_rowid();
-            tx.execute(
-                "INSERT INTO stage_history (offer_id, stage, at) VALUES (?1, 'new', ?2)",
-                params![id, now],
-            )?;
-            AddOutcome::Added { id }
-        }
+        None => AddOutcome::Added { id: insert_new(&tx, &input, &fingerprint, &now, None)? },
     };
 
     let id = match outcome {
@@ -314,11 +422,49 @@ pub fn add(conn: &mut Connection, input: OfferInput) -> AppResult<AddOutcome> {
     Ok(outcome)
 }
 
+/// A new top-level offer. `dup` - the offer of the same company and title it may be, and why it
+/// was not joined ("city", "salary"): the question on the card.
+fn insert_new(tx: &Connection, input: &OfferInput, fingerprint: &str, now: &str, dup: Option<(i64, &str)>) -> AppResult<i64> {
+    let uid = crate::secrets::random_hex(16)?;
+    // Added by hand = chosen by the person: "interested" (the CV goes later, they set
+    // "applied" themselves). Collected offers start as new.
+    let first_stage = if input.source == "manual" { Stage::Interested } else { Stage::New };
+    tx.execute(
+        "INSERT INTO offers (uid, fingerprint, title, company, url, city, remote,
+            salary_min, salary_max, salary_currency, salary_period, contract, level, language,
+            requirements, description, expires_at, stage, stage_changed_at, added_at, updated_at, published_at,
+            user_changed_at, own, dup_of, dup_why)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+            ?21, ?18, ?18, ?18, COALESCE(?19, ?18), ?20, ?22, ?23, ?24)",
+        params![
+            uid, fingerprint, input.title, input.company, input.url, input.city,
+            input.remote.unwrap_or(Remote::Unknown), input.salary_min, input.salary_max,
+            input.salary_currency, input.salary_period, input.contract, input.level,
+            input.language, input.requirements, input.description, input.expires_at, now,
+            input.published_at,
+            // Added by hand: the person's own act. Collected: no user change yet - the
+            // same offer worked on the other device in the meantime keeps that work (sync).
+            if input.source == "manual" { now } else { NOT_BY_USER },
+            first_stage,
+            // Added by hand = the person's own offer ("Own" tab); collected ones are not.
+            input.source == "manual",
+            dup.map(|d| d.0),
+            dup.map(|d| d.1),
+        ],
+    )?;
+    let id = tx.last_insert_rowid();
+    tx.execute(
+        "INSERT INTO stage_history (offer_id, stage, at) VALUES (?1, ?2, ?3)",
+        params![id, first_stage, now],
+    )?;
+    Ok(id)
+}
+
 /// Remembers where the offer was seen. Another address of the same source is one more link (the
 /// same job in another city); the same address again - also with other tracking parameters -
 /// is not, and a link of that source without an address gets this one. Returns whether anything
 /// was added.
-fn add_link(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
+pub(crate) fn add_link(tx: &Connection, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
     if let Some(url) = input.url.as_deref() {
         let key = crate::sources::alerts::link_key(url);
         let mut stmt = tx.prepare("SELECT url FROM offer_sources WHERE offer_id = ?1 AND source = ?2 AND url IS NOT NULL")?;
@@ -397,15 +543,16 @@ const MERGED_COLUMNS: &str = "SELECT url, city, remote, contract, level, languag
     expires_at, expired, salary_min, salary_max, salary_currency, salary_period, published_at, archived_at
     FROM offers WHERE id = ?1";
 
-fn merged_columns(tx: &rusqlite::Transaction, id: i64) -> AppResult<Vec<rusqlite::types::Value>> {
+fn merged_columns(tx: &Connection, id: i64) -> AppResult<Vec<rusqlite::types::Value>> {
     Ok(tx.query_row(MERGED_COLUMNS, [id], |r| (0..16).map(|i| r.get(i)).collect())?)
 }
 
 /// Same offer seen again: fill in what was missing, keep the longer texts. A newer publication
 /// date (a source brings it again) starts its age anew and takes it out of the archive.
 /// Returns whether anything changed (the caller sets `updated_at` only then).
-fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
+fn merge_into(tx: &Connection, id: i64, input: &OfferInput, now: &str) -> AppResult<bool> {
     let before = merged_columns(tx, id)?;
+    let unglued = unglue_jooble(tx, id, input)?;
     let newer_date = tx.execute(
         "UPDATE offers SET published_at = ?2, archived_at = NULL
          WHERE id = ?1 AND ?2 > COALESCE(published_at, added_at)",
@@ -458,10 +605,36 @@ fn merge_into(tx: &rusqlite::Transaction, id: i64, input: &OfferInput, now: &str
     };
     let salary_came = matches!(before[10], rusqlite::types::Value::Null) && matches!(before[11], rusqlite::types::Value::Null)
         && !(matches!(after[10], rusqlite::types::Value::Null) && matches!(after[11], rusqlite::types::Value::Null));
-    if salary_came || (text_len(&after) >= 400 && text_len(&after) >= 2 * text_len(&before)) {
+    if unglued || salary_came || (text_len(&after) >= 400 && text_len(&after) >= 2 * text_len(&before)) {
         tx.execute("UPDATE offers SET ai_status = NULL, ai_error = NULL WHERE id = ?1 AND ai_status IS NOT NULL", [id])?;
     }
     Ok(after != before)
+}
+
+/// A Jooble alert read before 11.11.2026 could glue the next card (`/redir/jdp` link) onto an offer:
+/// its text starts with this offer's card and goes on with another company, salary and terms.
+/// The same card read right in a later mail is that start alone - the offer takes the new reading
+/// (text, requirements, salary, terms) instead of keeping the longer, glued one. Returns whether it did.
+fn unglue_jooble(tx: &Connection, id: i64, input: &OfferInput) -> AppResult<bool> {
+    let Some(new) = input.description.as_deref().filter(|d| !d.trim().is_empty()) else { return Ok(false) };
+    if input.source != crate::sources::jooble::SOURCE {
+        return Ok(false);
+    }
+    let old: Option<String> = tx.query_row("SELECT description FROM offers WHERE id = ?1", [id], |r| r.get(0))?;
+    let glued = old.as_deref().and_then(|o| o.strip_prefix(new)).is_some_and(|rest| rest.starts_with('\n') && !rest.trim().is_empty());
+    if !glued {
+        return Ok(false);
+    }
+    tx.execute(
+        "UPDATE offers SET description = ?2, requirements = ?3, salary_min = ?4, salary_max = ?5,
+            salary_currency = ?6, salary_period = ?7, contract = ?8, level = ?9, remote = ?10
+         WHERE id = ?1",
+        params![
+            id, new, input.requirements, input.salary_min, input.salary_max, input.salary_currency,
+            input.salary_period, input.contract, input.level, input.remote.unwrap_or(Remote::Unknown)
+        ],
+    )?;
+    Ok(true)
 }
 
 /// Offers past their expiry date are marked "expired" (greyed out on the board), from every
@@ -479,7 +652,10 @@ pub fn mark_expired(conn: &Connection, now: &str) -> AppResult<usize> {
 const FRESH_AT: &str = "COALESCE(o.published_at, o.added_at)";
 
 /// Added by hand - kept and always at the top of "Today".
-const MANUAL: &str = "EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o.id AND m.source = 'manual')";
+pub(crate) const MANUAL: &str = "EXISTS (SELECT 1 FROM offer_sources m WHERE m.offer_id = o.id AND m.source = 'manual')";
+
+/// No link to the offer anywhere (added by hand from a pasted text) - below the ones with a link.
+const NO_LINK: &str = "(o.url IS NULL AND NOT EXISTS (SELECT 1 FROM offer_sources s WHERE s.offer_id = o.id AND s.url IS NOT NULL))";
 
 /// Applied and further: never archived, greyed out or pushed down.
 const IN_RECRUITMENT: &str = "(o.stage NOT IN ('new', 'interested'))";
@@ -500,7 +676,7 @@ pub(crate) const TOUCHED: &str = "(o.stage != 'new' OR o.favorite = 1 OR o.inter
 pub fn waiting_for_ai(conn: &Connection) -> AppResult<String> {
     let old = cutoff_now(conn)?;
     Ok(format!(
-        "o.ai_status IS NULL AND o.deleted_at IS NULL AND o.archived_at IS NULL AND o.filter_result != 'fail'
+        "o.ai_status IS NULL AND o.parent_id IS NULL AND o.deleted_at IS NULL AND o.archived_at IS NULL AND o.filter_result != 'fail'
          AND COALESCE(o.interest, '') != 'no' AND ({FRESH_AT} >= '{old}' OR {TOUCHED})"
     ))
 }
@@ -534,7 +710,8 @@ pub fn archive_old(conn: &Connection, now: &str) -> AppResult<usize> {
     Ok(conn.execute(
         &format!(
             "UPDATE offers AS o SET archived_at = ?1, updated_at = ?1
-             WHERE o.deleted_at IS NULL AND o.archived_at IS NULL AND NOT {TOUCHED} AND {FRESH_AT} < '{old}'"
+             WHERE o.deleted_at IS NULL AND o.archived_at IS NULL AND o.parent_id IS NULL AND NOT {TOUCHED}
+                AND {FRESH_AT} < '{old}'"
         ),
         [now],
     )?)
@@ -593,15 +770,29 @@ pub fn unarchive(conn: &Connection, id: i64) -> AppResult<()> {
 const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_min, o.salary_max,
     o.salary_currency, o.salary_period, o.stage, o.stage_changed_at, o.interest, o.favorite,
     o.score, o.score_source,
-    (SELECT group_concat(DISTINCT s.source) FROM offer_sources s WHERE s.offer_id = o.id),
+    (SELECT group_concat(v, char(31)) FROM (SELECT DISTINCT CASE WHEN s.source = 'manual'
+        THEN 'manual ' || COALESCE(s.url, o.url, '') ELSE s.source END AS v FROM offer_sources s WHERE s.offer_id = o.id)),
     o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr,
     {fresh}, ({fresh} < '{old}' AND NOT {recruit}), {recruit}, {manual}, o.archived_at,
     (SELECT sc.why FROM offer_scores sc WHERE sc.offer_id = o.id AND sc.source = 'ai' ORDER BY sc.score DESC LIMIT 1),
     COALESCE((SELECT l.points FROM offer_learned l WHERE l.offer_id = o.id), 0),
-    (SELECT l.words FROM offer_learned l WHERE l.offer_id = o.id)";
+    (SELECT l.words FROM offer_learned l WHERE l.offer_id = o.id), {nolink}, COALESCE(o.own, 0) = 1, {bin},
+    COALESCE(o.renew_asked, 0) = 1, o.parent_id,
+    (o.dup_of IS NOT NULL AND EXISTS (SELECT 1 FROM offers d WHERE d.id = o.dup_of AND d.deleted_at IS NULL AND d.parent_id IS NULL)),
+    {sent}";
 
 /// Number of columns in `ROW_COLUMNS` - the offer card reads its own after them.
-const ROW_LEN: usize = 31;
+const ROW_LEN: usize = 38;
+
+/// When the CV went (the first stage past "interested" in the history; the stage's own date when
+/// the history has none); NULL = not in a recruitment.
+const SENT_AT: &str = "(CASE WHEN o.stage NOT IN ('new', 'interested') THEN COALESCE((SELECT min(h.at) FROM stage_history h
+    WHERE h.offer_id = o.id AND h.stage NOT IN ('new', 'interested')), o.stage_changed_at) END)";
+
+/// A child of the offer is in a recruitment (the CV went through another ad) - one recruitment
+/// for the whole family: the parent is not "to send" any more.
+pub(crate) const CHILD_SENT: &str = "EXISTS (SELECT 1 FROM offers c WHERE c.parent_id = o.id AND c.deleted_at IS NULL
+    AND c.stage NOT IN ('new', 'interested'))";
 
 /// The score as shown: with what the ratings taught (`learn`). NULL stays NULL.
 const SHOWN_SCORE: &str = "MIN(100, MAX(0, o.score + COALESCE((SELECT l.points FROM offer_learned l WHERE l.offer_id = o.id), 0)))";
@@ -648,6 +839,21 @@ fn columns(profile: Option<i64>, old: &str) -> String {
         .replace("{old}", old)
         .replace("{recruit}", IN_RECRUITMENT)
         .replace("{manual}", MANUAL)
+        .replace("{nolink}", NO_LINK)
+        .replace("{bin}", BIN_KIND)
+        .replace("{sent}", SENT_AT)
+}
+
+/// The name of a source as the lists show it: an ad added by hand with a link is named after the
+/// portal of that link (Pracuj, NFJ, an unknown one by its address), "manual" only without a link.
+/// The `manual` flag of a row still says it was added by hand.
+fn shown_source(source: &str) -> String {
+    source.strip_prefix("manual ").map_or_else(|| source.to_string(), portal_label)
+}
+
+/// Portal of a link added by hand; "manual" when the link is empty or not a web address.
+fn portal_label(url: &str) -> String {
+    crate::sources::alerts::portal_of_link(url).unwrap_or_else(|| "manual".into())
 }
 
 fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
@@ -656,9 +862,10 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         .get::<_, Option<String>>(20)?
         .and_then(|v| v.split_once('|').map(|(a, k)| (a.to_string(), k.to_string())));
     let mut sources: Vec<String> = sources
-        .map(|s| s.split(',').map(str::to_string).collect())
+        .map(|s| s.split('\u{1f}').map(shown_source).collect())
         .unwrap_or_default();
     sources.sort();
+    sources.dedup();
     Ok(OfferRow {
         id: r.get(0)?,
         title: r.get(1)?,
@@ -695,22 +902,72 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
             .get::<_, Option<String>>(30)?
             .and_then(|w| serde_json::from_str(&w).ok())
             .unwrap_or_default(),
+        no_link: r.get(31)?,
+        own: r.get(32)?,
+        bin: r.get(33)?,
+        renew_asked: r.get(34)?,
+        parent_id: r.get(35)?,
+        dup_ask: r.get(36)?,
+        sent_at: r.get(37)?,
+        sent_via: None,
+        children: Vec::new(),
     })
 }
 
+/// A top-level offer - children are shown under their parent, not by themselves.
+const TOP: &str = "o.parent_id IS NULL";
+
 fn view_condition(view: View, result: &str, old: &str) -> String {
-    match view {
+    let condition = match view {
+        // The person's own recruitments, whatever the filter says.
+        View::Own => format!("{LIVE} AND {OWN} AND NOT {DECLINED}"),
         // Fresh offers worth a look today: not rejected by the filter, not in a recruitment yet.
         View::Today => format!(
             "{LIVE} AND NOT {DECLINED} AND ({result} != 'fail' OR {KEPT}) AND NOT {IN_RECRUITMENT}
              AND o.expired = 0 AND {FRESH_AT} >= '{old}'"
         ),
-        View::Board => format!("{LIVE} AND NOT {DECLINED} AND ({result} = 'pass' OR {KEPT})"),
+        // "All" in Collected: everything the filter let through or left to check - never fewer than "Best today".
+        View::Board => format!("{LIVE} AND NOT {DECLINED} AND ({result} != 'fail' OR {KEPT})"),
         View::Review => format!("{LIVE} AND NOT {DECLINED} AND {result} = 'unsure' AND NOT {KEPT}"),
         View::Rejected => format!("{LIVE} AND NOT {DECLINED} AND {result} = 'fail' AND NOT {KEPT}"),
         View::Declined => format!("{LIVE} AND {DECLINED}"),
         View::Archive => "o.deleted_at IS NULL AND o.archived_at IS NOT NULL".to_string(),
         View::Trash => "o.deleted_at IS NOT NULL".to_string(),
+        // "Not for me", expired and deleted in one list.
+        View::Bin => format!("{BIN_KIND} IS NOT NULL"),
+    };
+    // A child deleted by itself is in the bin on its own; any other child goes with its parent.
+    match view {
+        View::Trash | View::Bin => format!("({condition}) AND ({TOP} OR o.deleted_at IS NOT NULL)"),
+        _ => format!("({condition}) AND {TOP}"),
+    }
+}
+
+/// Why the offer is in the bin (the order of the checks as in the tabs: deleted, then expired, then
+/// "not for me"); NULL = not in the bin.
+const BIN_KIND: &str = "(CASE WHEN o.deleted_at IS NOT NULL THEN 'deleted' WHEN o.archived_at IS NOT NULL THEN 'expired'
+    WHEN COALESCE(o.interest, '') = 'no' THEN 'declined' END)";
+
+/// When the offer went to the bin: deleted, archived, or marked "no" (the person's last change).
+const BIN_AT: &str = "COALESCE(CASE WHEN o.deleted_at IS NOT NULL THEN o.deleted_at WHEN o.archived_at IS NOT NULL THEN o.archived_at
+    ELSE o.user_changed_at END, '')";
+
+/// Groups of "Own", top down: the CV still to be sent, in a recruitment (also through a child),
+/// over (rejected, withdrawn).
+fn own_group() -> String {
+    format!("CASE WHEN o.stage IN ('new', 'interested') AND NOT {CHILD_SENT} THEN 0 WHEN o.stage IN ('rejected', 'withdrawn') THEN 2 ELSE 1 END")
+}
+
+/// The person's own offer (tab "Own", `023_own.sql`); 0 or NULL = collected.
+pub(crate) const OWN: &str = "(COALESCE(o.own, 0) = 1)";
+
+/// What a tab shows. "Today", "Offers", "To check" and "Rejected by the filter" are the switch
+/// inside "Collected" (best today / all / to check / rejected) - own offers are not there.
+fn tab_condition(view: View, result: &str, old: &str) -> String {
+    let condition = view_condition(view, result, old);
+    match view {
+        View::Today | View::Board | View::Review | View::Rejected => format!("{condition} AND NOT {OWN}"),
+        View::Own | View::Bin | View::Declined | View::Archive | View::Trash => condition,
     }
 }
 
@@ -726,14 +983,17 @@ pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Ve
     let (result, _) = filter_sql(profile);
     let old = cutoff_now(conn)?;
     let order = match view {
-        View::Today => format!("{PINNED} DESC, o.score IS NULL, {SHOWN_SCORE} DESC, {FRESH_AT} DESC, o.id DESC"),
+        View::Today => format!("{PINNED} DESC, {NO_LINK}, o.score IS NULL, {SHOWN_SCORE} DESC, {FRESH_AT} DESC, o.id DESC"),
+        View::Own => format!("{}, {NO_LINK}, {FRESH_AT} DESC, o.id DESC", own_group()),
+        // The last thrown in on top.
+        View::Bin => format!("{BIN_AT} DESC, o.id DESC"),
         View::Archive => format!("o.archived_at DESC, {FRESH_AT} DESC, o.id DESC"),
         _ => format!("{FRESH_AT} DESC, o.id DESC"),
     };
     let sql = format!(
         "SELECT {}, {PINNED} FROM offers o WHERE {} ORDER BY {order}",
         columns(profile, &old),
-        view_condition(view, result, &old)
+        tab_condition(view, result, &old)
     );
     let mut stmt = conn.prepare(&sql)?;
     let read = |r: &Row| Ok((row_from(r)?, r.get::<_, bool>(ROW_LEN)?));
@@ -741,17 +1001,42 @@ pub fn list(conn: &Connection, view: View, profile: Option<i64>) -> AppResult<Ve
         Some(p) => stmt.query_map([p], read)?.collect::<Result<Vec<_>, _>>()?,
         None => stmt.query_map([], read)?.collect::<Result<Vec<_>, _>>()?,
     };
-    if view != View::Today {
-        return Ok(rows.into_iter().map(|(row, _)| row).collect());
+    let mut rows: Vec<OfferRow> = if view != View::Today {
+        rows.into_iter().map(|(row, _)| row).collect()
+    } else {
+        let room = today_count(conn)?;
+        let pinned = rows.iter().filter(|(_, p)| *p).count();
+        rows.into_iter()
+            .enumerate()
+            .filter(|(i, (_, p))| *p || *i < room.max(pinned))
+            .map(|(_, (row, _))| row)
+            .collect()
+    };
+    with_children(conn, &mut rows, profile)?;
+    Ok(rows)
+}
+
+/// The children of every row, the first seen on top (a child deleted by itself is in the bin).
+fn with_children(conn: &Connection, rows: &mut [OfferRow], profile: Option<i64>) -> AppResult<()> {
+    let parents: std::collections::HashSet<i64> = conn
+        .prepare("SELECT DISTINCT parent_id FROM offers WHERE parent_id IS NOT NULL AND deleted_at IS NULL")?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    if parents.is_empty() {
+        return Ok(());
     }
-    let room = today_count(conn)?;
-    let pinned = rows.iter().filter(|(_, p)| *p).count();
-    Ok(rows
-        .into_iter()
-        .enumerate()
-        .filter(|(i, (_, p))| *p || *i < room.max(pinned))
-        .map(|(_, (row, _))| row)
-        .collect())
+    let sql = format!(
+        "SELECT {} FROM offers o WHERE o.parent_id = ?2 AND o.deleted_at IS NULL ORDER BY o.added_at, o.id",
+        columns(profile, &cutoff_now(conn)?)
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    for row in rows.iter_mut().filter(|r| parents.contains(&r.id)) {
+        row.children = stmt.query_map(params![profile, row.id], row_from)?.collect::<Result<_, _>>()?;
+        if row.children.iter().any(|c| c.sent_at.is_some()) {
+            row.sent_via = crate::tree::sent_via(conn, row.id, true)?;
+        }
+    }
+    Ok(())
 }
 
 /// Offers for the CSV export: one tab as the board shows it for all profiles (`Some`), or every
@@ -761,15 +1046,17 @@ pub fn export_rows(conn: &Connection, view: Option<View>) -> AppResult<Vec<Expor
     let old = cutoff_now(conn)?;
     // The same order of checks as the tabs: trash, archive, "not for me", then the filter result.
     let list = format!(
-        "CASE WHEN {} THEN 'trash' WHEN {} THEN 'archive' WHEN {} THEN 'declined' WHEN {} THEN 'board' WHEN {} THEN 'review' ELSE 'rejected' END",
+        "CASE WHEN {} THEN 'trash' WHEN {} THEN 'archive' WHEN {} THEN 'declined' WHEN {OWN} THEN 'own'
+              WHEN {} THEN 'review' WHEN {} THEN 'board' ELSE 'rejected' END",
         view_condition(View::Trash, result, &old),
         view_condition(View::Archive, result, &old),
         view_condition(View::Declined, result, &old),
-        view_condition(View::Board, result, &old),
+        // "To check" first: "All" holds those too.
         view_condition(View::Review, result, &old),
+        view_condition(View::Board, result, &old),
     );
     let filter = match view {
-        Some(v) => view_condition(v, result, &old),
+        Some(v) => tab_condition(v, result, &old),
         None => "1 = 1".into(),
     };
     let sql = format!(
@@ -817,22 +1104,29 @@ pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> 
     let (result, _) = filter_sql(profile);
     let old = cutoff_now(conn)?;
     let count = |cond: String| format!("COALESCE(SUM(CASE WHEN {cond} THEN 1 ELSE 0 END), 0)");
+    let to_send = format!("{} AND o.stage IN ('new', 'interested') AND NOT {CHILD_SENT}", view_condition(View::Own, result, &old));
     let sql = format!(
-        "SELECT {}, {}, {}, {}, {} FROM offers o",
-        count(view_condition(View::Board, result, &old)),
-        count(view_condition(View::Review, result, &old)),
-        count(view_condition(View::Rejected, result, &old)),
+        "SELECT {}, {}, {}, {}, {}, {}, {}, {} FROM offers o",
+        count(tab_condition(View::Board, result, &old)),
+        count(tab_condition(View::Review, result, &old)),
+        count(tab_condition(View::Rejected, result, &old)),
         count(view_condition(View::Declined, result, &old)),
         count(view_condition(View::Trash, result, &old)),
+        count(to_send),
+        count(view_condition(View::Archive, result, &old)),
+        count(view_condition(View::Bin, result, &old)),
     );
     let read = |r: &Row| {
         Ok(ViewCounts {
+            to_send: r.get(5)?,
             today: 0,
             board: r.get(0)?,
             review: r.get(1)?,
             rejected: r.get(2)?,
             declined: r.get(3)?,
+            archive: r.get(6)?,
             trash: r.get(4)?,
+            bin: r.get(7)?,
         })
     };
     let mut counts = match profile {
@@ -846,7 +1140,7 @@ pub fn counts(conn: &Connection, profile: Option<i64>) -> AppResult<ViewCounts> 
 pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
     let sql = format!(
         "SELECT {}, o.url, o.contract, o.level, o.language, o.requirements, o.description,
-            o.notes, o.expires_at, o.deleted_at, o.content_removed
+            o.notes, o.expires_at, o.deleted_at, o.content_removed, o.renewed_at
          FROM offers o WHERE o.id = ?1",
         columns(None, &cutoff_now(conn)?)
     );
@@ -864,11 +1158,13 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
                 expires_at: r.get(ROW_LEN + 7)?,
                 deleted_at: r.get(ROW_LEN + 8)?,
                 content_removed: r.get(ROW_LEN + 9)?,
+                renewed_at: r.get(ROW_LEN + 10)?,
                 links: Vec::new(),
                 history: Vec::new(),
                 filters: Vec::new(),
                 ai: crate::ai::OfferAi::default(),
                 agenda: crate::agenda::Agenda::default(),
+                dup: None,
             })
         })
         .optional()?
@@ -878,16 +1174,25 @@ pub fn detail(conn: &Connection, id: i64) -> AppResult<OfferDetail> {
         "SELECT source, url, first_seen, city FROM offer_sources WHERE offer_id = ?1 ORDER BY first_seen, source, rowid",
     )?;
     detail.links = stmt
-        .query_map([id], |r| Ok(SourceLink { source: r.get(0)?, url: r.get(1)?, first_seen: r.get(2)?, city: r.get(3)? }))?
+        .query_map([id], |r| {
+            let (source, url): (String, Option<String>) = (r.get(0)?, r.get(1)?);
+            let source = match (&*source, &url) {
+                ("manual", Some(u)) => portal_label(u),
+                _ => source,
+            };
+            Ok(SourceLink { source, url, first_seen: r.get(2)?, city: r.get(3)? })
+        })?
         .collect::<Result<_, _>>()?;
 
     let mut stmt = conn.prepare("SELECT stage, at FROM stage_history WHERE offer_id = ?1 ORDER BY at, id")?;
     detail.history = stmt
         .query_map([id], |r| Ok(StageEvent { stage: r.get(0)?, at: r.get(1)? }))?
         .collect::<Result<_, _>>()?;
+    with_children(conn, std::slice::from_mut(&mut detail.row), None)?;
     detail.filters = profiles::offer_filters(conn, id)?;
     detail.ai = crate::ai::offer_ai(conn, id)?;
     detail.agenda = crate::agenda::agenda(conn, id)?;
+    detail.dup = crate::dups::note(conn, id)?;
     Ok(detail)
 }
 
@@ -905,10 +1210,18 @@ pub fn set_stage(conn: &mut Connection, id: i64, stage: Stage) -> AppResult<()> 
         .optional()?
         .ok_or(AppError::NotFound)?;
     if current != stage {
+        // Any stage past "new" (interested, applied and further) = the person's own recruitment:
+        // the offer moves to "Own" (as the migration 023 did). Back to "new" keeps it there.
         tx.execute(
-            "UPDATE offers SET stage = ?2, stage_changed_at = ?3, user_changed_at = ?3 WHERE id = ?1",
+            "UPDATE offers SET stage = ?2, stage_changed_at = ?3, user_changed_at = ?3,
+                own = CASE WHEN ?2 != 'new' THEN 1 ELSE own END
+             WHERE id = ?1",
             params![id, stage, now],
         )?;
+        // A child's recruitment is the family's: the whole family (the row on the list) moves to "Own".
+        if stage != Stage::New {
+            crate::tree::set_family_own(&tx, id, true)?;
+        }
         tx.execute(
             "INSERT INTO stage_history (offer_id, stage, at) VALUES (?1, ?2, ?3)",
             params![id, stage, now],
@@ -930,6 +1243,12 @@ pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> AppResult<()>
         "UPDATE offers SET favorite = ?2, user_changed_at = ?3 WHERE id = ?1",
         params![id, favorite, clock::now()],
     )?)
+}
+
+/// "To own": a collected offer becomes the person's own (tab "Own"); `false` = back to collected
+/// (the "Undo" of the message).
+pub fn set_own(conn: &Connection, id: i64, own: bool) -> AppResult<()> {
+    changed(crate::tree::set_family_own(conn, id, own)?)
 }
 
 pub fn set_notes(conn: &Connection, id: i64, notes: String) -> AppResult<()> {
@@ -970,6 +1289,56 @@ pub fn restore(conn: &Connection, id: i64) -> AppResult<()> {
     changed(conn.execute(
         "UPDATE offers SET deleted_at = NULL, user_changed_at = ?2 WHERE id = ?1 AND deleted_at IS NOT NULL",
         params![id, clock::now()],
+    )?)
+}
+
+/// How an offer sat in the bin before "Restore" - "Undo" puts it back exactly so.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinPlace {
+    pub deleted_at: Option<String>,
+    pub archived_at: Option<String>,
+    pub kept_at: Option<String>,
+    /// Marked "not for me".
+    pub declined: bool,
+}
+
+/// "Restore" in the bin, one for every kind: out of the trash, out of the archive (and never
+/// archived by itself again, as "Bring back" did) and no longer "not for me". The offer goes back
+/// to where it came from - "Own" or "Collected" (its `own` flag is untouched).
+pub fn bring_back(conn: &Connection, id: i64) -> AppResult<BinPlace> {
+    let now = clock::now();
+    let place = conn
+        .query_row(
+            "SELECT deleted_at, archived_at, kept_at, COALESCE(interest, '') = 'no' FROM offers WHERE id = ?1",
+            [id],
+            |r| Ok(BinPlace { deleted_at: r.get(0)?, archived_at: r.get(1)?, kept_at: r.get(2)?, declined: r.get(3)? }),
+        )
+        .optional()?
+        .ok_or(AppError::NotFound)?;
+    if place.deleted_at.is_none() && place.archived_at.is_none() && !place.declined {
+        return Err(AppError::NotFound);
+    }
+    conn.execute(
+        "UPDATE offers SET deleted_at = NULL, archived_at = NULL,
+            kept_at = CASE WHEN archived_at IS NOT NULL THEN ?2 ELSE kept_at END,
+            interest = CASE WHEN interest = 'no' THEN NULL ELSE interest END, user_changed_at = ?2
+         WHERE id = ?1",
+        params![id, now],
+    )?;
+    Ok(place)
+}
+
+/// "Undo" after "Restore": the offer is back in the bin as it was.
+pub fn put_back(conn: &Connection, id: i64, place: BinPlace) -> AppResult<()> {
+    let deleted_at = utc_time(place.deleted_at)?;
+    let archived_at = utc_time(place.archived_at)?;
+    let kept_at = utc_time(place.kept_at)?;
+    changed(conn.execute(
+        "UPDATE offers SET deleted_at = ?2, archived_at = ?3, kept_at = ?4,
+            interest = CASE WHEN ?5 THEN 'no' ELSE interest END, user_changed_at = ?6
+         WHERE id = ?1",
+        params![id, deleted_at, archived_at, kept_at, place.declined, clock::now()],
     )?)
 }
 
@@ -1053,27 +1422,45 @@ pub fn refresh_fingerprints(conn: &mut Connection) -> AppResult<usize> {
     Ok(merged)
 }
 
-/// Deletes offers from the trash for good. Their fingerprints are remembered,
-/// so alerts and aggregators never bring them back. `None` = empty the whole trash.
-pub fn purge(conn: &mut Connection, id: Option<i64>) -> AppResult<usize> {
+/// Deletes offers from the bin for good - the ones the chosen switch variant shows (`Bin` = all,
+/// `Declined`, `Archive` = expired, `Trash` = deleted). Their fingerprints are remembered, so alerts
+/// and aggregators never bring them back. `id = None` = empty the whole variant.
+pub fn purge(conn: &mut Connection, id: Option<i64>, view: View) -> AppResult<usize> {
+    if !matches!(view, View::Bin | View::Declined | View::Archive | View::Trash) {
+        return Err(AppError::Invalid("only the bin can be emptied".into()));
+    }
+    let picked = format!("({}) AND (?1 IS NULL OR o.id = ?1)", view_condition(view, "", ""));
     let now = clock::now();
     let tx = conn.transaction()?;
     tx.execute(
-        "INSERT OR IGNORE INTO removed_offers (fingerprint, removed_at)
-         SELECT fingerprint, ?2 FROM offers WHERE deleted_at IS NOT NULL AND (?1 IS NULL OR id = ?1)",
+        &format!(
+            "INSERT OR IGNORE INTO removed_offers (fingerprint, removed_at)
+             SELECT o.fingerprint, ?2 FROM offers o WHERE {picked}"
+        ),
         params![id, now],
     )?;
     // Tombstones first: sync deletes these offers on the other device too.
     tx.execute(
-        "INSERT INTO sync_deleted (kind, uid, at) SELECT 'offers', uid, ?2 FROM offers
-         WHERE deleted_at IS NOT NULL AND (?1 IS NULL OR id = ?1)
-         ON CONFLICT (kind, uid) DO UPDATE SET at = excluded.at",
+        &format!(
+            "INSERT INTO sync_deleted (kind, uid, at) SELECT 'offers', o.uid, ?2 FROM offers o WHERE {picked}
+             ON CONFLICT (kind, uid) DO UPDATE SET at = excluded.at"
+        ),
         params![id, now],
     )?;
-    let count = tx.execute(
-        "DELETE FROM offers WHERE deleted_at IS NOT NULL AND (?1 IS NULL OR id = ?1)",
+    // Children of a purged parent go with it (their keys are the parent's).
+    tx.execute(
+        &format!(
+            "INSERT INTO sync_deleted (kind, uid, at) SELECT 'offers', c.uid, ?2 FROM offers c
+             WHERE c.parent_id IN (SELECT o.id FROM offers o WHERE {picked})
+             ON CONFLICT (kind, uid) DO UPDATE SET at = excluded.at"
+        ),
+        params![id, now],
+    )?;
+    tx.execute(
+        &format!("DELETE FROM offers WHERE parent_id IN (SELECT o.id FROM offers o WHERE {picked})"),
         params![id],
     )?;
+    let count = tx.execute(&format!("DELETE FROM offers WHERE id IN (SELECT o.id FROM offers o WHERE {picked})"), params![id])?;
     tx.commit()?;
     if id.is_some() && count == 0 {
         return Err(AppError::NotFound);
@@ -1193,31 +1580,43 @@ mod tests {
     }
 
     #[test]
-    fn one_job_in_two_cities_keeps_both_cities_and_both_links() {
+    fn one_job_in_another_city_is_a_separate_offer_with_a_question() {
         let mut conn = test_db();
         let mut krakow = offer("Kasjer", "Sklep Przykładowy", "pracuj");
         krakow.city = Some("Kraków".into());
         krakow.url = Some("https://www.pracuj.pl/praca/kasjer-krakow,oferta,1001".into());
+        // A fixed date: without one it is "now", and a later second is a newer date (merged).
+        krakow.published_at = Some("2026-11-01T08:00:00Z".into());
         let id = id_of(add(&mut conn, krakow.clone()).unwrap());
+        // A chain looks for the same job in another city - not joined by itself (point 15).
         let mut gdansk = krakow.clone();
         gdansk.city = Some("Gdańsk".into());
         gdansk.url = Some("https://www.pracuj.pl/praca/kasjer-gdansk,oferta,1002".into());
-        assert_eq!(add(&mut conn, gdansk.clone()).unwrap(), AddOutcome::Merged { id });
+        let other = id_of(add(&mut conn, gdansk.clone()).unwrap());
+        assert_ne!(other, id);
         // Seen again - with a tracking parameter, and the city written longer: nothing new.
         let mut again = gdansk.clone();
         again.url = Some(format!("{}?utm_source=mail", gdansk.url.as_deref().unwrap()));
         again.city = Some("Gdańsk, pomorskie".into());
-        assert_eq!(add(&mut conn, again).unwrap(), AddOutcome::Unchanged { id });
+        assert_eq!(add(&mut conn, again).unwrap(), AddOutcome::Unchanged { id: other });
         let d = detail(&conn, id).unwrap();
-        assert_eq!(d.row.city.as_deref(), Some("Kraków, Gdańsk"));
-        let links: Vec<(Option<&str>, Option<&str>)> = d.links.iter().map(|l| (l.url.as_deref(), l.city.as_deref())).collect();
-        assert_eq!(links, vec![(krakow.url.as_deref(), Some("Kraków")), (gdansk.url.as_deref(), Some("Gdańsk"))]);
-        assert_eq!(d.row.sources, vec!["pracuj"]);
+        assert_eq!(d.row.city.as_deref(), Some("Kraków"));
+        assert!(d.row.children.is_empty());
+        let separate = detail(&conn, other).unwrap();
+        let links: Vec<(Option<&str>, Option<&str>)> = separate.links.iter().map(|l| (l.url.as_deref(), l.city.as_deref())).collect();
+        assert_eq!(links, vec![(gdansk.url.as_deref(), Some("Gdańsk"))]);
+        assert!(separate.row.dup_ask);
+        assert_eq!(separate.dup.map(|n| (n.was.id, n.why)), Some((id, "city".to_string())));
+        // The same city on another link: the second ad of the job - a child.
+        let mut second = krakow.clone();
+        second.url = Some("https://www.pracuj.pl/praca/kasjer-krakow,oferta,1003".into());
+        assert_eq!(add(&mut conn, second).unwrap(), AddOutcome::Merged { id });
+        assert_eq!(detail(&conn, id).unwrap().row.children.len(), 1);
         // "Remote" is no city to add.
         let mut remote = krakow.clone();
         remote.city = Some("Remote".into());
         add(&mut conn, remote).unwrap();
-        assert_eq!(detail(&conn, id).unwrap().row.city.as_deref(), Some("Kraków, Gdańsk"));
+        assert_eq!(detail(&conn, id).unwrap().row.city.as_deref(), Some("Kraków"));
     }
 
     #[test]
@@ -1292,16 +1691,54 @@ mod tests {
     }
 
     #[test]
+    fn an_ad_added_by_hand_is_named_after_the_portal_of_its_link() {
+        let mut conn = test_db();
+        let with_link = |title: &str, url: Option<&str>| OfferInput { url: url.map(str::to_string), ..offer(title, "Firma Testowa", "manual") };
+        let pracuj = id_of(add(&mut conn, with_link("Magazynier", Some("https://www.pracuj.pl/praca/magazynier,oferta,1001"))).unwrap());
+        let other = id_of(add(&mut conn, with_link("Kierowca", Some("https://kariera.firma-testowa.pl/oferta/7"))).unwrap());
+        let bare = id_of(add(&mut conn, with_link("Sprzedawca", None)).unwrap());
+        let rows = list(&conn, View::Own, None).unwrap();
+        let sources = |id: i64| rows.iter().find(|r| r.id == id).unwrap().sources.clone();
+        assert_eq!(sources(pracuj), vec!["pracuj"]);
+        assert_eq!(sources(other), vec!["kariera.firma-testowa.pl"]);
+        assert_eq!(sources(bare), vec!["manual"]);
+        // Still added by hand, and so is the link on the card.
+        assert!(rows.iter().all(|r| r.manual));
+        let d = detail(&conn, pracuj).unwrap();
+        assert_eq!(d.links[0].source, "pracuj");
+        assert_eq!(detail(&conn, bare).unwrap().links[0].source, "manual");
+    }
+
+    #[test]
     fn adds_and_lists_an_offer_with_history() {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("Frontend Developer", "Firma Testowa", "manual")).unwrap());
-        let rows = list(&conn, View::Board, None).unwrap();
+        // Added by hand = own: in "Own", not among the collected ones.
+        assert!(list(&conn, View::Board, None).unwrap().is_empty());
+        let rows = list(&conn, View::Own, None).unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].stage, Stage::New);
+        // Added by hand = chosen by the person: interested from the start.
+        assert_eq!(rows[0].stage, Stage::Interested);
         assert_eq!(rows[0].sources, vec!["manual"]);
         let d = detail(&conn, id).unwrap();
         assert_eq!(d.history.len(), 1);
         assert_eq!(d.notes, "");
+    }
+
+    /// Added by hand = the person's own offer; a collected one is not, until it is added by hand.
+    #[test]
+    fn an_offer_added_by_hand_is_own() {
+        let mut conn = test_db();
+        let manual = id_of(add(&mut conn, offer("Frontend Developer", "Firma Testowa", "manual")).unwrap());
+        let collected = id_of(add(&mut conn, offer("Tester", "Firma Przykładowa", "adzuna")).unwrap());
+        assert!(detail(&conn, manual).unwrap().row.own);
+        assert!(!detail(&conn, collected).unwrap().row.own);
+        // Fetched again from a source: still collected.
+        add(&mut conn, offer("Tester", "Firma Przykładowa", "jooble")).unwrap();
+        assert!(!detail(&conn, collected).unwrap().row.own);
+        // The same offer added by hand: chosen by the person.
+        assert_eq!(add(&mut conn, offer("Tester", "Firma Przykładowa", "manual")).unwrap(), AddOutcome::Merged { id: collected });
+        assert!(detail(&conn, collected).unwrap().row.own);
     }
 
     #[test]
@@ -1339,6 +1776,36 @@ mod tests {
         let d = detail(&conn, id).unwrap();
         assert_eq!(d.row.salary_min, Some(8000));
         assert_eq!(d.description.as_deref(), Some("A long and detailed description"));
+    }
+
+    #[test]
+    fn a_glued_jooble_offer_is_fixed_by_the_next_mail() {
+        let mut conn = test_db();
+        let card = "Zmyślona Sp. z o.o.\nGdańsk\nPraca zdalna";
+        let mut glued = offer("Analityk danych", "Zmyślona Sp. z o.o.", "jooble");
+        glued.description = Some(format!("{card}\nProgramista Python\n14500 zł\nPrzykładowa Firma\nUmowa o pracę"));
+        glued.requirements = Some("Programista Python, Przykładowa Firma".into());
+        glued.salary_min = Some(14500);
+        glued.contract = Some("UoP".into());
+        let id = id_of(add(&mut conn, glued).unwrap());
+        conn.execute("UPDATE offers SET ai_status = 'done' WHERE id = ?1", [id]).unwrap();
+        let mut right = offer("Analityk danych", "Zmyślona Sp. z o.o.", "jooble");
+        right.description = Some(card.into());
+        right.remote = Some(Remote::Yes);
+        add(&mut conn, right.clone()).unwrap();
+        let d = detail(&conn, id).unwrap();
+        assert_eq!(d.description.as_deref(), Some(card));
+        assert_eq!((d.requirements.as_deref(), d.row.salary_min, d.contract.as_deref()), (None, None, None));
+        assert_eq!(d.row.remote, Remote::Yes);
+        let ai: Option<String> = conn.query_row("SELECT ai_status FROM offers WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        assert_eq!(ai, None, "the AI reads the fixed offer again");
+        // Another source, or a text that only shares the start of a line, keeps the longer text.
+        let mut other = offer("Analityk danych", "Zmyślona Sp. z o.o.", "adzuna");
+        other.description = Some("Zmyślona".into());
+        add(&mut conn, other).unwrap();
+        right.description = Some("Zmyślona Sp. z o.o.\nGdań".into());
+        add(&mut conn, right).unwrap();
+        assert_eq!(detail(&conn, id).unwrap().description.as_deref(), Some(card));
     }
 
     #[test]
@@ -1383,18 +1850,46 @@ mod tests {
         assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 1);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Blocked);
 
-        assert_eq!(purge(&mut conn, Some(id)).unwrap(), 1);
+        assert_eq!(purge(&mut conn, Some(id), View::Trash).unwrap(), 1);
         assert_eq!(list(&conn, View::Trash, None).unwrap().len(), 0);
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "adzuna")).unwrap(), AddOutcome::Blocked);
+    }
+
+    /// "Empty the bin" takes what the chosen variant shows, nothing else; none of the purged
+    /// offers comes back as new.
+    #[test]
+    fn emptying_the_bin_takes_the_chosen_variant_only() {
+        let mut conn = test_db();
+        let declined = id_of(add(&mut conn, offer("Nie dla mnie", "Firma A", "adzuna")).unwrap());
+        let expired = id_of(add(&mut conn, offer("Wygasła", "Firma B", "adzuna")).unwrap());
+        let deleted = id_of(add(&mut conn, offer("Usunięta", "Firma C", "adzuna")).unwrap());
+        add(&mut conn, offer("Zostaje", "Firma D", "adzuna")).unwrap();
+        set_interest(&conn, declined, Some(Interest::No)).unwrap();
+        set_expired(&conn, expired).unwrap();
+        trash(&conn, deleted).unwrap();
+        // Not the bin - refused.
+        assert!(matches!(purge(&mut conn, None, View::Board), Err(AppError::Invalid(_))));
+        // One offer of another variant is not touched.
+        assert!(matches!(purge(&mut conn, Some(declined), View::Trash), Err(AppError::NotFound)));
+
+        assert_eq!(purge(&mut conn, None, View::Declined).unwrap(), 1);
+        let bin: Vec<i64> = list(&conn, View::Bin, None).unwrap().iter().map(|r| r.id).collect();
+        assert!(!bin.contains(&declined) && bin.contains(&expired) && bin.contains(&deleted));
+        assert_eq!(purge(&mut conn, None, View::Bin).unwrap(), 2);
+        assert!(list(&conn, View::Bin, None).unwrap().is_empty());
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        for (title, company) in [("Nie dla mnie", "Firma A"), ("Wygasła", "Firma B"), ("Usunięta", "Firma C")] {
+            assert_eq!(add(&mut conn, offer(title, company, "remotive")).unwrap(), AddOutcome::Blocked);
+        }
     }
 
     #[test]
     fn purge_only_touches_the_trash() {
         let mut conn = test_db();
         let id = id_of(add(&mut conn, offer("Dev", "Firma C", "manual")).unwrap());
-        assert!(matches!(purge(&mut conn, Some(id)), Err(AppError::NotFound)));
-        assert_eq!(purge(&mut conn, None).unwrap(), 0);
-        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        assert!(matches!(purge(&mut conn, Some(id), View::Trash), Err(AppError::NotFound)));
+        assert_eq!(purge(&mut conn, None, View::Trash).unwrap(), 0);
+        assert_eq!(list(&conn, View::Own, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -1403,8 +1898,181 @@ mod tests {
         let id = id_of(add(&mut conn, offer("Dev", "Firma D", "manual")).unwrap());
         trash(&conn, id).unwrap();
         restore(&conn, id).unwrap();
-        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        assert_eq!(list(&conn, View::Own, None).unwrap().len(), 1);
         assert!(matches!(restore(&conn, id), Err(AppError::NotFound)));
+    }
+
+    #[test]
+    fn offers_without_a_link_go_below_the_other_own_ones() {
+        let mut conn = test_db();
+        let mut with_link = offer("Z linkiem", "Firma A", "manual");
+        with_link.url = Some("https://example.com/oferta/1".into());
+        let linked = id_of(add(&mut conn, with_link).unwrap());
+        let bare = id_of(add(&mut conn, offer("Bez linku", "Firma B", "manual")).unwrap());
+        // Added later (newer), still below the one with a link.
+        conn.execute("UPDATE offers SET added_at = '2099-01-01T00:00:00Z', published_at = NULL WHERE id = ?1", [bare]).unwrap();
+        let rows = list(&conn, View::Own, None).unwrap();
+        let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![linked, bare]);
+        assert!(!rows[0].no_link && rows[1].no_link);
+    }
+
+    /// "Own": the CV still to be sent on top, then recruitments, rejected and withdrawn at the
+    /// bottom; "not for me" leaves it. The number on the tab = the CVs still to be sent.
+    #[test]
+    fn own_offers_go_from_to_send_to_over() {
+        let mut conn = test_db();
+        let over = id_of(add(&mut conn, offer("Odrzucona", "Firma A", "manual")).unwrap());
+        let sent = id_of(add(&mut conn, offer("Wysłana", "Firma B", "manual")).unwrap());
+        let to_send = id_of(add(&mut conn, offer("Do wysłania", "Firma C", "manual")).unwrap());
+        let declined = id_of(add(&mut conn, offer("Nie dla mnie", "Firma D", "manual")).unwrap());
+        let collected = id_of(add(&mut conn, offer("Zebrana", "Firma E", "adzuna")).unwrap());
+        set_stage(&mut conn, sent, Stage::Applied).unwrap();
+        set_stage(&mut conn, over, Stage::Rejected).unwrap();
+        set_interest(&conn, declined, Some(Interest::No)).unwrap();
+        // Newest first within a group: the rejected one was added first, still at the bottom.
+        conn.execute("UPDATE offers SET added_at = '2099-01-01T00:00:00Z', published_at = NULL WHERE id = ?1", [over]).unwrap();
+        let own: Vec<i64> = list(&conn, View::Own, None).unwrap().iter().map(|r| r.id).collect();
+        assert_eq!(own, vec![to_send, sent, over]);
+        assert!(!own.contains(&collected) && !own.contains(&declined));
+        assert_eq!(counts(&conn, None).unwrap().to_send, 1);
+    }
+
+    /// The bin: "not for me", expired and deleted offers in one list, each with its kind, the last
+    /// thrown in on top; the rest stays out.
+    #[test]
+    fn the_bin_holds_declined_expired_and_deleted_offers() {
+        let mut conn = test_db();
+        let declined = id_of(add(&mut conn, offer("Nie dla mnie", "Firma A", "adzuna")).unwrap());
+        let expired = id_of(add(&mut conn, offer("Wygasła", "Firma B", "adzuna")).unwrap());
+        let deleted = id_of(add(&mut conn, offer("Usunięta", "Firma C", "manual")).unwrap());
+        let kept = id_of(add(&mut conn, offer("Zostaje", "Firma D", "adzuna")).unwrap());
+        set_interest(&conn, declined, Some(Interest::No)).unwrap();
+        assert_eq!(set_expired(&conn, expired).unwrap(), ExpiredBy::Archived);
+        trash(&conn, deleted).unwrap();
+        // The moments they went in: deleted last, then "not for me", the expired one first.
+        conn.execute("UPDATE offers SET archived_at = '2026-11-01T00:00:00Z' WHERE id = ?1", [expired]).unwrap();
+        conn.execute("UPDATE offers SET user_changed_at = '2026-11-05T00:00:00Z' WHERE id = ?1", [declined]).unwrap();
+        conn.execute("UPDATE offers SET deleted_at = '2026-11-09T00:00:00Z' WHERE id = ?1", [deleted]).unwrap();
+
+        let bin = list(&conn, View::Bin, None).unwrap();
+        let got: Vec<(i64, Option<BinKind>)> = bin.iter().map(|r| (r.id, r.bin)).collect();
+        assert_eq!(
+            got,
+            vec![(deleted, Some(BinKind::Deleted)), (declined, Some(BinKind::Declined)), (expired, Some(BinKind::Expired))]
+        );
+        assert!(!bin.iter().any(|r| r.id == kept));
+        assert_eq!(detail(&conn, kept).unwrap().row.bin, None);
+        // Deleted wins over "not for me": one kind per offer.
+        trash(&conn, declined).unwrap();
+        assert_eq!(detail(&conn, declined).unwrap().row.bin, Some(BinKind::Deleted));
+    }
+
+    /// The bin's switch: all / not for me / expired / deleted - each variant lists the offers of
+    /// its kind only, and the numbers match the lists.
+    #[test]
+    fn the_bin_switch_splits_it_by_kind() {
+        let mut conn = test_db();
+        let declined = id_of(add(&mut conn, offer("Nie dla mnie", "Firma A", "adzuna")).unwrap());
+        let expired = id_of(add(&mut conn, offer("Wygasła", "Firma B", "adzuna")).unwrap());
+        let deleted = id_of(add(&mut conn, offer("Usunięta", "Firma C", "manual")).unwrap());
+        let both = id_of(add(&mut conn, offer("Usunięta i nie dla mnie", "Firma D", "adzuna")).unwrap());
+        add(&mut conn, offer("Zostaje", "Firma E", "adzuna")).unwrap();
+        set_interest(&conn, declined, Some(Interest::No)).unwrap();
+        set_interest(&conn, both, Some(Interest::No)).unwrap();
+        set_expired(&conn, expired).unwrap();
+        trash(&conn, deleted).unwrap();
+        trash(&conn, both).unwrap();
+
+        let ids = |view: View| -> Vec<i64> {
+            let mut v: Vec<i64> = list(&conn, view, None).unwrap().iter().map(|r| r.id).collect();
+            v.sort();
+            v
+        };
+        let kinds = |view: View| -> Vec<Option<BinKind>> { list(&conn, view, None).unwrap().iter().map(|r| r.bin).collect() };
+        assert_eq!(ids(View::Declined), vec![declined]);
+        assert_eq!(ids(View::Archive), vec![expired]);
+        assert_eq!(ids(View::Trash), vec![deleted, both]);
+        assert_eq!(ids(View::Bin), vec![declined, expired, deleted, both]);
+        assert!(kinds(View::Declined).iter().all(|k| *k == Some(BinKind::Declined)));
+        assert!(kinds(View::Archive).iter().all(|k| *k == Some(BinKind::Expired)));
+        assert!(kinds(View::Trash).iter().all(|k| *k == Some(BinKind::Deleted)));
+        let c = counts(&conn, None).unwrap();
+        assert_eq!((c.bin, c.declined, c.archive, c.trash), (4, 1, 1, 2));
+    }
+
+    /// One "Restore" for every kind: the offer leaves the bin for the tab it came from ("Own" or
+    /// "Collected"), an expired one is kept from now on; "Undo" puts it back exactly as it was.
+    #[test]
+    fn restore_brings_any_bin_offer_back_where_it_came_from() {
+        let mut conn = test_db();
+        let declined = id_of(add(&mut conn, offer("Nie dla mnie", "Firma A", "adzuna")).unwrap());
+        let expired = id_of(add(&mut conn, offer("Wygasła", "Firma B", "adzuna")).unwrap());
+        let own = id_of(add(&mut conn, offer("Własna usunięta i nie dla mnie", "Firma C", "manual")).unwrap());
+        let live = id_of(add(&mut conn, offer("Zostaje", "Firma D", "adzuna")).unwrap());
+        set_interest(&conn, declined, Some(Interest::No)).unwrap();
+        set_expired(&conn, expired).unwrap();
+        set_interest(&conn, own, Some(Interest::No)).unwrap();
+        trash(&conn, own).unwrap();
+        let before = detail(&conn, own).unwrap();
+
+        let places: Vec<BinPlace> = [declined, expired, own].iter().map(|&id| bring_back(&conn, id).unwrap()).collect();
+        assert!(list(&conn, View::Bin, None).unwrap().is_empty());
+        let collected: Vec<i64> = list(&conn, View::Board, None).unwrap().iter().map(|r| r.id).collect();
+        assert!(collected.contains(&declined) && collected.contains(&expired) && !collected.contains(&own));
+        assert_eq!(list(&conn, View::Own, None).unwrap().iter().map(|r| r.id).collect::<Vec<_>>(), vec![own]);
+        // Restored from the archive = kept: the old-offer cleanup never takes it again.
+        assert!(conn.query_row("SELECT kept_at IS NOT NULL FROM offers WHERE id = ?1", [expired], |r| r.get::<_, bool>(0)).unwrap());
+        // Nothing in the bin - nothing to restore.
+        assert!(matches!(bring_back(&conn, live), Err(AppError::NotFound)));
+
+        // "Undo": every one back in the bin as it was, with the same kind and dates.
+        for (id, place) in [declined, expired, own].into_iter().zip(places) {
+            put_back(&conn, id, place).unwrap();
+        }
+        let kinds: Vec<(i64, Option<BinKind>)> = {
+            let mut v: Vec<_> = list(&conn, View::Bin, None).unwrap().iter().map(|r| (r.id, r.bin)).collect();
+            v.sort_by_key(|(id, _)| *id);
+            v
+        };
+        assert_eq!(kinds, vec![(declined, Some(BinKind::Declined)), (expired, Some(BinKind::Expired)), (own, Some(BinKind::Deleted))]);
+        let after = detail(&conn, own).unwrap();
+        assert_eq!((after.deleted_at, after.row.interest), (before.deleted_at, before.row.interest));
+        assert!(conn.query_row("SELECT kept_at IS NULL FROM offers WHERE id = ?1", [expired], |r| r.get::<_, bool>(0)).unwrap());
+    }
+
+    /// "Applied" (any stage past "new") moves a collected offer to "Own"; back to "new" keeps it there.
+    #[test]
+    fn a_stage_past_new_makes_the_offer_own() {
+        let mut conn = test_db();
+        let id = id_of(add(&mut conn, offer("Tester", "Firma A", "adzuna")).unwrap());
+        assert!(!detail(&conn, id).unwrap().row.own);
+        set_stage(&mut conn, id, Stage::Applied).unwrap();
+        assert!(detail(&conn, id).unwrap().row.own);
+        assert_eq!(list(&conn, View::Own, None).unwrap()[0].id, id);
+        set_stage(&mut conn, id, Stage::New).unwrap();
+        assert!(detail(&conn, id).unwrap().row.own);
+        // "Interested" too - the CV is still to be sent, the top of "Own".
+        let other = id_of(add(&mut conn, offer("Analityk", "Firma B", "jooble")).unwrap());
+        set_stage(&mut conn, other, Stage::Interested).unwrap();
+        assert!(detail(&conn, other).unwrap().row.own);
+    }
+
+    /// "To own" moves a collected offer from "Collected" to "Own", "Undo" moves it back.
+    #[test]
+    fn to_own_moves_an_offer_between_the_tabs() {
+        let mut conn = test_db();
+        let id = id_of(add(&mut conn, offer("Tester", "Firma A", "adzuna")).unwrap());
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        set_own(&conn, id, true).unwrap();
+        assert!(list(&conn, View::Board, None).unwrap().is_empty());
+        assert_eq!(list(&conn, View::Own, None).unwrap()[0].id, id);
+        // The person's change: it wins in the sync.
+        let changed: String = conn.query_row("SELECT user_changed_at FROM offers WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        assert_ne!(changed, NOT_BY_USER);
+        set_own(&conn, id, false).unwrap();
+        assert_eq!(list(&conn, View::Board, None).unwrap().len(), 1);
+        assert!(matches!(set_own(&conn, 999, true), Err(AppError::NotFound)));
     }
 
     #[test]
@@ -1416,7 +2084,7 @@ mod tests {
         set_stage(&mut conn, id, Stage::HrInterview).unwrap();
         let d = detail(&conn, id).unwrap();
         let stages: Vec<Stage> = d.history.iter().map(|e| e.stage).collect();
-        assert_eq!(stages, vec![Stage::New, Stage::Applied, Stage::HrInterview]);
+        assert_eq!(stages, vec![Stage::Interested, Stage::Applied, Stage::HrInterview]);
         assert_eq!(d.row.stage, Stage::HrInterview);
     }
 
@@ -1440,6 +2108,9 @@ mod tests {
         assert!(all.iter().any(|r| r.id == id && r.list == View::Declined));
         assert!(export_rows(&conn, Some(View::Declined)).unwrap().iter().all(|r| r.list == View::Declined));
         assert!(export_rows(&conn, Some(View::Board)).unwrap().iter().all(|r| r.id != id));
+        // An own offer is "own" in the list column, whatever the filter says.
+        let own = id_of(add(&mut conn, offer("Analityk", "Firma C", "manual")).unwrap());
+        assert!(export_rows(&conn, None).unwrap().iter().any(|r| r.id == own && r.list == View::Own));
 
         // Fetched again: merged into the same offer, which stays where the user put it.
         assert_eq!(add(&mut conn, offer("QA Engineer", "Firma B", "remotive")).unwrap(), AddOutcome::Merged { id });
@@ -1533,7 +2204,9 @@ mod tests {
         assert_eq!(archive_old(&conn, &clock::now()).unwrap(), 1);
         let archive: Vec<i64> = list(&conn, View::Archive, None).unwrap().iter().map(|r| r.id).collect();
         assert_eq!(archive, vec![untouched]);
-        let board = list(&conn, View::Board, None).unwrap();
+        // Collected and own together (the one added by hand is own).
+        let mut board = list(&conn, View::Board, None).unwrap();
+        board.extend(list(&conn, View::Own, None).unwrap());
         let stale = |id: i64| board.iter().find(|r| r.id == id).unwrap().stale;
         assert!(!stale(fresh));
         assert!(stale(starred) && stale(noted) && stale(by_hand));
@@ -1569,8 +2242,10 @@ mod tests {
         assert!(matches!(set_expired(&conn, 999), Err(AppError::NotFound)));
     }
 
+    /// "Best today" of the collected ones: starred first, then the best scores; the one added by
+    /// hand is own (tab "Own"), not here.
     #[test]
-    fn today_puts_hand_added_and_starred_first_then_the_best_scores() {
+    fn today_puts_starred_first_then_the_best_scores() {
         let mut conn = test_db();
         crate::settings::set(&conn, "today_count", "10").unwrap();
         let mut ids = Vec::new();
@@ -1588,10 +2263,9 @@ mod tests {
 
         let today: Vec<i64> = list(&conn, View::Today, None).unwrap().iter().map(|r| r.id).collect();
         assert_eq!(today.len(), 10);
-        // Pinned first (by score among them too), then the rest by score; old and applied ones never.
-        assert_eq!(&today[..2], &[ids[0], by_hand]);
-        assert_eq!(today[2], ids[12]);
-        assert!(!today.contains(&old) && !today.contains(&applied));
+        // Starred first, then the rest by score; old, applied and own ones never.
+        assert_eq!(&today[..2], &[ids[0], ids[12]]);
+        assert!(!today.contains(&old) && !today.contains(&applied) && !today.contains(&by_hand));
         assert_eq!(counts(&conn, None).unwrap().today, 10);
     }
 

@@ -70,15 +70,48 @@ pub async fn count_offers(state: State<'_, AppState>, profile: Option<i64>) -> A
     with_db(&state, |c| offers::counts(c, profile))
 }
 
+/// TEMPORARY - the author's blind rating of 10 offers (`rating_test`), removed after the test.
+#[tauri::command]
+pub async fn rating_test_offers(state: State<'_, AppState>) -> AppResult<Vec<crate::rating_test::TestOffer>> {
+    with_db(&state, |c| crate::rating_test::offers(c))
+}
+
+/// TEMPORARY - see `rating_test_offers`.
+#[tauri::command]
+pub async fn rating_test_answer(state: State<'_, AppState>, id: i64, verdict: String, why: String) -> AppResult<()> {
+    with_db(&state, |c| crate::rating_test::answer(c, id, &verdict, &why))
+}
+
 #[tauri::command]
 pub async fn get_offer(state: State<'_, AppState>, id: i64) -> AppResult<OfferDetail> {
     with_db(&state, |c| offers::detail(c, id))
 }
 
 #[tauri::command]
-pub async fn add_offer(state: State<'_, AppState>, app: tauri::AppHandle, offer: OfferInput) -> AppResult<AddOutcome> {
+pub async fn add_offer(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    offer: OfferInput,
+    reading: Option<String>,
+    separate: Option<bool>,
+    parent: Option<i64>,
+) -> AppResult<AddOutcome> {
+    // Fields and scores AI gave in "Add offer" - a new offer keeps them and is not read again.
+    let reading = reading.as_deref().and_then(ai::take_reading);
+    // Where the person said it goes (a duplicate question in "Add offer"), else the rules decide.
+    let placement = match (parent, separate) {
+        (Some(parent), _) => offers::Placement::Under(parent),
+        (None, Some(true)) => offers::Placement::Separate,
+        _ => offers::Placement::Auto,
+    };
     let outcome = with_db(&state, |c| {
-        let outcome = offers::add(c, offer)?;
+        let outcome = offers::add_placed(c, offer, placement)?;
+        if let (AddOutcome::Added { id }, Some(r)) = (outcome, reading) {
+            // The offer is saved either way; without the scores it waits for AI as before.
+            if let Err(e) = ai::store_added(c, id, r) {
+                eprintln!("storing the AI reading failed: {e}");
+            }
+        }
         learn::refresh(c)?;
         Ok(outcome)
     })?;
@@ -86,6 +119,107 @@ pub async fn add_offer(state: State<'_, AppState>, app: tauri::AppHandle, offer:
         spawn_ai(app);
     }
     Ok(outcome)
+}
+
+/// Before "Add offer" saves: is the same offer of the same portal already on the board?
+#[tauri::command]
+pub async fn check_same_offer(state: State<'_, AppState>, offer: OfferInput) -> AppResult<SameOffer> {
+    with_db(&state, |c| crate::same::check(c, offer))
+}
+
+/// "Update the existing one" - the form's fields go into the offer on the board.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_same_offer(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    id: i64,
+    offer: OfferInput,
+    reading: Option<String>,
+    keep: Option<Vec<String>>,
+    renew: Option<bool>,
+) -> AppResult<()> {
+    let reading = reading.as_deref().and_then(ai::take_reading);
+    // Field names only - anything else is ignored by `same::update`.
+    let keep: Vec<String> = keep.unwrap_or_default().into_iter().take(16).filter(|k| k.len() <= 16).collect();
+    let new_text = with_db(&state, |c| {
+        let new_text = crate::same::update(c, id, offer, &keep, renew.unwrap_or(true))?;
+        // AI read the new text while filling the form - its scores are kept, not asked again.
+        if let (true, Some(r)) = (new_text, reading) {
+            if let Err(e) = ai::store_added(c, id, r) {
+                eprintln!("storing the AI reading failed: {e}");
+            }
+        }
+        learn::refresh(c)?;
+        Ok(new_text)
+    })?;
+    if new_text {
+        spawn_ai(app);
+    }
+    Ok(())
+}
+
+/// "Fill in that one": what the form would change in an offer on the board (point 16).
+#[tauri::command]
+pub async fn compare_offer(state: State<'_, AppState>, id: i64, offer: OfferInput) -> AppResult<SameOffer> {
+    with_db(&state, |c| crate::same::compare(c, id, offer))
+}
+
+/// "Check duplicates" on the card: offers that may be the same job (plain code, for free).
+#[tauri::command]
+pub async fn find_duplicates(state: State<'_, AppState>, id: i64) -> AppResult<Vec<crate::dups::DupCandidate>> {
+    with_db(&state, |c| {
+        let skip = crate::dups::tree_of(c, id)?;
+        crate::dups::candidates(c, &crate::dups::Ad::load(c, id)?, &skip)
+    })
+}
+
+/// AI judges the "probably the same" offers - of the form in "Add offer" (`offer`) or of an
+/// offer on the board (`id`). Only on these two clicks, never in the background.
+#[tauri::command]
+pub async fn judge_duplicates(
+    state: State<'_, AppState>,
+    offer: Option<OfferInput>,
+    id: Option<i64>,
+    ids: Vec<i64>,
+) -> AppResult<Vec<ai::DupVerdict>> {
+    let (new, candidates) = with_db(&state, |c| {
+        let new = match (offer, id) {
+            (Some(offer), _) => crate::dups::Ad::of(&offers::clean(offer)?),
+            (None, Some(id)) => crate::dups::Ad::load(c, id)?,
+            (None, None) => return Err(AppError::Invalid("no offer to compare".into())),
+        };
+        let candidates = ids
+            .into_iter()
+            .take(crate::dups::MAX_CANDIDATES)
+            .map(|i| Ok((i, crate::dups::Ad::load(c, i)?)))
+            .collect::<AppResult<Vec<_>>>()?;
+        Ok((new, candidates))
+    })?;
+    ai::judge_duplicates(&state, &new, &candidates).await
+}
+
+/// "Join as a child": two offers on the board become one tree (the first added is the parent).
+/// Returns the parent.
+#[tauri::command]
+pub async fn join_offers(state: State<'_, AppState>, id: i64, other: i64) -> AppResult<i64> {
+    with_db(&state, |c| {
+        let (parent, _) = crate::dups::join(c, id, other)?;
+        learn::refresh(c)?;
+        Ok(parent)
+    })
+}
+
+/// "The same company and title - the same ad?" answered on the card: joined (the parent) or not.
+#[tauri::command]
+pub async fn answer_duplicate(state: State<'_, AppState>, id: i64, join: bool) -> AppResult<Option<i64>> {
+    with_db(&state, |c| crate::dups::answer(c, id, join))
+}
+
+/// "The ad was renewed after your CV - send it again?" answered.
+#[tauri::command]
+pub async fn answer_renewed(state: State<'_, AppState>, id: i64, resent: bool) -> AppResult<()> {
+    with_db(&state, |c| crate::same::answer_renewed(c, id, resent))
 }
 
 /// AI reads new offers in the background; the board refreshes when it is done.
@@ -98,7 +232,7 @@ pub fn spawn_ai(app: tauri::AppHandle) {
             return;
         }
         let say = progress_of(&app);
-        match until_done(ai::process(&state, None, Some(ai::PER_RUN), &say).await, &say) {
+        match until_done(ai::process(&state, None, Some(ai::PER_RUN), false, &say).await, &say) {
             Ok(report) if report.rated > 0 || report.error.is_some() => {
                 let _ = app.emit("offers-rated", &report);
             }
@@ -164,6 +298,11 @@ pub async fn set_favorite(state: State<'_, AppState>, id: i64, favorite: bool) -
 }
 
 #[tauri::command]
+pub async fn set_own(state: State<'_, AppState>, id: i64, own: bool) -> AppResult<()> {
+    with_db(&state, |c| offers::set_own(c, id, own))
+}
+
+#[tauri::command]
 pub async fn set_notes(state: State<'_, AppState>, id: i64, notes: String) -> AppResult<()> {
     with_db(&state, |c| offers::set_notes(c, id, notes))
 }
@@ -181,11 +320,30 @@ pub async fn restore_offer(state: State<'_, AppState>, id: i64) -> AppResult<()>
     })
 }
 
-/// `id = null` empties the whole trash.
+/// "Restore" in the bin (any kind); the answer is what "Undo" needs.
 #[tauri::command]
-pub async fn purge_offers(state: State<'_, AppState>, id: Option<i64>) -> AppResult<usize> {
+pub async fn bring_back_offer(state: State<'_, AppState>, id: i64) -> AppResult<offers::BinPlace> {
     with_db(&state, |c| {
-        let n = offers::purge(c, id)?;
+        let place = offers::bring_back(c, id)?;
+        learn::refresh(c)?;
+        Ok(place)
+    })
+}
+
+/// "Undo" after "Restore".
+#[tauri::command]
+pub async fn put_back_offer(state: State<'_, AppState>, id: i64, place: offers::BinPlace) -> AppResult<()> {
+    with_db(&state, |c| {
+        offers::put_back(c, id, place)?;
+        learn::refresh(c)
+    })
+}
+
+/// Deletes for good one offer, or (`id = null`) everything the bin's chosen variant shows.
+#[tauri::command]
+pub async fn purge_offers(state: State<'_, AppState>, id: Option<i64>, view: View) -> AppResult<usize> {
+    with_db(&state, |c| {
+        let n = offers::purge(c, id, view)?;
         // Ratings of deleted offers no longer teach anything.
         learn::refresh(c)?;
         Ok(n)
@@ -380,7 +538,7 @@ pub async fn ai_status(state: State<'_, AppState>) -> AppResult<AiStatus> {
 #[tauri::command]
 pub async fn ai_rate_now(state: State<'_, AppState>, app: tauri::AppHandle) -> AppResult<RateReport> {
     let say = progress_of(&app);
-    until_done(ai::process(&state, None, None, &say).await, &say)
+    until_done(ai::process(&state, None, None, false, &say).await, &say)
 }
 
 /// "Rate all again" in the settings: all of them, until the daily limits run out.
@@ -391,15 +549,21 @@ pub async fn ai_rate_all_again(state: State<'_, AppState>, app: tauri::AppHandle
     }
     with_db(&state, |c| ai::reset_all(c))?;
     let say = progress_of(&app);
-    until_done(ai::process(&state, None, None, &say).await, &say)
+    until_done(ai::process(&state, None, None, false, &say).await, &say)
 }
 
-/// "Rate again" on the offer card.
+/// "Rate again" on the offer card; `precise` = "Rate more precisely" (Claude alone).
 #[tauri::command]
-pub async fn ai_rate_offer(state: State<'_, AppState>, id: i64) -> AppResult<RateReport> {
+pub async fn ai_rate_offer(state: State<'_, AppState>, id: i64, precise: Option<bool>) -> AppResult<RateReport> {
     with_db(&state, |c| ai::reset(c, id))?;
     // One offer - the message "AI is working" is enough, no line at the bottom.
-    ai::process(&state, Some(id), None, &|_| {}).await
+    ai::process(&state, Some(id), None, precise.unwrap_or(false), &|_| {}).await
+}
+
+/// "Translate" on the card of an offer in another language: its title and description.
+#[tauri::command]
+pub async fn ai_translate(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    ai::translate(&state, id).await
 }
 
 /// "Check connection" next to an AI provider (one call of the day).
@@ -442,14 +606,16 @@ pub async fn ai_tidy(state: State<'_, AppState>, text: String) -> AppResult<Stri
 /// (also when AI fails - the person fills in the rest).
 #[tauri::command]
 pub async fn fill_offer(state: State<'_, AppState>, text: String, title: Option<String>) -> AppResult<crate::extract::Draft> {
-    let text = crate::text::cut(&text, 100_000);
+    let text = crate::trim::page_text(&crate::text::cut(&text, 100_000), title.as_deref());
     let ai_set = with_db(&state, |c| Ok(!settings::get(c, "ai_providers")?.is_empty()))?;
+    let mut draft = None;
     if ai_set {
-        if let Ok(draft) = ai::extract(&state, &text, title.as_deref()).await {
-            return Ok(draft);
-        }
+        draft = ai::extract(&state, &text, title.as_deref()).await.ok();
     }
-    Ok(crate::extract::from_text(&text, title.as_deref()))
+    let mut draft = draft.unwrap_or_else(|| crate::extract::from_text(&text, title.as_deref()));
+    // Every value checked against the text: made up, left out, and where it comes from.
+    draft.notes = crate::fieldcheck::check(&draft, &text);
+    Ok(draft)
 }
 
 #[tauri::command]
@@ -472,6 +638,7 @@ pub async fn close_preview(app: tauri::AppHandle) -> AppResult<()> {
 /// Returns whether the description got longer (and was saved).
 #[tauri::command]
 pub async fn update_description(state: State<'_, AppState>, app: tauri::AppHandle, id: i64, text: String) -> AppResult<bool> {
+    let text = crate::trim::page_text(&crate::text::cut(&text, 100_000), None);
     let changed = with_db(&state, |c| {
         let changed = offers::update_description(c, id, text)?;
         if changed {
@@ -624,11 +791,12 @@ pub async fn export_rows(state: State<'_, AppState>, view: Option<View>) -> AppR
 /// Saves the CSV cells the interface made (words in the app language) - returns where it was
 /// saved (`None` = cancelled). `name` - the list, a part of the file name.
 #[tauri::command]
-pub async fn save_csv(app: tauri::AppHandle, name: String, cells: Vec<Vec<String>>) -> AppResult<Option<String>> {
+pub async fn save_csv(app: tauri::AppHandle, name: String, cells: Vec<Vec<String>>, separator: String) -> AppResult<Option<String>> {
     crate::backup::csv_check(&name, &cells)?;
+    let separator = crate::backup::csv_separator(&separator)?;
     let file = format!("tablica-{name}-{}.csv", crate::clock::file_stamp());
     let Some(path) = pick_save(&app, file, ("CSV", &["csv"])).await? else { return Ok(None) };
-    std::fs::write(&path, crate::backup::csv_text(&cells))?;
+    std::fs::write(&path, crate::backup::csv_text(&cells, separator))?;
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
@@ -737,4 +905,10 @@ pub async fn sync_from_qr(state: State<'_, AppState>, text: String) -> AppResult
 #[tauri::command]
 pub async fn upcoming_events(state: State<'_, AppState>) -> AppResult<Vec<crate::agenda::Upcoming>> {
     with_db(&state, |c| crate::agenda::upcoming(c, time::OffsetDateTime::now_utc()))
+}
+
+/// "Detach" a child (`parent = None`), or put it back under its parent ("Undo").
+#[tauri::command]
+pub async fn set_offer_parent(state: State<'_, AppState>, id: i64, parent: Option<i64>) -> AppResult<()> {
+    with_db(&state, |c| crate::tree::set_parent(c, id, parent))
 }
