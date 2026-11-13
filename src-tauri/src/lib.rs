@@ -21,7 +21,6 @@ mod offers;
 mod learn;
 mod preview;
 mod profiles;
-mod rating_test;
 mod secrets;
 mod scheduler;
 mod score;
@@ -36,6 +35,7 @@ mod trim;
 #[cfg(target_os = "android")]
 mod tls;
 mod usage;
+mod nbp;
 mod net;
 
 use std::sync::Mutex;
@@ -99,7 +99,7 @@ pub fn run() {
                     Err(e.to_string())
                 }
             };
-            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false), syncing: AtomicBool::new(false) });
+            app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false), stop_rating: AtomicBool::new(false), syncing: AtomicBool::new(false) });
             app.manage(preview::Pending::default());
             if background {
                 let handle = app.handle().clone();
@@ -135,8 +135,6 @@ pub fn run() {
             commands::list_offers,
             commands::count_offers,
             commands::get_offer,
-            commands::rating_test_offers,
-            commands::rating_test_answer,
             commands::add_offer,
             commands::check_same_offer,
             commands::update_same_offer,
@@ -179,6 +177,8 @@ pub fn run() {
             commands::mail_test,
             commands::source_test,
             commands::ai_status,
+            commands::usd_rate,
+            commands::ai_stop,
             commands::ai_rate_now,
             commands::ai_rate_all_again,
             commands::ollama_install,
@@ -299,8 +299,13 @@ async fn one_pass(handle: &tauri::AppHandle, background: bool) {
             Err(e) => eprintln!("automatic fetch failed: {e}"),
         }
     }
-    // AI on its own only when turned on, and not more often than its "every" setting.
-    if gathers && on("ai_auto") && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false) {
+    // AI on its own only when turned on, and not more often than its "every" setting; paid Claude
+    // never on its own - only on a click.
+    if gathers
+        && on("ai_auto")
+        && !commands::with_db(&state, |c| ai::paid(c)).unwrap_or(true)
+        && commands::with_db(&state, |c| ai::auto_due(c)).unwrap_or(false)
+    {
         let _ = commands::with_db(&state, |c| ai::auto_ran(c));
         match commands::until_done(ai::process(&state, None, Some(ai::PER_RUN), false, &say).await, &say) {
             Ok(report) if report.rated > 0 => {

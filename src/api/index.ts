@@ -6,6 +6,7 @@ import type {
   AiCheck,
   AiProvider,
   AiStatus,
+  UsdRate,
   FreeModels,
   AppStatus,
   AssistKind,
@@ -41,8 +42,6 @@ import type {
   ViewCounts,
   BinPlace,
   ExpiredBy,
-  RatingTestOffer,
-  RatingTestVerdict,
 } from "./types";
 
 /** The calls the UI makes. In the app they go to Rust; in a plain browser (design preview) to a mock. */
@@ -53,8 +52,6 @@ export interface Api {
   countOffers(profile: number | null): Promise<ViewCounts>;
   getOffer(id: number): Promise<OfferDetail>;
   /** TEMPORARY - the blind rating of 10 offers for the AI test (removed after it). */
-  ratingTestOffers(): Promise<RatingTestOffer[]>;
-  ratingTestAnswer(id: number, verdict: RatingTestVerdict, why: string): Promise<void>;
   /** `reading` - `Draft.readingId` from "Add offer", when AI scored the offer while filling it.
    *  `place` - where the person said it goes: a separate offer, or a child of offer `parent`. */
   addOffer(offer: OfferInput, reading?: string | null, place?: { separate: true } | { parent: number }): Promise<AddOutcome>;
@@ -122,6 +119,10 @@ export interface Api {
   /** Background fetch finished (the app collects at start and every few hours). Returns "stop listening". */
   onFetched(listener: (report: FetchReport) => void): Promise<() => void>;
   aiStatus(): Promise<AiStatus>;
+  /** The dollar in zloty from NBP; null without a connection. */
+  usdRate(): Promise<UsdRate | null>;
+  /** "Stop rating": the run ends before its next offer. */
+  aiStop(): Promise<void>;
   /** AI reads waiting offers now. */
   aiRateNow(): Promise<RateReport>;
   /** Rated offers wait for AI again, then AI reads them. */
@@ -223,8 +224,6 @@ async function tauriApi(): Promise<Api> {
     listOffers: (view, profile) => invoke("list_offers", { view, profile }),
     countOffers: (profile) => invoke("count_offers", { profile }),
     getOffer: (id) => invoke("get_offer", { id }),
-    ratingTestOffers: () => invoke("rating_test_offers"),
-    ratingTestAnswer: (id, verdict, why) => invoke("rating_test_answer", { id, verdict, why }),
     addOffer: (offer, reading, place) =>
       invoke("add_offer", {
         offer,
@@ -276,6 +275,8 @@ async function tauriApi(): Promise<Api> {
       return listen<FetchReport>("offers-fetched", (e) => listener(e.payload));
     },
     aiStatus: () => invoke("ai_status"),
+    usdRate: () => invoke("usd_rate"),
+    aiStop: () => invoke("ai_stop"),
     aiRateNow: () => invoke("ai_rate_now"),
     aiRateAllAgain: () => invoke("ai_rate_all_again"),
     aiRateOffer: (id, precise) => invoke("ai_rate_offer", { id, precise: precise ?? false }),

@@ -5,7 +5,7 @@
 
 import { shownScore } from "../lib/format";
 import { DEMO_OFFERS, DEMO_PROFILES, type DemoFilter } from "../demo/offers";
-import { AI_PROVIDERS, type AiProvider, type AiStatus, type RatingTestOffer, type CareerIdea, type Criteria, type LowFunds, type OfferAi, type RateReport, type WorkProgress } from "./types";
+import { AI_PROVIDERS, aiOn, type AiProvider, type AiStatus, type CareerIdea, type Criteria, type LowFunds, type OfferAi, type RateReport, type WorkProgress } from "./types";
 import { bestResult, isKept, viewFor } from "../lib/profile";
 import { JOOBLE_KEY_CALLS } from "../lib/limits";
 import type { Api } from "./index";
@@ -34,6 +34,9 @@ export function createMockApi(): Api {
   let nextEventId = 1;
   let syncConnected = false;
   let aiCalls = 3;
+  // "Rate now" in the preview: a slow run that "Stop rating" can end.
+  let mockRunning = false;
+  let mockStop = false;
   // Made up: what the app "spent" on Claude since the top-up (the real one is counted in Rust).
   const mockSpent = 1.23;
   const mockLow = (): LowFunds | null => {
@@ -393,7 +396,6 @@ export function createMockApi(): Api {
     };
   }
 
-  const ratingTest = { ids: [] as number[], answers: new Map<number, NonNullable<RatingTestOffer["answer"]>>() };
 
   function inView(o: OfferDetail, view: View): boolean {
     if (view === "bin") return o.deletedAt !== null || o.archivedAt !== null || o.interest === "no";
@@ -457,25 +459,6 @@ export function createMockApi(): Api {
         trash: rowsOf("trash", profile).length,
         bin: rowsOf("bin", profile).length,
       };
-    },
-    // TEMPORARY - as `rating_test.rs` (any description - the demo ones are short): the set spread from the best score to the worst, chosen once.
-    async ratingTestOffers() {
-      if (ratingTest.ids.length === 0) {
-        const all = [...offers.values()]
-          .filter((o) => !o.deletedAt && !o.archivedAt && o.parentId === null && (o.description ?? "") !== "")
-          .sort((a, b) => (a.score === null ? 1 : 0) - (b.score === null ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0) || a.id - b.id);
-        ratingTest.ids = all.length <= 10 ? all.map((o) => o.id) : Array.from({ length: 10 }, (_, i) => all[Math.floor((i * (all.length - 1)) / 9)].id);
-      }
-      return ratingTest.ids.flatMap((id): RatingTestOffer[] => {
-        const o = offers.get(id);
-        if (!o) return [];
-        const { title, company, city, remote, salaryMin, salaryMax, salaryCurrency, salaryPeriod, url } = o;
-        return [{ id, title, company, city, remote, salaryMin, salaryMax, salaryCurrency, salaryPeriod, url, description: o.description ?? "", answer: ratingTest.answers.get(id) ?? null }];
-      });
-    },
-    async ratingTestAnswer(id, verdict, why) {
-      if (!ratingTest.ids.includes(id)) throw { code: "not_found", detail: "not found" };
-      ratingTest.answers.set(id, { verdict, why: why.trim() });
     },
     async getOffer(id) {
       const o = find(id);
@@ -931,7 +914,8 @@ export function createMockApi(): Api {
         gemini: "gemini-3.5-flash-lite", groq: "openai/gpt-oss-120b", openrouter: "openrouter/free",
         ollama: "llama3.1:8b", anthropic: "claude-sonnet-5-5", openai: "gpt-6-luna",
       };
-      const on = settings.ai_providers.split(",");
+      // Paid Claude alone, or the free ones ticked - like `ai::configs`.
+      const on = settings.ai_mode === "claude" ? ["anthropic"] : settings.ai_providers.split(",").filter((p) => p !== "anthropic");
       return {
         providers: AI_PROVIDERS.map((provider) => ({
           provider,
@@ -952,24 +936,41 @@ export function createMockApi(): Api {
         // Made up, like the Claude calls of a few days.
         claudeSpent: { today: 0.04, month: mockSpent, sinceTopUp: settings.ai_topup_date ? mockSpent : null },
         claudeLow: mockLow(),
+        running: mockRunning,
       };
     },
+    async aiStop() {
+      mockStop = true;
+    },
+    async usdRate() {
+      // Made up - the preview asks nobody.
+      return { pln: 3.65, day: "2026-11-13" };
+    },
     async aiRateNow() {
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
-      await new Promise((r) => setTimeout(r, 900));
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       let rated = 0;
+      let stopped = false;
+      mockRunning = true;
+      mockStop = false;
       for (const o of offers.values()) {
         if (o.ai.status === null && !o.deletedAt) {
+          if (mockStop) {
+            stopped = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 900));
           o.ai = { ...o.ai, status: "done", summary: "Przykładowe streszczenie z podglądu - tu pisze AI.", flags: [] };
           rated++;
           aiCalls++;
         }
       }
+      mockRunning = false;
+      const waiting = [...offers.values()].filter((o) => o.ai.status === null && !o.deletedAt).length;
       // Made up: Gemini without a model for this account, Groq took over.
       const problems: RateReport["problems"] = settings.ai_providers.includes("gemini")
         ? [{ provider: "gemini", model: settings.ai_model_gemini || "gemini-3.5-flash-lite", kind: "model", message: "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0" }]
         : [];
-      return { rated, failed: 0, waiting: 0, noProfile: 2, error: null, problems, lowFunds: null };
+      return { rated, failed: 0, waiting, noProfile: 2, error: null, problems, lowFunds: null, stopped };
     },
     async aiRateAllAgain() {
       for (const o of offers.values()) {
@@ -979,7 +980,7 @@ export function createMockApi(): Api {
     },
     async aiRateOffer(id, precise) {
       const o = find(id);
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       o.ai = {
         ...o.ai,
@@ -988,11 +989,11 @@ export function createMockApi(): Api {
         precise: o.ai.precise || !!precise,
       };
       aiCalls++;
-      return { rated: 1, failed: 0, waiting: 0, noProfile: 0, error: null, problems: [], lowFunds: precise ? mockLow() : null };
+      return { rated: 1, failed: 0, waiting: 0, noProfile: 0, error: null, problems: [], lowFunds: precise ? mockLow() : null, stopped: false };
     },
     async aiTranslate(id) {
       const o = find(id);
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       o.translationLang = "pl";
       o.titleTranslated = `${o.title} (tłumaczenie z podglądu)`;
@@ -1022,7 +1023,7 @@ export function createMockApi(): Api {
     },
     async aiAssist(id, kind) {
       const o = find(id);
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       if (kind === "message") {
@@ -1034,7 +1035,7 @@ export function createMockApi(): Api {
       return "- Testy end-to-end: oferta wymienia Playwright - warto zrobić mały projekt próbny.\n\n(Przykład z podglądu - tu pisze AI.)";
     },
     async aiSuggestCareers(): Promise<CareerIdea[]> {
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       return [
@@ -1045,7 +1046,7 @@ export function createMockApi(): Api {
       ];
     },
     async aiSuggestCriteria(description): Promise<Criteria> {
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       const base: Criteria = {
@@ -1065,7 +1066,7 @@ export function createMockApi(): Api {
       };
     },
     async aiTidy(text) {
-      if (!settings.ai_providers) throw { code: "missing", detail: "ai provider" };
+      if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
       return text
@@ -1115,7 +1116,7 @@ export function createMockApi(): Api {
       const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
       const money = lines.find((l) => /\d/.test(l) && /(zł|pln|eur)/i.test(l));
       const nums = money?.replace(/(\d)\s(\d{3})/g, "$1$2").match(/\d+/g)?.map(Number) ?? [];
-      const ai = settings.ai_providers !== "";
+      const ai = aiOn(settings);
       // A rough copy of `fieldcheck` - enough to see the marks in screenshots.
       const line = (re: RegExp) => lines.find((l) => re.test(l)) ?? null;
       const notes: FieldNote[] = [];
@@ -1149,7 +1150,7 @@ export function createMockApi(): Api {
         byAi: ai,
         readingId: null,
         notes,
-        lowFunds: ai && settings.ai_providers.includes("anthropic") ? mockLow() : null,
+        lowFunds: ai && settings.ai_mode === "claude" ? mockLow() : null,
       };
     },
     async openPreview(url) {

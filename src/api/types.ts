@@ -357,7 +357,7 @@ export interface AiProviderStatus {
   callsToday: number;
   callsMonth: number;
   /** Not asked today: "app" = the daily cap is used, "provider" = the provider's own limit. */
-  usedUp: "app" | "provider" | null;
+  usedUp: "app" | "budget" | "provider" | null;
 }
 
 export interface AiStatus {
@@ -375,6 +375,8 @@ export interface AiStatus {
   claudeSpent: ClaudeSpent;
   /** Less than 10% of the top-up is left. */
   claudeLow: LowFunds | null;
+  /** AI is reading offers now - "Stop rating" can end it. */
+  running: boolean;
 }
 
 /** Claude's spending in $: today, this calendar month and since the top-up day (`null` = no day given). */
@@ -385,7 +387,8 @@ export interface ClaudeSpent {
 }
 
 /** AI is set up: at least one provider turned on. */
-export const aiOn = (s: Settings) => s.ai_providers !== "";
+/** AI can be asked: paid Claude chosen, or a free provider ticked (Claude's tick counts only in the paid mode). */
+export const aiOn = (s: Settings) => s.ai_mode === "claude" || s.ai_providers.split(",").some((p) => p !== "" && p !== "anthropic");
 
 export interface RateReport {
   rated: number;
@@ -398,6 +401,8 @@ export interface RateReport {
   problems: AiProblem[];
   /** Claude was asked in this run and less than 10% of the top-up is left. */
   lowFunds: LowFunds | null;
+  /** "Stop rating" ended the run. */
+  stopped: boolean;
 }
 
 /** What is left of the last top-up of the Claude account, in $ (mirrors `spend::LowFunds`). */
@@ -417,6 +422,7 @@ export type AiProblemKind =
   | "limit"
   | "busy"
   | "cap"
+  | "budget"
   | "no_key"
   | "offline"
   | "answer"
@@ -620,8 +626,12 @@ export interface Settings {
   ai_model_openai: string;
   /** Daily cap of calls, for each provider. */
   ai_daily_limit: string;
-  /** AI reads new offers by itself (off unless turned on). */
+  /** AI reads new offers by itself (off unless turned on; never with paid Claude). */
   ai_auto: "off" | "on";
+  /** Free providers, or paid Claude alone - asked only on a click. */
+  ai_mode: "free" | "claude";
+  /** Claude's daily spending limit in dollars ("1", "2.50"); empty = none. */
+  ai_day_usd: string;
   /** Minutes between the runs of AI on its own. */
   ai_every: "30" | "60" | "180" | "1440";
   /** The last top-up of the Claude account in dollars ("5", "20.50"); empty = not given. */
@@ -680,6 +690,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ai_model_openai: "",
   ai_daily_limit: "200",
   ai_auto: "off",
+  ai_mode: "free",
+  ai_day_usd: "1",
   ai_every: "30",
   ai_topup_usd: "",
   ai_topup_date: "",
@@ -788,8 +800,17 @@ export function isAppError(value: unknown): value is AppError {
 /** Any thrown value as a text key (`error.*`) for the person plus the technical detail. */
 export function describeError(e: unknown): { key: string; detail: string } {
   if (!isAppError(e)) return { key: "error.generic", detail: String(e) };
+  // Claude's daily spending limit from the settings (`ai::BUDGET`) - not the service's limit.
+  if (e.code === "limit" && e.detail === "claude daily budget") return { key: "error.budget", detail: e.detail };
   const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy", "outdated", "other_outdated"];
   return { key: known.includes(e.code) ? `error.${e.code}` : "error.generic", detail: e.detail };
+}
+
+/** The dollar in zloty from NBP (mirrors `nbp::UsdRate`). */
+export interface UsdRate {
+  pln: number;
+  /** The day of the NBP table (YYYY-MM-DD). */
+  day: string;
 }
 
 /** Fields read from a pasted text or a preview page (mirrors `extract::Draft`). */
@@ -876,22 +897,4 @@ export interface Upcoming {
   at: string;
   title: string;
   company: string;
-}
-
-/** TEMPORARY - the author's blind rating of 10 offers for the test of AI ratings (`rating_test.rs`); removed after the test. */
-export type RatingTestVerdict = "yes" | "maybe" | "no";
-
-export interface RatingTestOffer {
-  id: number;
-  title: string;
-  company: string;
-  city: string | null;
-  remote: Remote;
-  salaryMin: number | null;
-  salaryMax: number | null;
-  salaryCurrency: string | null;
-  salaryPeriod: SalaryPeriod | null;
-  description: string;
-  url: string | null;
-  answer: { verdict: RatingTestVerdict; why: string } | null;
 }

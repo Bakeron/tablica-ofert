@@ -91,6 +91,10 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("ai_model_openai", Rule::Text { max: 120, default: "", check: is_model }),
     ("ai_daily_limit", Rule::Text { max: 5, default: "200", check: is_limit }),
     ("ai_auto", Rule::One(&["off", "on"])),
+    // Free providers or paid Claude - never both: Claude is asked only on a click (`ai::paid`).
+    ("ai_mode", Rule::One(&["free", "claude"])),
+    // Claude's daily spending limit in $ (empty = none) - checked before every call.
+    ("ai_day_usd", Rule::Text { max: 8, default: "1", check: is_dollars }),
     // Minutes between the AI runs on its own.
     ("ai_every", Rule::One(&["30", "60", "180", "1440"])),
     // Spending counter: the last top-up of the Claude account in dollars (as Anthropic counts;

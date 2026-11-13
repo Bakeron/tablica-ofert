@@ -33,9 +33,9 @@ impl Tokens {
     }
 }
 
-/// Adds one call's tokens to today's row of this model.
+/// Adds one call's tokens to today's row of this model (today in the local time zone).
 pub fn record(conn: &Connection, model: &str, t: &Tokens) -> AppResult<()> {
-    let day = crate::clock::now().get(..10).unwrap_or_default().to_string();
+    let day = crate::clock::local_day();
     conn.execute(
         "INSERT INTO ai_spend (day, model, calls, input, output, cache_read, cache_write) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6)
          ON CONFLICT (day, model) DO UPDATE SET calls = calls + 1, input = input + excluded.input,
@@ -96,7 +96,7 @@ pub fn cost_usd(model: &str, t: &Tokens) -> f64 {
 }
 
 /// Claude's spending in dollars for the settings: today, this calendar month and since the
-/// day of the last top-up (`None` when no day is given). Days are UTC, as `record` keeps them.
+/// day of the last top-up (`None` when no day is given). Days are local, as `record` keeps them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Spent {
@@ -106,7 +106,7 @@ pub struct Spent {
 }
 
 pub fn spent(conn: &Connection, top_up_day: &str) -> AppResult<Spent> {
-    spent_on(conn, crate::clock::now().get(..10).unwrap_or_default(), top_up_day)
+    spent_on(conn, &crate::clock::local_day(), top_up_day)
 }
 
 fn spent_on(conn: &Connection, today: &str, top_up_day: &str) -> AppResult<Spent> {

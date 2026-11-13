@@ -51,6 +51,8 @@ export interface ProfilePartProps {
   onSave: (input: ProfileInput, experience: string) => Promise<boolean>;
   /** Reads the work experience (shared by all profiles) before the part shows it. */
   onLoadExperience: () => void;
+  /** Settings → Profile left with changes not saved (true) - the app reminds to save them. */
+  onDraft: (left: boolean) => void;
 }
 
 /** How long the window may still grow into the remembered place (sections load their data). */
@@ -94,16 +96,13 @@ export function SettingsDialog({
   onLoaded: () => void;
 }) {
   const { t } = useI18n();
-  // Settings → Profile with unsaved changes: closing asks first, like the profile window.
-  const [profileDirty, setProfileDirty] = useState(false);
   return (
-    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide modal-settings" dirty={profileDirty}>
+    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide modal-settings">
       <SettingsBody
         api={api}
         settings={settings}
         profiles={profiles}
         profilePart={profilePart}
-        onProfileDirty={setProfileDirty}
         initialSection={initialSection}
         onClose={onClose}
         onChange={onChange}
@@ -126,7 +125,6 @@ function SettingsBody({
   settings,
   profiles,
   profilePart,
-  onProfileDirty,
   initialSection,
   onClose,
   onChange,
@@ -143,7 +141,6 @@ function SettingsBody({
   settings: Settings;
   profiles: Profile[];
   profilePart: ProfilePartProps;
-  onProfileDirty: (dirty: boolean) => void;
   initialSection?: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
@@ -162,19 +159,22 @@ function SettingsBody({
   // "Several profiles" turned on (here or by sync): the Profile part is gone - the first one shows.
   const section = sections.includes(chosen) ? chosen : sections[0];
   const sheet = useRef<HTMLDivElement>(null);
-  const stopFollowing = useRef<(() => void) | null>(null);
+  const following = useRef<ReturnType<typeof followHeight> | null>(null);
 
   useEffect(() => {
     settingsMemory.section = section;
   }, [section]);
 
-  useEffect(() => () => stopFollowing.current?.(), []);
+  useEffect(() => () => following.current?.stop(), []);
+
+  // The new section is in the page but not painted yet: the window starts gliding from its height.
+  useLayoutEffect(() => following.current?.glide(), [section]);
 
   function openSection(next: SettingsSection) {
     const box = sheet.current?.closest("dialog");
     if (sheet.current && box && next !== section) {
-      stopFollowing.current?.();
-      stopFollowing.current = followHeight(box, sheet.current);
+      following.current?.stop();
+      following.current = followHeight(box, sheet.current);
     }
     setSection(next);
   }
@@ -267,7 +267,7 @@ function SettingsBody({
         </fieldset>
       )}
 
-      {section === "profile" && <ProfilePart profile={profiles[0] ?? null} part={profilePart} onDirty={onProfileDirty} />}
+      {section === "profile" && <ProfilePart profile={profiles[0] ?? null} part={profilePart} />}
 
       {section === "look" && (
         <fieldset className="choice choice-column">
@@ -357,7 +357,7 @@ function SettingsBody({
 }
 
 /** Settings → Profile: the work experience is read first (it is shared by every profile). */
-function ProfilePart({ profile, part, onDirty }: { profile: Profile | null; part: ProfilePartProps; onDirty: (dirty: boolean) => void }) {
+function ProfilePart({ profile, part }: { profile: Profile | null; part: ProfilePartProps }) {
   const load = useRef(part.onLoadExperience);
   useEffect(() => load.current(), []);
   return (
@@ -370,7 +370,7 @@ function ProfilePart({ profile, part, onDirty }: { profile: Profile | null; part
       onCareers={part.onCareers}
       onTidy={part.onTidy}
       onSave={part.onSave}
-      onDirty={onDirty}
+      onDraft={part.onDraft}
     />
   );
 }

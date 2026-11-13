@@ -16,6 +16,7 @@ import {
   type SecretHints,
   type SecretName,
   type Settings,
+  type UsdRate,
 } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { IconArrowOut, IconWarning } from "./Icons";
@@ -28,7 +29,6 @@ import { Reveal } from "./Reveal";
 import { ConfirmContext, SecretField } from "./SecretField";
 import { SourceBox } from "./SourcesSettings";
 import { TextSetting } from "./TextSetting";
-import { RatingTest } from "./RatingTest";
 
 /** Where to get a key - each provider's own page. */
 const KEY_PAGES: Partial<Record<AiProvider, string>> = {
@@ -43,7 +43,18 @@ const KEY_PAGES: Partial<Record<AiProvider, string>> = {
 const FREE: AiProvider[] = ["groq", "openrouter", "ollama"];
 
 /** Steps of "How to get a key" (texts `ai.how.<provider>.<n>`); Ollama has its own steps. */
-const KEY_STEPS: Partial<Record<AiProvider, number>> = { groq: 3, openrouter: 3, anthropic: 3, openai: 3, gemini: 3 };
+const KEY_STEPS: Partial<Record<AiProvider, number>> = { groq: 3, openrouter: 3, anthropic: 4, openai: 3, gemini: 3 };
+
+/** Providers whose steps each open their own page (instead of one "Get a key" button) - the
+ *  link and its button text per step, null = a step without a page. */
+const STEP_LINKS: Partial<Record<AiProvider, ([string, TextKey] | null)[]>> = {
+  anthropic: [
+    ["https://platform.claude.com/", "ai.howLink.console"],
+    ["https://platform.claude.com/settings/billing", "ai.howLink.billing"],
+    ["https://platform.claude.com/settings/keys", "ai.howLink.keys"],
+    null,
+  ],
+};
 
 const EVERY: Settings["ai_every"][] = ["30", "60", "180", "1440"];
 
@@ -73,8 +84,15 @@ export function AiSettings({
   const [machine, setMachine] = useState<Machine | null>(null);
   const [checking, setChecking] = useState(false);
   const [rating, setRating] = useState(false);
+  const [stopping, setStopping] = useState(false);
   // The last "Rate now" - its reason stays under the button, not only in a toast.
   const [report, setReport] = useState<RateReport | null>(null);
+  const paid = settings.ai_mode === "claude";
+  // The dollar in zloty from NBP - only for Claude's spending.
+  const [usdRate, setUsdRate] = useState<UsdRate | null>(null);
+  useEffect(() => {
+    if (paid) api.usdRate().then(setUsdRate, () => setUsdRate(null));
+  }, [api, paid]);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +116,8 @@ export function AiSettings({
   const enabled = status?.providers.filter((x) => x.enabled) ?? [];
   const usedUp = enabled.filter((x) => x.usedUp);
   const canRate = enabled.some((x) => x.ready && !x.usedUp);
+  // A run started elsewhere (the board, AI on its own) or before this window was opened.
+  const running = status?.running ?? false;
   // Nothing is waiting, so the same button sends everything to AI once more (e.g. a new model).
   const again = status !== null && status.waiting === 0 && status.rateAgain > 0;
   const confirm = useContext(ConfirmContext);
@@ -142,11 +162,32 @@ export function AiSettings({
       onError(e);
     } finally {
       setRating(false);
+      setStopping(false);
+    }
+  }
+
+  async function stop() {
+    setStopping(true);
+    try {
+      await api.aiStop();
+    } catch (e) {
+      setStopping(false);
+      onError(e);
     }
   }
 
   function rateNow() {
-    if (again && status && confirm) {
+    // Paid Claude: how many offers and roughly what it costs - before anything is sent.
+    const claude = of("anthropic");
+    if (paid && status && confirm && claude) {
+      const count = again ? status.rateAgain : status.waiting;
+      const cost = claudeCostText(count, claude.model, lang);
+      confirm(
+        t(again ? "ai.rateClaudeAgainAsk" : "ai.rateClaudeAsk", { count, cost }),
+        () => void rate(() => (again ? api.aiRateAllAgain() : api.aiRateNow())),
+        t("ai.rateClaudeYes"),
+      );
+    } else if (again && status && confirm) {
       // Offers added by hand or rated more precisely once go to Claude (paid) - its rough cost is said before anything is sent.
       const claude = of("anthropic");
       const paid =
@@ -163,12 +204,21 @@ export function AiSettings({
     <div className="settings-part">
       <p>{t("ai.intro")}</p>
 
-      <p className="hint">{t("ai.queue")}</p>
+      <fieldset className="choice choice-column">
+        <legend>{t("ai.mode")}</legend>
+        {(["free", "claude"] as const).map((m) => (
+          <label key={m} className="choice-item">
+            <input type="radio" name="ai-mode" checked={settings.ai_mode === m} onChange={() => onChange("ai_mode", m)} />
+            <span>
+              <strong>{t(`ai.mode.${m}` as TextKey)}</strong> - {t(`ai.mode.${m}Hint` as TextKey)}
+            </span>
+          </label>
+        ))}
+      </fieldset>
 
-      {/* TEMPORARY - the author's blind rating for the AI test; removed after it. */}
-      <RatingTest api={api} onOpenLink={onOpenLink} onError={onError} />
+      <p className="hint">{t(paid ? "ai.claudeOnlyClick" : "ai.queue")}</p>
 
-      {AI_PROVIDERS.map((p) => {
+      {AI_PROVIDERS.filter((p) => (paid ? p === "anthropic" : FREE.includes(p))).map((p) => {
         const st = of(p);
         const keyName = p !== "ollama" ? (`ai-key-${p}` as SecretName) : null;
         return (
@@ -185,8 +235,9 @@ export function AiSettings({
                 </>
               )
             }
-            on={turnedOn.includes(p)}
-            onToggle={(on) => toggle(p, on)}
+            // Paid Claude is on as long as it is chosen above; "off" goes back to the free ones.
+            on={paid || turnedOn.includes(p)}
+            onToggle={(on) => (paid ? !on && onChange("ai_mode", "free") : toggle(p, on))}
             alert={st && <ProviderAlert st={st} limit={status?.dailyLimit ?? 0} />}
           >
             <p className="hint">{t(`ai.p.${p}.accuracy` as TextKey)}</p>
@@ -245,41 +296,50 @@ export function AiSettings({
             {FREE.includes(p) && p !== "ollama" && (
               <ModelPicker api={api} provider={p} current={st?.model ?? ""} onPick={(model) => onChange(`ai_model_${p}`, model)} />
             )}
-            {p === "anthropic" && <TopUp settings={settings} spent={status?.claudeSpent ?? null} low={status?.claudeLow ?? null} onChange={onChange} />}
+            {p === "anthropic" && (
+              <TopUp settings={settings} spent={status?.claudeSpent ?? null} low={status?.claudeLow ?? null} rate={usdRate} onChange={onChange} />
+            )}
             <ConnectionCheck api={api} provider={p} ready={st?.ready ?? false} onChecked={load} />
             {st && (
-              <p className="source-state">{t("ai.usage", { today: st.callsToday, limit: status?.dailyLimit ?? 0, month: st.callsMonth })}</p>
+              <p className="source-state">
+                {p === "anthropic"
+                  ? t("ai.usageClaude", { today: st.callsToday, month: st.callsMonth })
+                  : t("ai.usage", { today: st.callsToday, limit: status?.dailyLimit ?? 0, month: st.callsMonth })}
+              </p>
             )}
           </SourceBox>
         );
       })}
 
       <fieldset className="crit-group ai-common">
-        <TextSetting
-          label={t("ai.limit")}
-          maxLength={TEXT_MAX.ai_daily_limit}
-          hint={t("ai.limitHint")}
-          value={settings.ai_daily_limit}
-          inputMode="numeric"
-          onSave={(v) => onChange("ai_daily_limit", v)}
-        />
-        <label className="choice-item">
-          <input type="checkbox" checked={settings.ai_auto === "on"} onChange={(e) => onChange("ai_auto", e.target.checked ? "on" : "off")} />
-          <span>{t("ai.auto")}</span>
-        </label>
-        <Reveal show={settings.ai_auto === "on"}>
-          <label className="field field-inline">
-            <span>{t("ai.every")}</span>
-            <select value={settings.ai_every} onChange={(e) => onChange("ai_every", e.target.value as Settings["ai_every"])}>
-              {EVERY.map((v) => (
-                <option key={v} value={v}>
-                  {t(`ai.every.${v}` as TextKey)}
-                </option>
-              ))}
-            </select>
+        {/* Calls per day and AI on its own - free providers only; Claude counts money and waits for a click. */}
+        <Reveal show={!paid} className="settings-stack">
+          <TextSetting
+            label={t("ai.limit")}
+            maxLength={TEXT_MAX.ai_daily_limit}
+            hint={t("ai.limitHint")}
+            value={settings.ai_daily_limit}
+            inputMode="numeric"
+            onSave={(v) => onChange("ai_daily_limit", v)}
+          />
+          <label className="choice-item">
+            <input type="checkbox" checked={settings.ai_auto === "on"} onChange={(e) => onChange("ai_auto", e.target.checked ? "on" : "off")} />
+            <span>{t("ai.auto")}</span>
           </label>
+          <Reveal show={settings.ai_auto === "on"}>
+            <label className="field field-inline">
+              <span>{t("ai.every")}</span>
+              <select value={settings.ai_every} onChange={(e) => onChange("ai_every", e.target.value as Settings["ai_every"])}>
+                {EVERY.map((v) => (
+                  <option key={v} value={v}>
+                    {t(`ai.every.${v}` as TextKey)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </Reveal>
+          <p className="hint">{t(settings.ai_auto === "on" ? "ai.autoOnHint" : "ai.autoOffHint")}</p>
         </Reveal>
-        <p className="hint">{t(settings.ai_auto === "on" ? "ai.autoOnHint" : "ai.autoOffHint")}</p>
         <label className="choice-item">
           <input type="checkbox" checked={settings.learn_scores === "on"} onChange={(e) => onChange("learn_scores", e.target.checked ? "on" : "off")} />
           <span>{t("ai.learn")}</span>
@@ -289,16 +349,25 @@ export function AiSettings({
           <p className="source-warn">
             <IconWarning />{" "}
             {t("ai.limitNow", {
-              list: usedUp.map((x) => `${t(`ai.p.${x.provider}` as TextKey)} (${t(x.usedUp === "app" ? "ai.limitApp" : "ai.limitProvider")})`).join(", "),
+              list: usedUp
+                .map((x) => `${t(`ai.p.${x.provider}` as TextKey)} (${t(x.usedUp === "app" ? "ai.limitApp" : x.usedUp === "budget" ? "ai.limitBudget" : "ai.limitProvider")})`)
+                .join(", "),
             })}{" "}
             {t(usedUp.length === enabled.length ? "ai.limitAll" : "ai.limitNext")}
           </p>
         )}
+        {/* The money limit sits by the button that spends it - for any paid AI, not inside one provider. */}
+        {paid && <ClaudeDay settings={settings} spent={status?.claudeSpent ?? null} rate={usdRate} onChange={onChange} />}
         {status && <p className="source-state">{t("ai.counts", { rated: status.rated, waiting: status.waiting })}</p>}
-        <div>
-          <button type="button" className="btn btn-ghost btn-small" onClick={rateNow} disabled={rating || !canRate} aria-busy={rating}>
-            {rating ? t("ai.rating") : t(again ? "ai.rateAllAgain" : "ai.rateNow")}
+        <div className="ai-rate-row">
+          <button type="button" className="btn btn-ghost btn-small" onClick={rateNow} disabled={rating || running || !canRate} aria-busy={rating || running}>
+            {rating || running ? t("ai.rating") : t(again ? "ai.rateAllAgain" : "ai.rateNow")}
           </button>
+          {(rating || running) && (
+            <button type="button" className="btn btn-danger btn-small" onClick={stop} disabled={stopping} aria-busy={stopping} title={t("ai.stopHint")}>
+              {stopping ? t("ai.stopping") : t("ai.stop")}
+            </button>
+          )}
         </div>
         <div aria-live="polite">
           <Reveal show={report !== null}>{report && <RunResult report={report} />}</Reveal>
@@ -506,18 +575,33 @@ function KeySteps({
 }) {
   const { t } = useI18n();
   const id = `ai-how-${provider}`;
+  const links = STEP_LINKS[provider];
   return (
     <details className="howto" open={open || settingsMemory.unfolded.has(id)} onToggle={(e) => rememberUnfolded(id, e.currentTarget.open)}>
       <summary>{t("ai.howKey")}</summary>
-      <div>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[provider]!)}>
-          {t("ai.getKey")} <IconArrowOut />
-        </button>
-      </div>
+      {!links && (
+        <div>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(KEY_PAGES[provider]!)}>
+            {t("ai.getKey")} <IconArrowOut />
+          </button>
+        </div>
+      )}
       <ol className="ollama-steps">
-        {Array.from({ length: steps }, (_, i) => (
-          <li key={i}>{t(`ai.how.${provider}.${i + 1}` as TextKey)}</li>
-        ))}
+        {Array.from({ length: steps }, (_, i) => {
+          const link = links?.[i];
+          return (
+            <li key={i}>
+              {t(`ai.how.${provider}.${i + 1}` as TextKey)}
+              {link && (
+                <div className="howto-link">
+                  <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(link[0])}>
+                    {t(link[1])} <IconArrowOut />
+                  </button>
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </details>
   );
@@ -549,7 +633,9 @@ function RunResult({ report }: { report: RateReport }) {
   const known = ["net", "auth", "limit", "missing", "busy"];
   return (
     <div className="ai-run">
-      {noFreeProvider(report) ? (
+      {report.stopped ? (
+        <p className="source-state">{t("ai.stoppedByYou", { count: report.rated, waiting: report.waiting })}</p>
+      ) : noFreeProvider(report) ? (
         <>
           <p className="source-state">{t("ai.rated", { count: report.rated, waiting: report.waiting })}</p>
           <p className="source-warn">
@@ -581,18 +667,65 @@ function RunResult({ report }: { report: RateReport }) {
 /** The last top-up of the Claude account (in $, as Anthropic counts; about how much in PLN) and its
  *  day - the spending counter counts from that day on. A sum without a day gets today. Below:
  *  spent of it and what is left, today and this month. */
+/** Claude's daily spending limit and today's spending, in $ and roughly in zloty (NBP). */
+function ClaudeDay({
+  settings,
+  spent,
+  rate,
+  onChange,
+}: {
+  settings: Settings;
+  spent: ClaudeSpent | null;
+  rate: UsdRate | null;
+  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
+}) {
+  const { t, lang } = useI18n();
+  const limit = settings.ai_day_usd;
+  const pln = rate?.pln ?? USD_PLN;
+  const rateShown = pln.toLocaleString(lang === "pl" ? "pl-PL" : "en-GB", { maximumFractionDigits: 4 });
+  return (
+    <div className="ai-topup">
+      <TextSetting
+        label={t("ai.dayUsd")}
+        // Room for a typed "$" or "USD", taken off before saving.
+        maxLength={TEXT_MAX.ai_day_usd + 4}
+        hint={t(limit ? "ai.dayUsdHint" : "ai.dayUsdNone")}
+        value={lang === "pl" ? limit.replace(".", ",") : limit}
+        placeholder={lang === "pl" ? "1,00" : "1.00"}
+        inputMode="decimal"
+        onSave={async (text) => {
+          const v = topUpTyped(text);
+          if (v === null) return t("ai.topupWrong");
+          return onChange("ai_day_usd", v);
+        }}
+      />
+      {spent && (
+        <p className="source-state" aria-live="polite">
+          {limit
+            ? t("ai.spentTodayOf", { today: usdText(spent.today, lang), limit: usdText(Number(limit), lang), pln: plnText(spent.today, lang, pln) })
+            : t("ai.spentTodayNoLimit", { today: usdText(spent.today, lang), pln: plnText(spent.today, lang, pln) })}{" "}
+          {rate ? t("ai.rateNbp", { day: fullDay(rate.day, lang), rate: rateShown }) : t("ai.rateRough", { rate: rateShown })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function TopUp({
   settings,
   spent,
   low,
+  rate,
   onChange,
 }: {
   settings: Settings;
   spent: ClaudeSpent | null;
   low: LowFunds | null;
+  rate: UsdRate | null;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
 }) {
   const { t, lang } = useI18n();
+  const pln = rate?.pln ?? USD_PLN;
   const usd = settings.ai_topup_usd;
   const shown = lang === "pl" ? usd.replace(".", ",") : usd;
   const today = localDay();
@@ -602,7 +735,7 @@ function TopUp({
         label={t("ai.topup")}
         // Room for a typed "$" or "USD", taken off before saving.
         maxLength={TEXT_MAX.ai_topup_usd + 4}
-        hint={usd ? t("ai.topupPln", { pln: plnText(Number(usd), lang), rate: USD_PLN }) : t("ai.topupHint")}
+        hint={usd ? t("ai.topupPln", { pln: plnText(Number(usd), lang, pln), rate: pln.toLocaleString(lang === "pl" ? "pl-PL" : "en-GB", { maximumFractionDigits: 4 }) }) : t("ai.topupHint")}
         value={shown}
         placeholder={lang === "pl" ? "5,00" : "5.00"}
         inputMode="decimal"
@@ -636,7 +769,7 @@ function TopUp({
                 spent: usdText(spent.sinceTopUp, lang),
                 topUp: usdText(Number(usd), lang),
                 left: usdText(Number(usd) - spent.sinceTopUp, lang),
-                pln: plnText(Math.max(0, Number(usd) - spent.sinceTopUp), lang),
+                pln: plnText(Math.max(0, Number(usd) - spent.sinceTopUp), lang, pln),
               })}
             </p>
           )}

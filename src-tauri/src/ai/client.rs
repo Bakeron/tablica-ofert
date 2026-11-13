@@ -345,6 +345,8 @@ pub enum Problem {
     Busy,
     /// The daily limit from the settings is used.
     Cap,
+    /// Claude's daily spending limit from the settings is used.
+    Budget,
     /// No key in the settings.
     NoKey,
     /// No connection, or the provider does not answer.
@@ -359,6 +361,7 @@ pub fn problem(e: &AppError) -> Problem {
     match e {
         AppError::Provider { kind, .. } => *kind,
         AppError::Missing(_) => Problem::NoKey,
+        AppError::Limit(m) if m == super::BUDGET => Problem::Budget,
         AppError::Limit(_) => Problem::Cap,
         AppError::Net(msg)
             if msg == EMPTY || msg.contains("JSON") || msg.contains("refused") || msg.starts_with("unexpected answer") =>

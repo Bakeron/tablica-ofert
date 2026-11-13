@@ -11,6 +11,16 @@ pub fn now() -> String {
         .unwrap_or_default()
 }
 
+/// Today in the computer's own time zone (YYYY-MM-DD) - for counts the person reads as "today"
+/// (Claude's spending): in Poland a day starts at midnight, not at 1:00 or 2:00 like a UTC day.
+/// UTC when the zone cannot be read.
+pub fn local_day() -> String {
+    OffsetDateTime::now_local()
+        .unwrap_or_else(|_| OffsetDateTime::now_utc())
+        .format(format_description!("[year]-[month]-[day]"))
+        .unwrap_or_default()
+}
+
 /// Timestamp for backup file names, e.g. `20261102-183005`.
 pub fn file_stamp() -> String {
     OffsetDateTime::now_utc()

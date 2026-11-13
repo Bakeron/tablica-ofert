@@ -258,6 +258,9 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
         crate::profiles::recheck_all(&tx)?;
         tx.commit()?;
     }
+    // The temporary rating test is gone from the app (13.11.2026) - so is its row (no migration:
+    // a new database version would stop syncing with a phone not updated yet).
+    conn.execute("DELETE FROM settings WHERE key = 'rating_test'", [])?;
     // Ratings given before learning came in count at once.
     if before < 20 {
         crate::learn::refresh(&mut conn)?;

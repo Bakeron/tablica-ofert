@@ -48,6 +48,7 @@ export const TEXT_MAX = {
   ai_model: 120,
   ai_daily_limit: 5,
   ai_topup_usd: 8,
+  ai_day_usd: 8,
   ai_topup_date: 10,
   ollama_url: 200,
 };

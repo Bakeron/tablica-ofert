@@ -22,6 +22,8 @@ pub struct AppState {
     pub fetching: AtomicBool,
     /// Set while AI reads offers.
     pub rating: AtomicBool,
+    /// "Stop rating" was clicked - the run ends before its next offer.
+    pub stop_rating: AtomicBool,
     /// Set while the sync file on Drive is read or written (sync, new key, deleting it).
     pub syncing: AtomicBool,
 }
@@ -68,18 +70,6 @@ pub async fn list_offers(
 #[tauri::command]
 pub async fn count_offers(state: State<'_, AppState>, profile: Option<i64>) -> AppResult<ViewCounts> {
     with_db(&state, |c| offers::counts(c, profile))
-}
-
-/// TEMPORARY - the author's blind rating of 10 offers (`rating_test`), removed after the test.
-#[tauri::command]
-pub async fn rating_test_offers(state: State<'_, AppState>) -> AppResult<Vec<crate::rating_test::TestOffer>> {
-    with_db(&state, |c| crate::rating_test::offers(c))
-}
-
-/// TEMPORARY - see `rating_test_offers`.
-#[tauri::command]
-pub async fn rating_test_answer(state: State<'_, AppState>, id: i64, verdict: String, why: String) -> AppResult<()> {
-    with_db(&state, |c| crate::rating_test::answer(c, id, &verdict, &why))
 }
 
 #[tauri::command]
@@ -227,7 +217,8 @@ pub fn spawn_ai(app: tauri::AppHandle) {
     use tauri::{Emitter, Manager};
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
-        let on = with_db(&state, |c| settings::is_on(c, "ai_auto")).unwrap_or(false);
+        // Paid Claude never runs on its own - only on a click.
+        let on = with_db(&state, |c| Ok(settings::is_on(c, "ai_auto")? && !ai::paid(c)?)).unwrap_or(false);
         if !on {
             return;
         }
@@ -535,9 +526,26 @@ pub async fn check_hardware() -> AppResult<crate::hardware::Machine> {
 #[tauri::command]
 pub async fn ai_status(state: State<'_, AppState>) -> AppResult<AiStatus> {
     let keys = secrets::user_hints()?;
-    with_db(&state, |c| {
+    let mut status = with_db(&state, |c| {
         ai::status(c, |p| p.key_name().is_some_and(|k| keys.contains_key(k)))
-    })
+    })?;
+    status.running = state.rating.load(std::sync::atomic::Ordering::SeqCst);
+    Ok(status)
+}
+
+/// "Stop rating": the run ends before its next offer (the one AI is reading now is finished and kept).
+#[tauri::command]
+pub async fn ai_stop(state: State<'_, AppState>) -> AppResult<()> {
+    if state.rating.load(std::sync::atomic::Ordering::SeqCst) {
+        state.stop_rating.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+/// The dollar in zloty from NBP, for Claude's spending (`None` without a connection).
+#[tauri::command]
+pub async fn usd_rate() -> AppResult<Option<crate::nbp::UsdRate>> {
+    Ok(crate::nbp::usd_rate().await)
 }
 
 /// AI reads all waiting offers now, until the daily limits run out.

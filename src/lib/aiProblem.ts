@@ -24,7 +24,9 @@ export const noFreeProvider = (report: RateReport) => report.error?.code === "mi
 /** One sentence about an AI run, with every provider that failed and why. */
 export function rateSummary(report: RateReport, t: T, lang: string): string {
   const parts: string[] = [];
-  if (noFreeProvider(report)) {
+  if (report.stopped) {
+    parts.push(t("ai.stoppedByYou", { count: report.rated, waiting: report.waiting }));
+  } else if (noFreeProvider(report)) {
     parts.push(t("ai.rated", { count: report.rated, waiting: report.waiting }), t("ai.noFree"));
   } else if (report.error) {
     parts.push(t("ai.stopped"));

@@ -35,6 +35,9 @@
   --stamp: #93b8ff;
   --danger: #ff8a7d;
   --danger-bg: #3a1d1a;
+  --warn: #ffc61a;
+  --warn-line: #ffc61a;
+  --warn-bg: #3a3217;
   --hue-applied: #6d9cff;
   --hue-progress: #3cc2b0;
   --hue-offer: #59c46e;
@@ -65,6 +68,9 @@
   --stamp: #1f4fa3;
   --danger: #b42318;
   --danger-bg: #fbe4e1;
+  --warn: #7a4f00;
+  --warn-line: #d9a400;
+  --warn-bg: #fff4cc;
   --hue-applied: #2457c5;
   --hue-progress: #0f7d70;
   --hue-offer: #22803a;
@@ -1787,9 +1793,12 @@ textarea {
   width: min(760px, calc(100vw - 2rem));
 }
 
+/* Pinned to the top, not centred: going through the sections, the window grows and shrinks at
+   its bottom edge only - the section buttons stay under the pointer. */
 .modal-settings {
   width: 960px;
   max-width: 80%;
+  margin-block: 1rem auto;
 }
 
 .modal::backdrop {
@@ -2718,75 +2727,24 @@ fieldset.plain {
 
 .profile-save {
   position: sticky;
-  bottom: -1.3rem;
+  bottom: 0;
   z-index: 1;
   display: flex;
   justify-content: flex-end;
   margin: 0 -1.3rem -1.3rem;
-  padding: 0.7rem 1.3rem 1.3rem;
-  border-top: 1px solid var(--field-line);
+  padding: 0.75rem 1.3rem;
+  border-top: 2px dashed var(--perf);
   background: var(--paper);
 }
 
-.settings-part .crit-group {
+.settings-part:not(.profile-part) .crit-group {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.settings-part select {
+.settings-part:not(.profile-part) select {
   max-width: 18rem;
-}
-
-/* TEMPORARY - the blind rating for the AI test: a dashed "work in progress" frame, removed after the test. */
-.rating-test {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
-  border: 2px dashed var(--signal);
-}
-
-.rating-test h3,
-.rating-test h4,
-.rating-test p {
-  margin: 0;
-}
-
-.rating-test-offer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.rating-test-pos {
-  color: var(--paper-dim);
-}
-
-.rating-test-text {
-  max-height: 16rem;
-  overflow: auto;
-  padding: 0.75rem;
-  border: 1px solid var(--field-line);
-  background: var(--field);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.rating-test-verdict {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.rating-test-verdict legend {
-  margin-bottom: 0.4rem;
-}
-
-.rating-test-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
 /* Every source is a wayfinding sign: yellow edge on the left, name in board letters. */
@@ -2985,24 +2943,25 @@ fieldset.plain {
   animation: none;
 }
 
-/* "Uwaga" box: red edge, icon and the word - never colour alone. */
+/* "Uwaga" box: a warning, not an error - yellow like the signs: edge, icon and the word, never
+   colour alone. Red stays for errors. */
 .warn-box {
   display: flex;
   gap: 0.6rem;
   padding: 0.7rem 0.8rem;
-  border: 2px solid var(--danger);
+  border: 2px solid var(--warn-line);
   border-radius: 4px;
-  background: var(--danger-bg);
+  background: var(--warn-bg);
   color: var(--paper-ink);
 }
 
 .warn-box > svg {
   flex: none;
-  color: var(--danger);
+  color: var(--warn);
 }
 
 .warn-box strong {
-  color: var(--danger);
+  color: var(--warn);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -4152,6 +4111,13 @@ fieldset.plain {
   gap: 0.6rem;
 }
 
+/* "Rate now" and, while AI is reading, "Stop rating" right next to it. */
+.ai-rate-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 /* Ollama: the steps and what it has. */
 .ollama-steps {
   margin: 0;
@@ -4159,6 +4125,11 @@ fieldset.plain {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* A step of "How to get a key" with its own page: the button under the step's words. */
+.howto-link {
+  margin: 0.35rem 0 0.2rem;
 }
 
 .ollama-models {

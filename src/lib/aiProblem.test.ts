@@ -4,9 +4,13 @@ import { translate, type TextKey } from "../i18n";
 import { rateSummary } from "./aiProblem";
 
 const t = (key: TextKey, params?: Record<string, string | number>) => translate("pl", key, params);
-const base: RateReport = { rated: 0, failed: 0, waiting: 36, noProfile: 0, error: null, problems: [], lowFunds: null };
+const base: RateReport = { rated: 0, failed: 0, waiting: 36, noProfile: 0, error: null, problems: [], lowFunds: null, stopped: false };
 
 describe("rateSummary", () => {
+  it("says the run was stopped and how many offers wait", () => {
+    expect(rateSummary({ ...base, rated: 35, waiting: 99, stopped: true }, t, "pl")).toBe("Zatrzymane: ocenione 35, czeka 99");
+  });
+
   it("names the provider, the model and the reason", () => {
     const report: RateReport = {
       ...base,

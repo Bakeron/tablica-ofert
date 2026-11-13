@@ -54,6 +54,9 @@ function WindowError() {
   );
 }
 
+/** Settings → Profile was left with changes not saved - closing the app would lose them. */
+export const ProfileDraftContext = createContext(false);
+
 /** What fetching or AI is doing now (null = nothing). */
 export const WorkContext = createContext<WorkProgress | null>(null);
 
@@ -127,9 +130,17 @@ export function ToastView({ inWindow = false }: { inWindow?: boolean }) {
   const { toast: live, close, hold } = useContext(ToastContext);
   const { mounted, leaving } = usePresence(live !== null);
   const toast = useLastShown(live !== null, live);
+  const draft = useContext(ProfileDraftContext);
+  const reminder = usePresence(draft);
   return (
     <div className="toast-zone" aria-live="polite">
       {inWindow && <WindowError />}
+      {/* Stays until the profile is saved - not a message that goes by itself. */}
+      {reminder.mounted && (
+        <p className="toast draft-note fade" data-leaving={reminder.leaving || undefined}>
+          <IconWarning /> {t("profile.saveReminder")}
+        </p>
+      )}
       <WorkLine />
       {mounted && toast && (
         <div

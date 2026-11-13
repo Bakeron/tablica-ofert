@@ -38,9 +38,9 @@ export function usdText(usd: number, lang: string): string {
   return small ? `< ${text}` : text;
 }
 
-/** "20,00" - dollars in PLN at the rough rate. */
-export function plnText(usd: number, lang: string): string {
-  return (usd * USD_PLN).toLocaleString(lang === "pl" ? "pl-PL" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** "20,00" - dollars in PLN at the NBP rate, or the rough one. */
+export function plnText(usd: number, lang: string, rate = USD_PLN): string {
+  return (usd * rate).toLocaleString(lang === "pl" ? "pl-PL" : "en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Today as `YYYY-MM-DD` in local time (the day of a top-up). */

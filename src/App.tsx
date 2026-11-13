@@ -33,7 +33,7 @@ import { AssistDialog } from "./components/AiDialogs";
 import { Board, DEFAULT_SORT, sortRows, sourceLabel, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
-import { ErrorContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
+import { ErrorContext, ProfileDraftContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
 import { IconBoard, IconBriefcase, IconDownload, IconGear, IconHome, IconPlus, IconTrash, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
@@ -168,6 +168,8 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  // Settings → Profile left with changes not saved - a reminder in the corner until they are.
+  const [profileDraft, setProfileDraft] = useState(false);
   const [confirm, setConfirm] = useState<{ message: string; action: () => void; label?: string } | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   /** null = all profiles together */
@@ -1141,6 +1143,7 @@ export default function App() {
   return (
     <I18nContext.Provider value={i18n}>
       <ToastContext.Provider value={toastValue}>
+      <ProfileDraftContext.Provider value={profileDraft && !multiProfile}>
       <ErrorContext.Provider value={errorValue}>
       <WorkContext.Provider value={work}>
       <div className={cardShown ? "app is-card" : "app"}>
@@ -1411,7 +1414,8 @@ export default function App() {
             }}
             showDates={settings.feature_dates === "on"}
             showContacts={settings.feature_contacts === "on"}
-            claudeOn={settings.ai_providers.split(",").includes("anthropic")}
+            // Free and paid AI never mix: with Claude chosen every rating is Claude's, without it there is none.
+            claudeOn={false}
             onRateAgain={() => selectedId !== null && rateAgain(selectedId)}
             onRatePrecise={() => selectedId !== null && rateAgain(selectedId, true)}
             onTranslate={() => (selectedId === null || !api ? Promise.resolve() : api.aiTranslate(selectedId).then(() => reload(), fail))}
@@ -1475,6 +1479,7 @@ export default function App() {
             onCareers: suggestCareers,
             onTidy: tidyText,
             onSave: saveProfile,
+            onDraft: setProfileDraft,
             onLoadExperience: () => {
               if (!api) return;
               Promise.all([api.getExperience(), api.getExperiencePrev()]).then(([text, prev]) => {
@@ -1516,6 +1521,7 @@ export default function App() {
       </div>
       </WorkContext.Provider>
       </ErrorContext.Provider>
+      </ProfileDraftContext.Provider>
       </ToastContext.Provider>
     </I18nContext.Provider>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useId, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import type {
   Contract,
   Criteria,
@@ -201,10 +201,18 @@ export function ProfileDialog({
   );
 }
 
+/** Settings → Profile left with changes not saved (another part, the settings closed): they wait
+ *  here, in the form, until saved - only closing the app loses them (the author 13.11.2026: no
+ *  saving by itself, a reminder instead). `key` = the profile id, "new" before the first one. */
+let draft: { key: string; form: Form } | null = null;
+
+const draftKey = (profile: Profile | null) => String(profile?.id ?? "new");
+
 /**
  * Settings → Profile: the one profile while "Several profiles" is off (the first profile, or a
- * new "My profile") - the same fields as the profile window, without the name. Saved by its own
- * button; unsaved changes are reported, so closing the settings asks first.
+ * new "My profile") - the same fields as the profile window, without the name. Saved only by its
+ * own button; changes left unsaved stay in the form (`draft`) and `onDraft` says so - the app
+ * reminds to save them.
  */
 export function ProfileSettings({
   profile,
@@ -215,7 +223,7 @@ export function ProfileSettings({
   onCareers,
   onTidy,
   onSave,
-  onDirty,
+  onDraft,
 }: {
   /** null = no profile yet - saving creates it. */
   profile: Profile | null;
@@ -226,37 +234,54 @@ export function ProfileSettings({
   onCareers: (description: string, experience: string) => Promise<CareerIdea[] | null>;
   onTidy: (text: string) => Promise<string | null>;
   onSave: (input: ProfileInput, experience: string) => Promise<boolean>;
-  onDirty: (dirty: boolean) => void;
+  /** true = left with changes not saved (the reminder shows), false = shown again or saved. */
+  onDraft: (left: boolean) => void;
 }) {
   const { t } = useI18n();
   const { errors, formProps } = useFieldErrors(true);
   const defaultName = t("profile.defaultName");
-  const [form, setForm] = useState<Form>(() => toForm(profile, experience, defaultName));
-  const [initial, setInitial] = useState<Form>(form);
+  const key = draftKey(profile);
+  const kept = () => (draft?.key === key ? draft.form : null);
+  const [form, setForm] = useState<Form>(() => kept() ?? toForm(profile, experience, defaultName));
+  const [initial, setInitial] = useState<Form>(() => toForm(profile, experience, defaultName));
   const [busy, setBusy] = useState(false);
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
   useEffect(() => {
     const start = toForm(profile, experience, defaultName);
-    setForm(start);
+    setForm(kept() ?? start);
     setInitial(start);
+    // `kept` reads the draft of this profile only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, experience, defaultName]);
 
-  useEffect(() => onDirty(dirty), [dirty, onDirty]);
-  useEffect(() => () => onDirty(false), [onDirty]);
+  // Shown: no reminder. Left with changes not saved: they wait in `draft` and the reminder shows.
+  const last = useRef({ form, dirty, key, onDraft });
+  last.current = { form, dirty, key, onDraft };
+  useEffect(() => {
+    last.current.onDraft(false);
+    return () => {
+      const { form, dirty, key, onDraft } = last.current;
+      draft = dirty ? { key, form } : null;
+      onDraft(dirty);
+    };
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     const ok = await onSave(toInput(form, profile?.id ?? null), form.experience);
     setBusy(false);
-    if (ok) setInitial(form);
+    if (ok) {
+      setInitial(form);
+      draft = null;
+    }
   }
 
   return (
     <FieldErrorsProvider value={errors}>
       <form onSubmit={submit} className="settings-part profile-part" {...formProps}>
-        <p className="hint">{t("profile.settingsIntro")}</p>
+        <p className="hint">{t("profile.intro")}</p>
         <ProfileFields
           form={form}
           setForm={setForm}
@@ -268,8 +293,8 @@ export function ProfileSettings({
           onCareers={onCareers}
           onTidy={onTidy}
         />
-        <div className="profile-save">
-          <button type="submit" className="btn btn-sign" disabled={busy || !dirty} aria-busy={busy}>
+        <div className="sheet-foot profile-save">
+          <button type="submit" className="btn btn-sign" disabled={busy}>
             {t("profile.save")}
           </button>
         </div>
