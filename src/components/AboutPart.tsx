@@ -159,11 +159,11 @@ export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink
             <IconWarning /> {t("about.noticesFailed")}
           </p>
         )}
-        {notices !== null && (
+        <Reveal show={notices !== null}>
           <pre id={noticesId} className="notices" tabIndex={0} aria-label={t("about.noticesShow")}>
             {notices}
           </pre>
-        )}
+        </Reveal>
       </section>
     </div>
   );

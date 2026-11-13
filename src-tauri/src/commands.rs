@@ -362,6 +362,12 @@ pub async fn set_setting(state: State<'_, AppState>, key: String, value: String)
         if key == "learn_scores" {
             learn::refresh(c)?;
         }
+        // Profiles asleep or woken up: offers sorted again by the profiles that count now.
+        if key == "multi_profile" {
+            let tx = c.transaction()?;
+            profiles::recheck_all(&tx)?;
+            tx.commit()?;
+        }
         ai::model_changed(c, &key)?;
         Ok(())
     })

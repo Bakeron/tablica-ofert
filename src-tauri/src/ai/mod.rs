@@ -1052,7 +1052,7 @@ pub async fn assist(state: &AppState, offer_id: i64, kind: Assist) -> AppResult<
     let (ai, key) = ai_from_settings(state).await?;
     let (facts, profiles_list, experience) = with_db(state, |c| {
         let facts = profiles::facts_of(c, offer_id)?.ok_or(AppError::NotFound)?;
-        Ok((facts, profiles::list(c)?, profiles::experience(c)?))
+        Ok((facts, profiles::active(c)?, profiles::experience(c)?))
     })?;
     let language = language_name(if crate::notify::polish(state) { "pl" } else { "en" });
     let task = match kind {
@@ -1300,7 +1300,7 @@ fn manual_order(mut cfgs: Vec<Config>) -> Vec<Config> {
 /// Fields of an offer from a pasted text or a preview page, and its scores - one call for both
 /// (the scores are stored when the offer is saved, `Draft::reading_id`).
 pub async fn extract(state: &AppState, text: &str, title_hint: Option<&str>) -> AppResult<crate::extract::Draft> {
-    let (s, profiles_list, experience) = with_db(state, |c| Ok((settings::all(c)?, profiles::list(c)?, profiles::experience(c)?)))?;
+    let (s, profiles_list, experience) = with_db(state, |c| Ok((settings::all(c)?, profiles::active(c)?, profiles::experience(c)?)))?;
     let cfgs = manual_order(configs(&s));
     if cfgs.is_empty() {
         return Err(AppError::Missing("ai provider".into()));

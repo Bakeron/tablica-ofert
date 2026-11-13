@@ -128,6 +128,25 @@ pub fn list(conn: &Connection) -> AppResult<Vec<Profile>> {
     Ok(rows)
 }
 
+/// The profiles that sort offers: all of them with "Several profiles" on, otherwise only the
+/// first one - the others wait asleep (kept, never deleted) until the option is on again.
+pub fn active(conn: &Connection) -> AppResult<Vec<Profile>> {
+    let mut all = list(conn)?;
+    if !crate::settings::is_on(conn, "multi_profile")? {
+        all.truncate(1);
+    }
+    Ok(all)
+}
+
+/// Filter results left from a profile that is asleep now (the option was turned off on the
+/// other device, or before this app version) - then every offer needs checking again.
+pub fn sleeping_results(conn: &Connection) -> AppResult<bool> {
+    let ids: Vec<i64> = active(conn)?.iter().map(|p| p.id).collect();
+    let mut stmt = conn.prepare("SELECT DISTINCT profile_id FROM offer_filters")?;
+    let used = stmt.query_map([], |r| r.get::<_, i64>(0))?.collect::<Result<Vec<_>, _>>()?;
+    Ok(used.iter().any(|id| !ids.contains(id)))
+}
+
 /// Creates or updates a profile and re-checks every offer against it. Returns the id.
 pub fn save(conn: &mut Connection, input: ProfileInput) -> AppResult<i64> {
     let name = clean_text(&input.name, MAX_NAME, "profile name", true)?;
@@ -359,9 +378,9 @@ pub fn facts_of(conn: &Connection, offer_id: i64) -> AppResult<Option<Facts>> {
         .map(|(_, f)| f))
 }
 
-/// Checks one offer (just added or merged) against every profile.
+/// Checks one offer (just added or merged) against every active profile.
 pub fn recheck_offer(tx: &Connection, offer_id: i64) -> AppResult<()> {
-    let profiles = list(tx)?;
+    let profiles = active(tx)?;
     let facts = tx
         .query_row(&format!("SELECT {FACT_COLUMNS} FROM offers WHERE id = ?1"), [offer_id], facts_from)
         .optional()?
@@ -372,7 +391,7 @@ pub fn recheck_offer(tx: &Connection, offer_id: i64) -> AppResult<()> {
 /// Checks every offer again - after a profile was created, changed or deleted
 /// (and once after an update that added new kinds of results).
 pub fn recheck_all(tx: &Transaction) -> AppResult<()> {
-    let profiles = list(tx)?;
+    let profiles = active(tx)?;
     let all = {
         let mut stmt = tx.prepare(&format!("SELECT {FACT_COLUMNS} FROM offers"))?;
         stmt.query_map([], facts_from)?.collect::<Result<Vec<_>, _>>()?
@@ -473,6 +492,38 @@ mod tests {
         delete(&mut conn, b).unwrap();
         assert_eq!(super::list(&conn).unwrap().len(), 1);
         assert!(matches!(delete(&mut conn, b), Err(AppError::NotFound)));
+    }
+
+    /// "Several profiles" off: only the first profile sorts offers, the others wait asleep and
+    /// come back, untouched, when the option is on again.
+    #[test]
+    fn sleeping_profiles_sort_nothing_until_woken() {
+        let mut conn = test_db();
+        let a = save(&mut conn, plan("Plan A", remote_only())).unwrap();
+        let b = save(&mut conn, plan("Plan B", gdansk())).unwrap();
+        offers::add(&mut conn, offer("Frontend Developer", "Gdańsk", Remote::No)).unwrap();
+        let checked = |c: &Connection| -> Vec<i64> {
+            let mut stmt = c.prepare("SELECT DISTINCT profile_id FROM offer_filters ORDER BY profile_id").unwrap();
+            stmt.query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        assert_eq!(active(&conn).unwrap().iter().map(|p| p.id).collect::<Vec<_>>(), vec![a]);
+        assert_eq!(checked(&conn), vec![a]);
+        assert!(!sleeping_results(&conn).unwrap());
+
+        crate::settings::set(&conn, "multi_profile", "on").unwrap();
+        let tx = conn.transaction().unwrap();
+        recheck_all(&tx).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(checked(&conn), vec![a, b]);
+
+        // Turned off on the other device: the results of Plan B are left until the next check.
+        crate::settings::set(&conn, "multi_profile", "off").unwrap();
+        assert!(sleeping_results(&conn).unwrap());
+        let tx = conn.transaction().unwrap();
+        recheck_all(&tx).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(checked(&conn), vec![a]);
+        assert_eq!(list(&conn).unwrap().len(), 2);
     }
 
     #[test]
@@ -593,6 +644,7 @@ mod tests {
     #[test]
     fn offers_are_rechecked_when_profiles_change() {
         let mut conn = test_db();
+        crate::settings::set(&conn, "multi_profile", "on").unwrap();
         offers::add(&mut conn, offer("Zdalna", "Kraków", Remote::Yes)).unwrap();
         offers::add(&mut conn, offer("Biuro Gdynia", "Gdynia", Remote::No)).unwrap();
         offers::add(&mut conn, offer("Biuro Kraków", "Kraków", Remote::No)).unwrap();

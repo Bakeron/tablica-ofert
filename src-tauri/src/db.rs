@@ -251,6 +251,13 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
         crate::profiles::recheck_all(&tx)?;
         tx.commit()?;
     }
+    // "Several profiles" off (the default since 13.11.2026): offers checked before against the
+    // profiles asleep now are checked again, once.
+    if exists && crate::profiles::sleeping_results(&conn)? {
+        let tx = conn.transaction()?;
+        crate::profiles::recheck_all(&tx)?;
+        tx.commit()?;
+    }
     // Ratings given before learning came in count at once.
     if before < 20 {
         crate::learn::refresh(&mut conn)?;

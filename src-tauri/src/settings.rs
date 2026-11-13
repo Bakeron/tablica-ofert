@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 
 /// Settings that travel with sync (the last change wins): they decide what the board shows,
 /// so both devices must agree. All the others stay on their device.
-pub const SYNCED: &[&str] = &["fresh_days", "today_count"];
+pub const SYNCED: &[&str] = &["fresh_days", "today_count", "multi_profile"];
 
 const OLDEST_CHANGE: &str = "2000-01-01T00:00:00Z";
 
@@ -41,6 +41,9 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("sound", Rule::One(&["off", "on"])),
     // Tilted decorations (the score stamp); off = everything stands straight.
     ("tilt", Rule::One(&["off", "on"])),
+    // "Several profiles": off = one profile (the first), edited in the settings; the others
+    // wait asleep - kept, but they sort no offers - until it is turned on again.
+    ("multi_profile", Rule::One(&["off", "on"])),
     // "First steps" shown at the first start until finished or skipped.
     ("onboarding", Rule::One(&["pending", "done"])),
     // "Collect offers automatically" (sources, mail alerts, AI on its own); off = only the

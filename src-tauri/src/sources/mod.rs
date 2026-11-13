@@ -343,7 +343,7 @@ struct Snapshot {
 fn snapshot(conn: &Connection) -> AppResult<Snapshot> {
     Ok(Snapshot {
         settings: settings::all(conn)?,
-        profiles: profiles::list(conn)?,
+        profiles: profiles::active(conn)?,
         runs: last_runs(conn)?,
 
         adzuna_calls: usage::calls_today(conn, adzuna::SOURCE)?,

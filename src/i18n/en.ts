@@ -506,6 +506,8 @@ export const en: Record<keyof typeof pl, string> = {
   "first.s1": "What you are looking for",
   "first.s2": "AI provider",
   "first.s3": "Offer sources",
+  "first.s1IntroSingle":
+    "Describe the job you are looking for. The app sorts offers by it, and later AI will score them. You write it - AI does not make it up. Keywords (at the bottom) are needed to search the aggregators. Fields left empty do not limit anything. You can change it later in Settings, part “Profile”.",
   "first.s1Intro":
     "Describe the job you are looking for. The app sorts offers by it, and later AI will score them. You write it - AI does not make it up. Keywords (at the bottom) are needed to search the aggregators. Fields left empty do not limit anything.",
   "first.s2Text":
@@ -527,6 +529,14 @@ export const en: Record<keyof typeof pl, string> = {
 
   "settings.section": "Settings section",
   "settings.s.look": "Look",
+  "settings.s.profile": "Profile",
+  "multi.title": "Profiles",
+  "multi.label": "Several profiles",
+  "multi.hint":
+    "Off: you have one profile and change it in Settings, part “Profile”. On: you can add more profiles (e.g. “remote” and “in the office”) and switch between them above the offer list - the first one is your profile so far. Turning it off deletes nothing: the extra profiles wait hidden and come back when you turn the option on again.",
+  "profile.defaultName": "My profile",
+  "profile.settingsIntro":
+    "A profile tells the app what you are looking for. Hard filters sort offers at once and without AI - they only reject what surely does not fit. The “Save profile” button at the bottom saves the changes.",
   "settings.s.sources": "Offer sources",
   "collect.label": "Collect offers automatically (e-mail alerts and aggregators)",
   "collect.hintOn": "Collected offers are in the “Collected” tab. Off - only your own offers stay (Own and Trash); the collected ones stay in the database and come back when this is on again.",

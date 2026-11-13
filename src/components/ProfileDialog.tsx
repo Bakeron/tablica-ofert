@@ -202,12 +202,91 @@ export function ProfileDialog({
 }
 
 /**
- * Every field of a profile - the same in the profile window and in "First steps".
+ * Settings → Profile: the one profile while "Several profiles" is off (the first profile, or a
+ * new "My profile") - the same fields as the profile window, without the name. Saved by its own
+ * button; unsaved changes are reported, so closing the settings asks first.
+ */
+export function ProfileSettings({
+  profile,
+  experience,
+  experiencePrev,
+  aiOn,
+  onSuggest,
+  onCareers,
+  onTidy,
+  onSave,
+  onDirty,
+}: {
+  /** null = no profile yet - saving creates it. */
+  profile: Profile | null;
+  experience: string;
+  experiencePrev: string | null;
+  aiOn: boolean;
+  onSuggest: (description: string) => Promise<Criteria | null>;
+  onCareers: (description: string, experience: string) => Promise<CareerIdea[] | null>;
+  onTidy: (text: string) => Promise<string | null>;
+  onSave: (input: ProfileInput, experience: string) => Promise<boolean>;
+  onDirty: (dirty: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const { errors, formProps } = useFieldErrors(true);
+  const defaultName = t("profile.defaultName");
+  const [form, setForm] = useState<Form>(() => toForm(profile, experience, defaultName));
+  const [initial, setInitial] = useState<Form>(form);
+  const [busy, setBusy] = useState(false);
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+
+  useEffect(() => {
+    const start = toForm(profile, experience, defaultName);
+    setForm(start);
+    setInitial(start);
+  }, [profile, experience, defaultName]);
+
+  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  useEffect(() => () => onDirty(false), [onDirty]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const ok = await onSave(toInput(form, profile?.id ?? null), form.experience);
+    setBusy(false);
+    if (ok) setInitial(form);
+  }
+
+  return (
+    <FieldErrorsProvider value={errors}>
+      <form onSubmit={submit} className="settings-part profile-part" {...formProps}>
+        <p className="hint">{t("profile.settingsIntro")}</p>
+        <ProfileFields
+          form={form}
+          setForm={setForm}
+          showName={false}
+          descriptionPrev={profile?.descriptionPrev ?? null}
+          experiencePrev={experiencePrev}
+          aiOn={aiOn}
+          onSuggest={onSuggest}
+          onCareers={onCareers}
+          onTidy={onTidy}
+        />
+        <div className="profile-save">
+          <button type="submit" className="btn btn-sign" disabled={busy || !dirty} aria-busy={busy}>
+            {t("profile.save")}
+          </button>
+        </div>
+      </form>
+    </FieldErrorsProvider>
+  );
+}
+
+/**
+ * Every field of a profile - the same in the profile window, in Settings → Profile and in
+ * "First steps". `showName` false: one profile ("Several profiles" off) - its name stays as it is.
  * `descriptionPrev` / `experiencePrev`: texts before the last change, can be brought back.
  */
 export function ProfileFields({
   form,
   setForm,
+  showName = true,
   descriptionPrev,
   experiencePrev,
   aiOn,
@@ -217,6 +296,7 @@ export function ProfileFields({
 }: {
   form: Form;
   setForm: Dispatch<SetStateAction<Form>>;
+  showName?: boolean;
   descriptionPrev: string | null;
   experiencePrev: string | null;
   aiOn: boolean;
@@ -306,21 +386,23 @@ export function ProfileFields({
 
   return (
     <>
-      <label className="field field-name">
-        <span>
-          {t("profile.name")} <em className="req">({t("add.required")})</em>
-        </span>
-        <input
-          required
-          maxLength={PROFILE_NAME_MAX}
-          placeholder={t("profile.namePlaceholder")}
-          value={form.name}
-          onChange={(e) => set("name", e.target.value)}
-          data-autofocus
-          {...nameField}
-        />
-        <FieldError name="profile-name" />
-      </label>
+      {showName && (
+        <label className="field field-name">
+          <span>
+            {t("profile.name")} <em className="req">({t("add.required")})</em>
+          </span>
+          <input
+            required
+            maxLength={PROFILE_NAME_MAX}
+            placeholder={t("profile.namePlaceholder")}
+            value={form.name}
+            onChange={(e) => set("name", e.target.value)}
+            data-autofocus
+            {...nameField}
+          />
+          <FieldError name="profile-name" />
+        </label>
+      )}
 
       <DescriptionField value={form.description} onChange={(v) => set("description", v)} />
       {(aiOn || (descriptionPrev !== null && descriptionPrev !== form.description)) && (

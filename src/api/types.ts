@@ -571,6 +571,9 @@ export interface Settings {
   sound: "off" | "on";
   /** Tilted decorations (the score stamp); off = everything stands straight. */
   tilt: "off" | "on";
+  /** "Several profiles": off = one profile (the first), edited in Settings → Profile; the
+   *  others wait asleep and sort no offers. Travels with sync. */
+  multi_profile: "off" | "on";
   /** "First steps" at the first start, until finished or skipped. */
   onboarding: "pending" | "done";
   /** "Collect offers automatically": off = only own offers ("Collected", "Fetch offers" and the
@@ -643,6 +646,7 @@ export const DEFAULT_SETTINGS: Settings = {
   text_size: "normal",
   sound: "off",
   tilt: "off",
+  multi_profile: "off",
   onboarding: "done",
   collect: "on",
   fetch_auto: "on",

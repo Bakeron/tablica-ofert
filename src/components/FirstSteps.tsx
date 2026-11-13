@@ -14,12 +14,15 @@ const STEPS: TextKey[] = ["first.s1", "first.s2", "first.s3"];
  */
 export function FirstSteps({
   open,
+  multi,
   collect,
   onCollect,
   onSaveProfile,
   onFinish,
 }: {
   open: boolean;
+  /** "Several profiles" on - the profile gets a name; off - it is simply "My profile". */
+  multi: boolean;
   /** "Collect offers automatically" - asked in the last step, saved at once. */
   collect: boolean;
   onCollect: (on: boolean) => void;
@@ -44,7 +47,8 @@ export function FirstSteps({
     e.preventDefault();
     if (step === 0 && !saved) {
       setBusy(true);
-      const ok = await onSaveProfile(toInput(form, null), form.experience);
+      const named = multi ? form : { ...form, name: t("profile.defaultName") };
+      const ok = await onSaveProfile(toInput(named, null), form.experience);
       setBusy(false);
       if (!ok) return;
       setSaved(true);
@@ -83,8 +87,8 @@ export function FirstSteps({
         {step === 0 && (
           // Once saved, the first profile is changed in the profile window, not here.
           <fieldset className="plain" disabled={saved}>
-            <p>{t("first.s1Intro")}</p>
-            <ProfileFields form={form} setForm={setForm} descriptionPrev={null} experiencePrev={null} aiOn={false} />
+            <p>{t(multi ? "first.s1Intro" : "first.s1IntroSingle")}</p>
+            <ProfileFields form={form} setForm={setForm} showName={multi} descriptionPrev={null} experiencePrev={null} aiOn={false} />
           </fieldset>
         )}
         {step === 1 && <p className="first-text">{t("first.s2Text")}</p>}

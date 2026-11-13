@@ -145,7 +145,7 @@ export function SourcesSettings({
           <span>{t("src.auto")}</span>
         </label>
         )}
-        {collecting && settings.fetch_auto === "on" && (
+        <Reveal show={collecting && settings.fetch_auto === "on"}>
           <label className="field field-inline">
             <span>{t("src.every")}</span>
             <select value={settings.fetch_every} onChange={(e) => onChange("fetch_every", e.target.value as Settings["fetch_every"])}>
@@ -156,7 +156,7 @@ export function SourcesSettings({
               ))}
             </select>
           </label>
-        )}
+        </Reveal>
         {collecting && <p className="hint">{t("src.keywordsNote")}</p>}
         <label className="choice-item">
           <input type="checkbox" checked={settings.background_task === "on"} disabled={taskBusy} onChange={(e) => toggleBackground(e.target.checked)} />
@@ -328,7 +328,7 @@ export function SourceBox({
       </div>
       <p className="source-short">{short}</p>
       {alert}
-      {!open && state && <SourceState s={state} lang={lang} onlyProblems />}
+      <Reveal show={!open && !!state}>{state && <SourceState s={state} lang={lang} onlyProblems />}</Reveal>
       <Reveal show={open}>
         <div id={`${id}-more`} className="source-more" role="region" aria-label={t("src.more", { name })}>
           {children}

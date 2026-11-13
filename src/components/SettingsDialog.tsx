@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Api } from "../api";
-import { TEXT_SIZES, type Profile, type Settings } from "../api/types";
+import { TEXT_SIZES, type CareerIdea, type Criteria, type Profile, type ProfileInput, type Settings } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { CloseButton, Modal } from "./Modal";
 import { AboutPart } from "./AboutPart";
 import { AiSettings } from "./AiSettings";
 import { DataSettings } from "./DataSettings";
+import { ProfileSettings } from "./ProfileDialog";
 import { SourcesSettings } from "./SourcesSettings";
 import { SyncSettings } from "./SyncSettings";
 import { ConfirmContext } from "./SecretField";
@@ -29,11 +30,28 @@ const LIST_OPTIONS: { key: "fresh_days" | "today_count"; label: TextKey; unit: T
 
 const LANGUAGE_NAMES: Record<string, string> = { pl: "Polski", en: "English" };
 
-export type SettingsSection = "look" | "sources" | "ai" | "sync" | "data" | "about";
+export type SettingsSection = "profile" | "look" | "sources" | "ai" | "sync" | "data" | "about";
 /** The phone is a helper - collecting offers, AI and data tools stay on the PC. */
-const SECTIONS: SettingsSection[] = isPhone() ? ["sync", "look", "about"] : ["sources", "ai", "look", "sync", "data", "about"];
+const BASE_SECTIONS: SettingsSection[] = isPhone() ? ["sync", "look", "about"] : ["sources", "ai", "look", "sync", "data", "about"];
 
-const FIRST_SECTION: SettingsSection = isPhone() ? "sync" : "sources";
+/** One profile ("Several profiles" off): its part comes first, on the PC and on the phone - and
+ *  the window opens on it. With several profiles they are edited above the offer list. */
+function sectionsFor(settings: Settings): SettingsSection[] {
+  return settings.multi_profile === "on" ? BASE_SECTIONS : ["profile", ...BASE_SECTIONS];
+}
+
+/** What Settings → Profile needs - the same as the profile window. */
+export interface ProfilePartProps {
+  experience: string;
+  experiencePrev: string | null;
+  aiOn: boolean;
+  onSuggest: (description: string) => Promise<Criteria | null>;
+  onCareers: (description: string, experience: string) => Promise<CareerIdea[] | null>;
+  onTidy: (text: string) => Promise<string | null>;
+  onSave: (input: ProfileInput, experience: string) => Promise<boolean>;
+  /** Reads the work experience (shared by all profiles) before the part shows it. */
+  onLoadExperience: () => void;
+}
 
 /** How long the window may still grow into the remembered place (sections load their data). */
 const SCROLL_BACK_MS = 1500;
@@ -46,6 +64,7 @@ export function SettingsDialog({
   api,
   settings,
   profiles,
+  profilePart,
   initialSection,
   onClose,
   onChange,
@@ -61,6 +80,7 @@ export function SettingsDialog({
   api: Api | null;
   settings: Settings;
   profiles: Profile[];
+  profilePart: ProfilePartProps;
   /** Opened from a place that needs this section; without it the window comes back as it was left. */
   initialSection?: SettingsSection;
   onClose: () => void;
@@ -74,12 +94,16 @@ export function SettingsDialog({
   onLoaded: () => void;
 }) {
   const { t } = useI18n();
+  // Settings → Profile with unsaved changes: closing asks first, like the profile window.
+  const [profileDirty, setProfileDirty] = useState(false);
   return (
-    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide modal-settings">
+    <Modal open={open} onClose={onClose} labelledBy="settings-title" className="modal-wide modal-settings" dirty={profileDirty}>
       <SettingsBody
         api={api}
         settings={settings}
         profiles={profiles}
+        profilePart={profilePart}
+        onProfileDirty={setProfileDirty}
         initialSection={initialSection}
         onClose={onClose}
         onChange={onChange}
@@ -101,6 +125,8 @@ function SettingsBody({
   api,
   settings,
   profiles,
+  profilePart,
+  onProfileDirty,
   initialSection,
   onClose,
   onChange,
@@ -116,6 +142,8 @@ function SettingsBody({
   api: Api | null;
   settings: Settings;
   profiles: Profile[];
+  profilePart: ProfilePartProps;
+  onProfileDirty: (dirty: boolean) => void;
   initialSection?: SettingsSection;
   onClose: () => void;
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void | Promise<boolean>;
@@ -129,7 +157,10 @@ function SettingsBody({
   closeLabel: string;
 }) {
   const { t } = useI18n();
-  const [section, setSection] = useState<SettingsSection>(initialSection ?? settingsMemory.section ?? FIRST_SECTION);
+  const sections = sectionsFor(settings);
+  const [chosen, setSection] = useState<SettingsSection>(initialSection ?? settingsMemory.section ?? sections[0]);
+  // "Several profiles" turned on (here or by sync): the Profile part is gone - the first one shows.
+  const section = sections.includes(chosen) ? chosen : sections[0];
   const sheet = useRef<HTMLDivElement>(null);
   const stopFollowing = useRef<(() => void) | null>(null);
 
@@ -188,7 +219,7 @@ function SettingsBody({
           <CloseButton onClick={onClose} label={closeLabel} />
         </header>
         <nav className="settings-nav" aria-label={t("settings.section")}>
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button key={s} type="button" className="seg" aria-pressed={section === s} onClick={() => openSection(s)}>
               {t(`settings.s.${s}` as TextKey)}
             </button>
@@ -220,6 +251,23 @@ function SettingsBody({
             {option.hint && <p className="hint">{t(option.hint)}</p>}
           </fieldset>
         ))}
+
+      {section === "look" && (
+        <fieldset className="choice choice-column">
+          <legend>{t("multi.title")}</legend>
+          <label className="choice-item">
+            <input
+              type="checkbox"
+              checked={settings.multi_profile === "on"}
+              onChange={(e) => onChange("multi_profile", e.target.checked ? "on" : "off")}
+            />
+            <span>{t("multi.label")}</span>
+          </label>
+          <p className="hint">{t("multi.hint")}</p>
+        </fieldset>
+      )}
+
+      {section === "profile" && <ProfilePart profile={profiles[0] ?? null} part={profilePart} onDirty={onProfileDirty} />}
 
       {section === "look" && (
         <fieldset className="choice choice-column">
@@ -305,6 +353,25 @@ function SettingsBody({
       )}
     </div>
     </ConfirmContext.Provider>
+  );
+}
+
+/** Settings → Profile: the work experience is read first (it is shared by every profile). */
+function ProfilePart({ profile, part, onDirty }: { profile: Profile | null; part: ProfilePartProps; onDirty: (dirty: boolean) => void }) {
+  const load = useRef(part.onLoadExperience);
+  useEffect(() => load.current(), []);
+  return (
+    <ProfileSettings
+      profile={profile}
+      experience={part.experience}
+      experiencePrev={part.experiencePrev}
+      aiOn={part.aiOn}
+      onSuggest={part.onSuggest}
+      onCareers={part.onCareers}
+      onTidy={part.onTidy}
+      onSave={part.onSave}
+      onDirty={onDirty}
+    />
   );
 }
 

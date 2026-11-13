@@ -316,6 +316,14 @@ export default function App() {
   useEffect(() => {
     reload(false);
   }, [reload]);
+  const reloadNow = useRef(reload);
+  reloadNow.current = reload;
+
+  // "Several profiles" off: one profile, no signs above the list - the list shows what it sorts.
+  const multiProfile = settings.multi_profile === "on";
+  useEffect(() => {
+    if (!multiProfile) setProfileId(null);
+  }, [multiProfile]);
 
   // Every tab opens in its own order - and at its top.
   useEffect(() => setSort(null), [view]);
@@ -1075,7 +1083,11 @@ export default function App() {
     setSettings((s) => ({ ...s, [key]: value }));
     if (!api) return Promise.resolve(false);
     return api.setSetting(key, value).then(
-      () => true,
+      () => {
+        // Rust has sorted the offers again by the profiles that count now.
+        if (key === "multi_profile") reloadNow.current();
+        return true;
+      },
       (e) => {
         fail(e);
         // Refused by Rust (wrong value) - show what is really saved.
@@ -1238,7 +1250,7 @@ export default function App() {
         <main className="split">
           <section className="board-panel" aria-labelledby="board-heading">
             {/* Profiles sort out collected offers; the bin keeps everything, whatever the profile. */}
-            {!isBin(view) && (
+            {!isBin(view) && multiProfile && (
               <ProfileTabs
                 profiles={profiles}
                 current={profileId}
@@ -1444,6 +1456,7 @@ export default function App() {
         />
         <FirstSteps
           open={firstSteps}
+          multi={multiProfile}
           collect={settings.collect === "on"}
           onCollect={(on) => changeSetting("collect", on ? "on" : "off")}
           onSaveProfile={saveProfile}
@@ -1454,6 +1467,22 @@ export default function App() {
           api={api}
           settings={settings}
           profiles={profiles}
+          profilePart={{
+            experience,
+            experiencePrev,
+            aiOn: aiOn(settings),
+            onSuggest: suggestCriteria,
+            onCareers: suggestCareers,
+            onTidy: tidyText,
+            onSave: saveProfile,
+            onLoadExperience: () => {
+              if (!api) return;
+              Promise.all([api.getExperience(), api.getExperiencePrev()]).then(([text, prev]) => {
+                setExperience(text);
+                setExperiencePrev(prev);
+              }, fail);
+            },
+          }}
           initialSection={settingsSection}
           onClose={() => setSettingsOpen(false)}
           onChange={changeSetting}

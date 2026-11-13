@@ -506,6 +506,8 @@ export const pl = {
   "first.s1": "Czego szukasz",
   "first.s2": "Dostawca AI",
   "first.s3": "Źródła ofert",
+  "first.s1IntroSingle":
+    "Opisz, jakiej pracy szukasz. Na tej podstawie aplikacja sortuje oferty, a później oceni je AI. Opis piszesz Ty - AI go nie wymyśla. Słowa kluczowe (na dole) są potrzebne do wyszukiwania ofert w agregatorach. Pola, których nie wypełnisz, niczego nie ograniczają. Później zmienisz to w Ustawieniach, część „Profil”.",
   "first.s1Intro":
     "Opisz, jakiej pracy szukasz. Na tej podstawie aplikacja sortuje oferty, a później oceni je AI. Opis piszesz Ty - AI go nie wymyśla. Słowa kluczowe (na dole) są potrzebne do wyszukiwania ofert w agregatorach. Pola, których nie wypełnisz, niczego nie ograniczają.",
   "first.s2Text":
@@ -527,6 +529,14 @@ export const pl = {
 
   "settings.section": "Część ustawień",
   "settings.s.look": "Wygląd",
+  "settings.s.profile": "Profil",
+  "multi.title": "Profile",
+  "multi.label": "Kilka profili",
+  "multi.hint":
+    "Wyłączone: masz jeden profil i zmieniasz go w Ustawieniach, część „Profil”. Włączone: możesz dodać kolejne profile (np. „zdalnie” i „w biurze”) i przełączać je nad listą ofert - pierwszy to Twój dotychczasowy profil. Wyłączenie niczego nie usuwa: dodatkowe profile czekają ukryte i wrócą, gdy włączysz opcję znowu.",
+  "profile.defaultName": "Mój profil",
+  "profile.settingsIntro":
+    "Profil mówi aplikacji, czego szukasz. Twarde filtry sortują oferty od razu i bez AI - odrzucają tylko to, co na pewno nie pasuje. Zmiany zapisuje przycisk „Zapisz profil” na dole.",
   "settings.s.sources": "Źródła ofert",
   "collect.label": "Zbieraj oferty automatycznie (alerty e-mail i agregatory)",
   "collect.hintOn": "Zebrane oferty są w zakładce „Zebrane”. Wyłączone - zostają tylko Twoje oferty (Własne i Kosz); zebrane nie znikają z bazy i wrócą po ponownym włączeniu.",

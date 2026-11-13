@@ -9,6 +9,7 @@ import { cancelScan, isPhone, openAppSettings, scanSyncKey } from "../lib/platfo
 import { TEXT_MAX } from "../lib/limits";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { IconArrowOut, IconWarning } from "./Icons";
+import { Reveal } from "./Reveal";
 import { SecretField } from "./SecretField";
 import { TextSetting } from "./TextSetting";
 
@@ -217,8 +218,7 @@ export function SyncSettings({
         <span>{t("sync.enable")}</span>
       </label>
 
-      {settings.sync_drive === "on" && (
-        <>
+      <Reveal show={settings.sync_drive === "on"} className="settings-stack">
           {status && (!status.client || editClient) && (
             <section className="source" aria-labelledby="client-title">
               <h3 id="client-title" className="source-title">{t("sync.clientTitle")}</h3>
@@ -424,8 +424,7 @@ export function SyncSettings({
             )}
           </section>
           )}
-        </>
-      )}
+      </Reveal>
 
       {isPhone() && about}
     </div>

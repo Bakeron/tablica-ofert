@@ -267,7 +267,7 @@ export function AiSettings({
           <input type="checkbox" checked={settings.ai_auto === "on"} onChange={(e) => onChange("ai_auto", e.target.checked ? "on" : "off")} />
           <span>{t("ai.auto")}</span>
         </label>
-        {settings.ai_auto === "on" && (
+        <Reveal show={settings.ai_auto === "on"}>
           <label className="field field-inline">
             <span>{t("ai.every")}</span>
             <select value={settings.ai_every} onChange={(e) => onChange("ai_every", e.target.value as Settings["ai_every"])}>
@@ -278,7 +278,7 @@ export function AiSettings({
               ))}
             </select>
           </label>
-        )}
+        </Reveal>
         <p className="hint">{t(settings.ai_auto === "on" ? "ai.autoOnHint" : "ai.autoOffHint")}</p>
         <label className="choice-item">
           <input type="checkbox" checked={settings.learn_scores === "on"} onChange={(e) => onChange("learn_scores", e.target.checked ? "on" : "off")} />
