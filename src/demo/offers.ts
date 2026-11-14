@@ -3,6 +3,7 @@
 
 import type { Criteria, FilterResult, Interest, OfferAi, OfferInput, Reason, Stage } from "../api/types";
 import { emptyCriteria } from "../lib/profile";
+import { MORE_OFFERS } from "./more";
 
 export interface DemoProfile {
   name: string;
@@ -555,4 +556,5 @@ export const DEMO_OFFERS: DemoOffer[] = [
       description: "Rozwój systemu rezerwacji dla sieci hosteli. Biuro w Gdańsku raz w tygodniu.",
     },
   },
+  ...MORE_OFFERS,
 ];

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createApi, type Api } from "./api";
+import { DEMO } from "./lib/demo";
 import {
   DEFAULT_SETTINGS,
   aiOn,
@@ -526,6 +527,8 @@ export default function App() {
       await reload();
       setToast({ text: rateSummary(report, t, lang) });
     } catch (e) {
+      // "AI is working…" must not stay next to the error.
+      setToast(null);
       fail(e);
     }
   }
@@ -1202,7 +1205,7 @@ export default function App() {
           </div>
         </header>
 
-        {status?.version.endsWith("preview") && <p className="preview-badge">{t("preview.badge")}</p>}
+        {status?.version.endsWith("preview") && <p className="preview-badge">{t(DEMO ? "demo.badge" : "preview.badge")}</p>}
 
         <Reveal show={locked || error !== null}>
           {(locked || error) && (

@@ -7,6 +7,8 @@ import { IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
 import privacyPolicy from "../../PRIVACY.md?raw";
 
+const REPO = "https://github.com/Bakeron/tablica-ofert";
+
 /** Main libraries and fonts with their licences; every library with its full text is in
  *  `public/third-party-notices.txt` (made by `npm run notices`). */
 const LICENSES: [string, string][] = [
@@ -152,6 +154,9 @@ export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink
             onClick={toggleNotices}
           >
             {t(notices === null ? "about.noticesShow" : "about.noticesHide")}
+          </button>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => onOpenLink(REPO)}>
+            {t("about.repo")}
           </button>
         </div>
         {noticesFailed && (

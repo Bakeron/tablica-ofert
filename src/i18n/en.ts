@@ -368,6 +368,7 @@ export const en: Record<keyof typeof pl, string> = {
   "error.lockedPhone":
     "Your data could not be opened safely. Saving is blocked so nothing gets overwritten. If your data is on the computer: Android Settings → Apps → Tablica Ofert → Storage → “Clear data”, then connect the phone to the computer again (QR code) and sync with Google Drive.",
   "error.generic": "Something went wrong - try again.",
+  "error.demo": "Does not work in the demo version - it does in the real app.",
   "error.invalid": "Check the data you entered.",
   "error.not_found": "This offer no longer exists.",
   "error.details": "Technical details",
@@ -378,6 +379,7 @@ export const en: Record<keyof typeof pl, string> = {
   "modal.leave": "Close without saving",
 
   "preview.badge": "Browser preview - sample data",
+  "demo.badge": "Demo version - made-up data; changes are gone when you reload the page",
 
   "tabs.review": "To check",
   "board.empty.review": "Nothing to check.",
@@ -1115,6 +1117,7 @@ export const en: Record<keyof typeof pl, string> = {
   "about.noticesShow": "Full licence texts",
   "about.noticesHide": "Hide licence texts",
   "about.noticesFailed": "Could not load the licence texts.",
+  "about.repo": "Code on GitHub",
 
   "settings.s.sync": "Sync",
   "sync.intro": "Shared data of the computer and the phone through your Google Drive: one file “tablica-ofert.sync” in “My Drive” (the app sees only the files it made - do not delete or move it). The file is encrypted on this computer before it goes to Drive - even someone with access to the Google account cannot read it. Without sync the computer works on its own.",

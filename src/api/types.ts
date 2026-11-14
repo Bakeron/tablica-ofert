@@ -782,9 +782,9 @@ export interface WorkProgress {
   parts: number;
 }
 
-/** Error shape sent by the Rust side (`AppError`). */
+/** Error shape sent by the Rust side (`AppError`); `demo` only from the website demo (`lib/demo.ts`). */
 export interface AppError {
-  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy" | "outdated" | "other_outdated";
+  code: "db" | "io" | "secret" | "locked" | "invalid" | "not_found" | "net" | "auth" | "limit" | "missing" | "busy" | "outdated" | "other_outdated" | "demo";
   detail: string;
 }
 
@@ -802,7 +802,7 @@ export function describeError(e: unknown): { key: string; detail: string } {
   if (!isAppError(e)) return { key: "error.generic", detail: String(e) };
   // Claude's daily spending limit from the settings (`ai::BUDGET`) - not the service's limit.
   if (e.code === "limit" && e.detail === "claude daily budget") return { key: "error.budget", detail: e.detail };
-  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy", "outdated", "other_outdated"];
+  const known = ["locked", "invalid", "not_found", "net", "auth", "limit", "missing", "busy", "outdated", "other_outdated", "demo"];
   return { key: known.includes(e.code) ? `error.${e.code}` : "error.generic", detail: e.detail };
 }
 

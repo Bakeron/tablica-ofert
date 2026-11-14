@@ -9,6 +9,7 @@ import { AI_PROVIDERS, aiOn, type AiProvider, type AiStatus, type CareerIdea, ty
 import { bestResult, isKept, viewFor } from "../lib/profile";
 import { JOOBLE_KEY_CALLS } from "../lib/limits";
 import type { Api } from "./index";
+import { DEMO, DEMO_ERROR } from "../lib/demo";
 import { DEFAULT_SETTINGS, type DupCandidate, type FieldNote, type OfferDetail, type OfferInput, type OfferRow, type SentVia, type SameField, type SameOffer, type SameWas, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
 
 /** Listeners of the line at the bottom ("work-progress"). */
@@ -16,6 +17,10 @@ const progressListeners = new Set<(step: WorkProgress | null) => void>();
 /** Made-up models "in Ollama". */
 const ollamaModels = ["llama3.2:3b"];
 const tellProgress = (step: WorkProgress | null) => progressListeners.forEach((l) => l(step));
+/** In the website demo: calls that need the real app (internet, files, the system) stop here. */
+const outside = () => {
+  if (DEMO) throw DEMO_ERROR;
+};
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -83,11 +88,24 @@ export function createMockApi(): Api {
           : [{ profileId: 1, profileName: DEMO_PROFILES[0].name, score, source: source ?? "keywords", why: null, quote: null }],
     };
   }
-  const settings: Settings = { ...DEFAULT_SETTINGS, onboarding: firstRun ? "pending" : "done", source_remotive: "on" };
-  const secrets: SecretHints = {};
+  const settings: Settings = {
+    ...DEFAULT_SETTINGS,
+    onboarding: firstRun ? "pending" : "done",
+    source_remotive: "on",
+    // The demo shows a working setup: paid Claude chosen, a few sources on (nothing is called).
+    ...(DEMO ? { ai_mode: "claude", source_himalayas: "on", source_weworkremotely: "on", source_mail: "on", mail_user: "alerty.przyklad@example.com" } : {}),
+  };
+  const secrets: SecretHints = DEMO ? { "ai-key-anthropic": "••••demo", "mail-password": "••••demo" } : {};
   const secretValues: Partial<Record<SecretName, string>> = {};
   const sourceRuns: Partial<Record<string, Pick<SourceStatus, "lastTry" | "lastOk" | "lastError" | "added" | "merged" | "callsToday">>> = {
     remotive: { lastTry: hoursAgo(5), lastOk: hoursAgo(5), lastError: null, added: 4, merged: 1, callsToday: 2 },
+    ...(DEMO
+      ? {
+          himalayas: { lastTry: hoursAgo(5), lastOk: hoursAgo(5), lastError: null, added: 2, merged: 0, callsToday: 3 },
+          weworkremotely: { lastTry: hoursAgo(5), lastOk: hoursAgo(5), lastError: null, added: 1, merged: 1, callsToday: 1 },
+          mail: { lastTry: hoursAgo(1), lastOk: hoursAgo(1), lastError: null, added: 6, merged: 2, callsToday: 0 },
+        }
+      : {}),
   };
 
   /** The same company and title as another offer, not joined (`dup_of` in Rust). */
@@ -626,6 +644,7 @@ export function createMockApi(): Api {
       return findCandidates(o, family);
     },
     async judgeDuplicates(_of, ids) {
+      outside();
       await new Promise((r) => setTimeout(r, 600));
       return ids.map((id, i) => ({
         id,
@@ -861,16 +880,19 @@ export function createMockApi(): Api {
       ];
     },
     async mailTest() {
+      outside();
       await new Promise((r) => setTimeout(r, 600));
       if (!settings.mail_user || !secrets["mail-password"]) throw { code: "missing", detail: "mailbox" };
       return 42;
     },
     async sourceTest(source) {
+      outside();
       await new Promise((r) => setTimeout(r, 600));
       const run = sourceRuns[source];
       if (run) run.lastError = null;
     },
     async fetchOffers() {
+      outside();
       // A few made-up steps, slow enough to see the line at the bottom.
       const steps: WorkProgress[] = [
         { step: "remotive", source: null, done: 1, total: 2, part: 1, parts: 2 },
@@ -947,6 +969,7 @@ export function createMockApi(): Api {
       return { pln: 3.65, day: "2026-11-13" };
     },
     async aiRateNow() {
+      outside();
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       let rated = 0;
       let stopped = false;
@@ -973,12 +996,14 @@ export function createMockApi(): Api {
       return { rated, failed: 0, waiting, noProfile: 2, error: null, problems, lowFunds: null, stopped };
     },
     async aiRateAllAgain() {
+      outside();
       for (const o of offers.values()) {
         if (!o.deletedAt) o.ai = { ...o.ai, status: null };
       }
       return this.aiRateNow();
     },
     async aiRateOffer(id, precise) {
+      outside();
       const o = find(id);
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
@@ -992,6 +1017,7 @@ export function createMockApi(): Api {
       return { rated: 1, failed: 0, waiting: 0, noProfile: 0, error: null, problems: [], lowFunds: precise ? mockLow() : null, stopped: false };
     },
     async aiTranslate(id) {
+      outside();
       const o = find(id);
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
@@ -1001,6 +1027,7 @@ export function createMockApi(): Api {
       aiCalls++;
     },
     async aiCheck(provider) {
+      outside();
       await new Promise((r) => setTimeout(r, 600));
       aiCalls++;
       const model = (await this.aiStatus()).providers.find((x) => x.provider === provider)?.model ?? "";
@@ -1022,6 +1049,7 @@ export function createMockApi(): Api {
       return { models, fromProvider: false, problem: { provider, model: "", kind: "key", message: "API key not valid. Please pass a valid API key." } };
     },
     async aiAssist(id, kind) {
+      outside();
       const o = find(id);
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
@@ -1035,6 +1063,7 @@ export function createMockApi(): Api {
       return "- Testy end-to-end: oferta wymienia Playwright - warto zrobić mały projekt próbny.\n\n(Przykład z podglądu - tu pisze AI.)";
     },
     async aiSuggestCareers(): Promise<CareerIdea[]> {
+      outside();
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
@@ -1046,6 +1075,7 @@ export function createMockApi(): Api {
       ];
     },
     async aiSuggestCriteria(description): Promise<Criteria> {
+      outside();
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
@@ -1066,6 +1096,7 @@ export function createMockApi(): Api {
       };
     },
     async aiTidy(text) {
+      outside();
       if (!aiOn(settings)) throw { code: "missing", detail: "ai provider" };
       await new Promise((r) => setTimeout(r, 700));
       aiCalls++;
@@ -1081,6 +1112,7 @@ export function createMockApi(): Api {
       return [...ollamaModels];
     },
     async ollamaPull(model) {
+      outside();
       for (let done = 0; done <= 100; done += 20) {
         tellProgress({ step: "pull", source: model, done, total: 100, part: 0, parts: 0 });
         await new Promise((r) => setTimeout(r, 400));
@@ -1089,6 +1121,7 @@ export function createMockApi(): Api {
       ollamaModels.push(model);
     },
     async ollamaInstall() {
+      outside();
       for (let done = 0; done <= 100; done += 25) {
         tellProgress({ step: "ollama-download", source: null, done, total: 100, part: 0, parts: 0 });
         await new Promise((r) => setTimeout(r, 300));
@@ -1098,9 +1131,11 @@ export function createMockApi(): Api {
       tellProgress(null);
     },
     async pickFolder() {
+      outside();
       return "D:\\AI\\Ollama";
     },
     async checkHardware() {
+      outside();
       await new Promise((r) => setTimeout(r, 600));
       return { gpus: [{ name: "Przykładowa karta graficzna", vramMb: 8192 }], ramMb: 32768, verdict: "good", model: "llama3.1:8b" };
     },
@@ -1116,7 +1151,8 @@ export function createMockApi(): Api {
       const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
       const money = lines.find((l) => /\d/.test(l) && /(zł|pln|eur)/i.test(l));
       const nums = money?.replace(/(\d)\s(\d{3})/g, "$1$2").match(/\d+/g)?.map(Number) ?? [];
-      const ai = aiOn(settings);
+      // The demo reads the text with plain code only (as the app without AI).
+      const ai = aiOn(settings) && !DEMO;
       // A rough copy of `fieldcheck` - enough to see the marks in screenshots.
       const line = (re: RegExp) => lines.find((l) => re.test(l)) ?? null;
       const notes: FieldNote[] = [];
@@ -1154,9 +1190,11 @@ export function createMockApi(): Api {
       };
     },
     async openPreview(url) {
+      outside();
       if (!/^https?:\/\//i.test(url)) throw { code: "invalid", detail: "the link must start with http:// or https://" };
     },
     async capturePreview() {
+      outside();
       await new Promise((r) => setTimeout(r, 500));
       return {
         url: "https://example.com/oferty/przyklad-tester",
@@ -1209,12 +1247,16 @@ export function createMockApi(): Api {
     async deleteLog(id) {
       for (const o of offers.values()) o.agenda.log = o.agenda.log.filter((l) => l.id !== id);
     },
-    async calendarGoogle() {},
+    async calendarGoogle() {
+      outside();
+    },
     async saveCopy(password) {
+      outside();
       if (password.length < 8) throw { code: "invalid", detail: "the password must have at least 8 characters" };
       return "C:\\Users\\Przyklad\\Documents\\tablica-ofert.tablica";
     },
     async loadCopy() {
+      outside();
       throw { code: "invalid", detail: "not available in the browser preview" };
     },
     async exportRows(view) {
@@ -1247,9 +1289,11 @@ export function createMockApi(): Api {
         }));
     },
     async saveCsv(name) {
+      outside();
       return `C:\\Users\\Przyklad\\Documents\\tablica-${name}.csv`;
     },
     async wipeAll() {
+      outside();
       throw { code: "invalid", detail: "not available in the browser preview" };
     },
     async onReminder() {
@@ -1259,6 +1303,7 @@ export function createMockApi(): Api {
       return { client: true, connected: syncConnected, hasKey: true, lastSync: syncConnected ? now() : null, lastError: null };
     },
     async syncLoginStart() {
+      outside();
       return { deviceCode: "demo", userCode: "ABCD-EFGH", verificationUrl: "https://www.google.com/device", expiresIn: 600, interval: 5 };
     },
     async syncLoginPoll() {
@@ -1266,17 +1311,22 @@ export function createMockApi(): Api {
       return true;
     },
     async syncNow() {
+      outside();
       await new Promise((r) => setTimeout(r, 800));
       return { status: "done" as const, changed: 2, removed: 0 };
     },
     async syncQr() {
+      outside();
       // A made-up pattern - the preview has no real key.
       const cells = Array.from({ length: 21 * 21 }, (_, i) => ((i * 7919) % 11 < 5 ? 1 : 0));
       const rects = cells.map((c, i) => (c ? `<rect x="${(i % 21) * 12 + 4}" y="${Math.floor(i / 21) * 12 + 4}" width="12" height="12"/>` : "")).join("");
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260"><rect width="260" height="260" fill="#fff"/><g fill="#111">${rects}</g></svg>`;
     },
-    async syncNewKey() {},
+    async syncNewKey() {
+      outside();
+    },
     async syncFromQr() {
+      outside();
       return null;
     },
     async upcomingEvents() {
@@ -1284,14 +1334,18 @@ export function createMockApi(): Api {
         o.agenda.events.map((e) => ({ id: e.id, kind: e.kind, at: e.at, title: o.title, company: o.company })),
       );
     },
-    async syncDeleteRemote() {},
+    async syncDeleteRemote() {
+      outside();
+    },
     async syncDisconnect() {
       syncConnected = false;
     },
     async calendarIcs() {
+      outside();
       return "C:\\Users\\Przyklad\\Downloads\\tablica-ofert-rozmowa.ics";
     },
     async setBackground(on) {
+      outside();
       settings.background_task = on ? "on" : "off";
       return { exists: on };
     },

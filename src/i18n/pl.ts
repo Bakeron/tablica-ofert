@@ -368,6 +368,7 @@ export const pl = {
   "error.lockedPhone":
     "Nie udało się bezpiecznie otworzyć danych. Zapis jest zablokowany, żeby niczego nie nadpisać. Gdy dane są na komputerze: Ustawienia Androida → Aplikacje → Tablica Ofert → Pamięć → „Wyczyść dane”, potem połącz telefon z komputerem jeszcze raz (kod QR) i zsynchronizuj z Google Dyskiem.",
   "error.generic": "Coś poszło nie tak - spróbuj jeszcze raz.",
+  "error.demo": "W wersji demonstracyjnej nie działa - w prawdziwej aplikacji tak.",
   "error.invalid": "Sprawdź wpisane dane.",
   "error.not_found": "Tej oferty już nie ma.",
   "error.details": "Szczegóły techniczne",
@@ -378,6 +379,7 @@ export const pl = {
   "modal.leave": "Zamknij bez zapisywania",
 
   "preview.badge": "Podgląd w przeglądarce - przykładowe dane",
+  "demo.badge": "Wersja demonstracyjna - zmyślone dane; zmiany znikają po odświeżeniu strony",
 
   "tabs.review": "Do sprawdzenia",
   "board.empty.review": "Nie ma ofert do sprawdzenia.",
@@ -1115,6 +1117,7 @@ export const pl = {
   "about.noticesShow": "Pełne teksty licencji",
   "about.noticesHide": "Ukryj teksty licencji",
   "about.noticesFailed": "Nie udało się wczytać tekstów licencji.",
+  "about.repo": "Kod na GitHubie",
 
   "settings.s.sync": "Synchronizacja",
   "sync.intro": "Wspólne dane komputera i telefonu przez Twój Google Dysk: jeden plik „tablica-ofert.sync” w „Moim dysku” (aplikacja widzi tylko pliki, które sama utworzyła - nie usuwaj go ani nie przenoś). Plik jest szyfrowany na tym komputerze, zanim trafi na Dysk - nawet ktoś z dostępem do konta Google go nie odczyta. Bez synchronizacji działa sam komputer.",
