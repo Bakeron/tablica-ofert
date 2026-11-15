@@ -249,25 +249,15 @@ textarea {
   border-bottom: 3px solid transparent;
 }
 
+/* The open tab is lit like a sign of the signposting: yellow letters on a black plate (the bar
+   itself is yellow). No line under a tab, not even on hover - the mouse only tints it. */
 .tab[aria-current="page"] {
-  border-bottom-color: var(--signal-ink);
-}
-
-/* "Own" - the person's own recruitments, the heart of the app - stands out like a sign of the
-   signposting: yellow letters on a black plate (the bar itself is yellow). */
-.tab.tab-own {
-  --btn-bg: var(--signal-ink);
-  --btn-ink: var(--signal);
   background: var(--signal-ink);
   color: var(--signal);
   border-radius: 2px;
 }
 
-.tab.tab-own[aria-current="page"] {
-  border-bottom-color: var(--signal);
-}
-
-.tab-own .tab-count {
+.tab[aria-current="page"] .tab-count {
   background: var(--signal);
   color: var(--signal-ink);
 }
@@ -763,19 +753,46 @@ details[open]::details-content {
   gap: 0.6rem 0.9rem;
 }
 
-/* Keyboard hint and "Export this list" on the right of the board heading. */
+/* The row of buttons under the heading, the same in every tab: "Export this list" on the left,
+   "Show categories" and "Show filters" on the right. */
 .board-tools {
-  /* The keys hint wraps before the heading does. */
-  flex: 1 1 0;
-  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
   gap: 0.4rem 0.9rem;
+  padding: 0 1rem 0.6rem;
 }
 
+.board-tools-end {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem 0.6rem;
+}
+
+/* The open list's name in the row - only on a phone, where the heading is hidden. */
+.tools-category {
+  display: none;
+}
+
+/* Both names of a button in one cell: it keeps the width of the longer one. */
+.flip-label {
+  display: inline-grid;
+}
+
+.flip-label > * {
+  grid-area: 1 / 1;
+}
+
+.flip-label > [aria-hidden="true"] {
+  visibility: hidden;
+}
+
+/* Keyboard hint on the right of the board heading; it wraps before the heading does. */
 .keys-hint {
+  flex: 1 1 0;
+  min-width: 0;
   margin: 0;
   font-size: 0.8rem;
   color: var(--ink-dim);
@@ -787,6 +804,8 @@ details[open]::details-content {
   position: relative;
   flex: 1;
   overflow: auto;
+  /* The scrollbar's room is kept even with no scrollbar - folding the filters out never makes the columns jump. */
+  scrollbar-gutter: stable;
 }
 
 .board {
@@ -854,10 +873,6 @@ details[open]::details-content {
 
 /* A touch screen has no hover: a row must not stay lit after a finger - it answers while pressed. */
 @media (hover: hover) {
-  .tab:hover {
-    border-bottom-color: rgb(0 0 0 / 0.35);
-  }
-
   .board tbody tr:hover {
     background: var(--row-hover);
   }
@@ -3633,7 +3648,7 @@ fieldset.plain {
   flex-wrap: nowrap;
 }
 
-/* The archive has no counter to empty - a search box to find an old offer instead. */
+/* The search box above every list, the list's whole width. */
 .archive-search {
   display: flex;
   align-items: center;
@@ -3644,7 +3659,6 @@ fieldset.plain {
 .archive-search input {
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 28rem;
 }
 
 /* The portal filter above every list: a small sign "Portal" and the choice beside it. */
@@ -3679,6 +3693,48 @@ fieldset.plain {
 .portal-filter select {
   width: 100%;
   min-width: 0;
+}
+
+/* English: one line - the name, then its tick box on the right - level with the fields beside it. */
+.english-pick {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  align-self: flex-end;
+  gap: 0.5rem;
+  min-block-size: 2.55rem;
+  /* A halo on hover, like the other tick boxes - fades in, the layout stays. */
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--paper-ink) 0%, transparent);
+  box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--paper-ink) 0%, transparent);
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+@media (hover: hover) {
+  .english-pick:hover {
+    background-color: color-mix(in srgb, var(--paper-ink) 10%, transparent);
+    box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--paper-ink) 10%, transparent);
+  }
+}
+
+.english-pick label {
+  font-family: var(--font-board);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.english-pick input {
+  flex: none;
+  margin: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--signal);
+  cursor: pointer;
 }
 
 /* Tick boxes behind a field that looks like the other lists: the choices fold out under it. */
@@ -3760,6 +3816,11 @@ fieldset.plain {
 
   .portal-filter {
     flex-basis: calc(50% - 0.375rem);
+  }
+
+  .english-pick {
+    justify-content: center;
+    flex-basis: 100%;
   }
 }
 
@@ -4426,6 +4487,10 @@ fieldset.plain {
     block-size: max(48px, 2.55rem);
   }
 
+  .english-pick {
+    min-block-size: max(48px, 2.75rem);
+  }
+
   /* The small "?" keeps its look; an invisible 48 px square around its middle takes the tap. */
   .help-btn {
     position: relative;
@@ -4804,17 +4869,6 @@ html.scanning .scan-overlay * {
     color: var(--signal);
   }
 
-  /* In the bottom bar the black plate means "you are here", so "Own" wears it only when open. */
-  .topbar .tab.tab-own:not([aria-current="page"]) {
-    background: none;
-    color: inherit;
-  }
-
-  .topbar .tab.tab-own:not([aria-current="page"]) .tab-count {
-    background: var(--signal-ink);
-    color: var(--signal);
-  }
-
   .tab-icon {
     position: relative;
     display: block;
@@ -4895,13 +4949,30 @@ html.scanning .scan-overlay * {
     white-space: nowrap;
   }
 
-  .board-tools:empty {
-    display: none;
+  .board-tools {
+    padding: 0.4rem 0.8rem 0.6rem;
   }
 
-  .board-tools {
-    margin-left: auto;
-    padding-block: 0.4rem;
+  /* Always a line of its own, then the two buttons share the row half and half. */
+  .tools-category {
+    display: block;
+    flex-basis: 100%;
+    min-width: 0;
+    font-family: var(--font-board);
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .board-tools-end:has(> .btn + .btn) {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+  }
+
+  .board-tools-end:has(> .btn + .btn) > .btn {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   /* No column headings here: the number says what it is, and a screen reader hears every column's name. */

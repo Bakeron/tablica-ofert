@@ -2,8 +2,9 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import type { OfferRow } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { onBack } from "../lib/back";
-import { applyFilters, FILTER_KEYS, filterCounts, MULTI_KEYS, type FilterKey, type ListFilters } from "../lib/portals";
+import { applyFilters, ENGLISH_ALL, FILTER_KEYS, filterCounts, MULTI_KEYS, type FilterKey, type ListFilters } from "../lib/portals";
 import { sourceLabel } from "./Board";
+import { Help } from "./Help";
 
 const LABEL: Record<FilterKey, TextKey> = {
   portal: "portal.label",
@@ -14,13 +15,17 @@ const LABEL: Record<FilterKey, TextKey> = {
   english: "narrow.english",
 };
 
-/** The filters worth showing: the whole list has more than one value for them, or one is chosen. */
+/** The filters worth showing: the whole list has more than one value for them, or one is chosen
+ *  (English: the list has offers that need it, or the box is ticked). */
 export function availableFilters(rows: OfferRow[], filters: ListFilters) {
-  return FILTER_KEYS.map((key) => ({ key, options: filterCounts(rows, filters, key) })).filter((f) => f.options.length > 1 || filters[f.key].length > 0);
+  return FILTER_KEYS.map((key) => ({ key, options: filterCounts(rows, filters, key) })).filter(
+    (f) => filters[f.key].length > 0 || (f.key === "english" ? f.options[0].count > 0 : f.options.length > 1),
+  );
 }
 
 /** The choices above every list - the name above, the choice below; they wrap to the width, centred.
- *  Status is one choice (a list); the others are tick boxes - none ticked = all. */
+ *  Status is one choice (a list); the others are tick boxes - none ticked = all. English is one tick box
+ *  in view: unticked hides the offers that need English. */
 export function ListFilterBar({ rows, filters, onChange }: { rows: OfferRow[]; filters: ListFilters; onChange: (next: ListFilters) => void }) {
   const { t } = useI18n();
   const name = (key: FilterKey, value: string): string => {
@@ -36,7 +41,7 @@ export function ListFilterBar({ rows, filters, onChange }: { rows: OfferRow[]; f
       case "salary":
         return t(`narrow.salary.${value}` as TextKey);
       case "english":
-        return t(`narrow.english.${value}` as TextKey);
+        return value;
     }
   };
   const shown = availableFilters(rows, filters);
@@ -48,6 +53,21 @@ export function ListFilterBar({ rows, filters, onChange }: { rows: OfferRow[]; f
         // "all (N)": the offers the other filters leave.
         const all = t("portal.all", { count: applyFilters(rows, filters, key).length });
         const set = (values: string[]) => onChange({ ...filters, [key]: values });
+        // English: one line, the tick box on the right - ticked shows the offers that need English too.
+        if (key === "english") {
+          return (
+            <div key={key} className="portal-filter english-pick">
+              <label htmlFor="english-pick">{t("narrow.english.all", { count: options[0]?.count ?? 0 })}</label>
+              <Help text={t("narrow.english.help")} />
+              <input
+                id="english-pick"
+                type="checkbox"
+                checked={chosen.includes(ENGLISH_ALL)}
+                onChange={(e) => set(e.target.checked ? [ENGLISH_ALL] : [])}
+              />
+            </div>
+          );
+        }
         if (!MULTI_KEYS.includes(key)) {
           return (
             <label key={key} className="portal-filter">

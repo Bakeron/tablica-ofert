@@ -37,7 +37,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
 import { Tour, type TourStep } from "./components/Tour";
 import { ErrorContext, ProfileDraftContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
-import { IconBoard, IconBriefcase, IconDownload, IconFilter, IconGear, IconHome, IconPlus, IconTrash, IconWarning } from "./components/Icons";
+import { IconBoard, IconBriefcase, IconDownload, IconFilter, IconGear, IconHome, IconList, IconPlus, IconTrash, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
@@ -158,12 +158,14 @@ export default function App() {
   /** Quick browsing (cards, keys 1 / 2 / 3): the order it started with (`keepOrder`), else `null`. */
   const [browseOrder, setBrowseOrder] = useState<number[] | null>(null);
   const listScroll = useRef<number[]>([]);
-  /** What the bin's search box holds (title, company or city). */
-  const [binQuery, setBinQuery] = useState("");
+  /** What the search box above the list holds (title, company or city) - one word for all tabs, never remembered after a restart. */
+  const [query, setQuery] = useState("");
   // The filters above every list (portal, status, place, salary) - one choice for all tabs, never remembered after a restart.
   const [filters, setFilters] = useState<ListFilters>(NO_FILTERS);
   /** "Show filters": the filters slide out above the list (hidden at the start - they take room). */
   const [filtersOpen, setFiltersOpen] = useState(false);
+  /** "Hide categories": the switch of Collected's / the Bin's lists folds away (shown at the start). */
+  const [catsOpen, setCatsOpen] = useState(true);
   /** `null` = the tab's own order: "Today" as Rust ranks it, the others the newest first. */
   const [sort, setSort] = useState<Sort | null>(null);
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
@@ -395,12 +397,12 @@ export default function App() {
         : undefined,
     [cardOpen],
   );
-  // On the list: "back" clears the bin's search, then goes from "Collected" or "Bin" to "Own" -
+  // On the list: "back" clears the search, then goes from "Collected" or "Bin" to "Own" -
   // the app is left only from "Own" with nothing open.
   const currentTab = tabOf(view);
   useEffect(() => (currentTab !== "own" ? onBack(() => setView("own"), true) : undefined), [currentTab]);
-  const searching = isBin(view) && binQuery !== "";
-  useEffect(() => (searching ? onBack(() => setBinQuery(""), true) : undefined), [searching]);
+  const searching = query !== "";
+  useEffect(() => (searching ? onBack(() => setQuery(""), true) : undefined), [searching]);
   const filtering = FILTER_KEYS.some((k) => filters[k].length > 0);
   useEffect(() => (filtering ? onBack(() => setFilters(NO_FILTERS), true) : undefined), [filtering]);
   // No offer left (the list emptied, or the layout is wide again after turning the phone): the card
@@ -706,18 +708,18 @@ export default function App() {
   const shownSort = sort ?? (view === "today" || isBin(view) ? null : DEFAULT_SORT);
   const searched = useMemo(() => {
     const list = keepOrder(shownSort === null ? rows : sortRows(rows, shownSort), browseOrder);
-    const q = binQuery.trim().toLocaleLowerCase();
-    if (!isBin(view) || !q) return list;
+    const q = query.trim().toLocaleLowerCase();
+    if (!q) return list;
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
-  }, [rows, shownSort, view, binQuery, browseOrder]);
+  }, [rows, shownSort, query, browseOrder]);
   const sorted = useMemo(() => applyFilters(searched, filters), [searched, filters]);
   const filterChoices = useMemo(() => availableFilters(searched, filters), [searched, filters]);
-  const activeFilters = FILTER_KEYS.filter((k) => filters[k].length > 0).length;
-  // A filter chosen (or a new list under it): an offer the filter hid does not stay on the card.
+  // A filter chosen (or a new list under it): an offer the filter hid does not stay on the card -
+  // also one hidden by English unticked (no filter chosen, so only a hidden one is swapped).
   useEffect(() => {
-    if (!filtering) return;
-    const shown = (id: number) => sorted.some((r) => r.id === id || r.children.some((c) => c.id === id));
-    setSelectedId((id) => (id !== null && shown(id) ? id : (sorted[0]?.id ?? null)));
+    const has = (list: OfferRow[], id: number) => list.some((r) => r.id === id || r.children.some((c) => c.id === id));
+    if (filtering) setSelectedId((id) => (id !== null && has(sorted, id) ? id : (sorted[0]?.id ?? null)));
+    else setSelectedId((id) => (id !== null && !has(sorted, id) && has(searched, id) ? (sorted[0]?.id ?? null) : id));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the list or the filters change
   }, [searched, filters]);
 
@@ -1181,6 +1183,9 @@ export default function App() {
     return added;
   }
 
+  /** Collected's or the Bin's list now open ("Best today", "Expired"...); `null` in "Own". */
+  const category = isCollected(view) ? t(`collected.${view}`) : isBin(view) ? t(`bin.${view}`) : null;
+
   /** "Empty the bin": what the bin's switch shows (all, or one kind), after a question with the number. */
   const emptyBin = isBin(view) && rows.length > 0 && (
     <button
@@ -1221,7 +1226,7 @@ export default function App() {
               <button
                 key={tab}
                 type="button"
-                className={tab === "own" ? "tab tab-own" : "tab"}
+                className="tab"
                 aria-current={tabOf(view) === tab ? "page" : undefined}
                 onClick={() =>
                   setView(tab === "collected" ? (isCollected(view) ? view : lastCollected) : tab === "bin" ? (isBin(view) ? view : lastBin) : tab)
@@ -1341,25 +1346,46 @@ export default function App() {
             <div className="board-head">
               <h2 id="board-heading">
                 {t(`tabs.${tabOf(view)}`)}
+                {/* Which of the tab's lists is open - the switch itself is usually hidden. */}
+                {category && <span className="count"> · {category}</span>}
                 {!isBin(view) && profileId !== null && (
                   <span className="count"> · {profiles.find((p) => p.id === profileId)?.name}</span>
                 )}{" "}
                 <span className="count">· {t(plural(lang, "board.count", sorted.length), { count: sorted.length })}</span>
               </h2>
-              <div className="board-tools">
-                {settings.feature_keys === "on" && !isPhone() && <p className="keys-hint">{t(isBin(view) ? "board.keysBin" : view === "own" ? "board.keysOwn" : "board.keys")}</p>}
-                {!isPhone() && (
+              {settings.feature_keys === "on" && !isPhone() && <p className="keys-hint">{t(isBin(view) ? "board.keysBin" : view === "own" ? "board.keysOwn" : "board.keys")}</p>}
+            </div>
+            {/* One row of buttons under the heading in every tab: export on the left, what folds out on the right. */}
+            <div className="board-tools">
+              {!isPhone() && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-small"
+                  title={t("board.exportHint")}
+                  disabled={sorted.length === 0}
+                  onClick={exportList}
+                >
+                  <IconDownload /> {t("board.export")}
+                </button>
+              )}
+              {/* A phone hides the heading (the tab says it) - the open list's name stands here instead. */}
+              {category && (
+                <span className="tools-category" aria-hidden="true">
+                  {category}
+                </span>
+              )}
+              <div className="board-tools-end">
+                {category && (
                   <button
                     type="button"
                     className="btn btn-ghost btn-small"
-                    title={t("board.exportHint")}
-                    disabled={sorted.length === 0}
-                    onClick={exportList}
+                    aria-expanded={catsOpen}
+                    aria-controls="list-cats"
+                    onClick={() => setCatsOpen(!catsOpen)}
                   >
-                    <IconDownload /> {t("board.export")}
+                    <IconList /> <FlipLabel open={catsOpen} show={t("cats.show")} hide={t("cats.hide")} />
                   </button>
                 )}
-                {/* Hidden filters still work - the number says how many are chosen. */}
                 {filterChoices.length > 0 && (
                   <button
                     type="button"
@@ -1368,59 +1394,56 @@ export default function App() {
                     aria-controls="list-filters"
                     onClick={() => setFiltersOpen(!filtersOpen)}
                   >
-                    <IconFilter /> {t(filtersOpen ? "narrow.hide" : "narrow.show")}
-                    {activeFilters > 0 && (
-                      <span className="seg-count" aria-label={t("narrow.active", { count: activeFilters })}>
-                        {activeFilters}
-                      </span>
-                    )}
+                    <IconFilter /> <FlipLabel open={filtersOpen} show={t("narrow.show")} hide={t("narrow.hide")} />
                   </button>
                 )}
               </div>
             </div>
-            {/* "Collected": best today / all / to check / rejected by the filter, with their numbers. */}
-            {isCollected(view) && (
-              <div className="collected-switch" role="group" aria-label={t("collected.label")}>
-                {COLLECTED.map((v) => (
-                  <button key={v} type="button" className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
-                    {t(`collected.${v}`)}
-                    {counts && <span className="seg-count">{counts[v]}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-            {/* "Bin": all / not for me / expired / deleted, with their numbers. */}
-            {isBin(view) && (
-              <div className="collected-switch" role="group" aria-label={t("bin.label")}>
-                {BIN.map((v) => (
-                  <button key={v} type="button" className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
-                    {t(`bin.${v}`)}
-                    {counts && <span className="seg-count">{counts[v]}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-            {isBin(view) && (
-              <div className="archive-search">
-                <input
-                  type="search"
-                  value={binQuery}
-                  onChange={(e) => setBinQuery(e.target.value)}
-                  placeholder={t(isPhone() ? "bin.searchShort" : "bin.search")}
-                  aria-label={t("bin.search")}
-                  maxLength={100}
-                />
-                {isPhone() && emptyBin}
-              </div>
-            )}
-            {/* Portal, status, city / remote, salary - each shown when the list has more than one value, or one is chosen. */}
+            <div className="archive-search">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t(isBin(view) ? (isPhone() ? "bin.searchShort" : "bin.search") : isPhone() ? "list.searchShort" : "list.search")}
+                aria-label={t(isBin(view) ? "bin.search" : "list.search")}
+                maxLength={100}
+              />
+              {isPhone() && emptyBin}
+            </div>
+            {/* "Collected": best today / all / to check / rejected by the filter; "Bin": all / not for me /
+                expired / deleted - with their numbers, under "Show categories". */}
+            <Reveal show={catsOpen && category !== null}>
+              {isCollected(view) && (
+                <div id="list-cats" className="collected-switch" role="group" aria-label={t("collected.label")}>
+                  {COLLECTED.map((v) => (
+                    <button key={v} type="button" className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
+                      {t(`collected.${v}`)}
+                      {counts && <span className="seg-count">{counts[v]}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {isBin(view) && (
+                <div id="list-cats" className="collected-switch" role="group" aria-label={t("bin.label")}>
+                  {BIN.map((v) => (
+                    <button key={v} type="button" className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
+                      {t(`bin.${v}`)}
+                      {counts && <span className="seg-count">{counts[v]}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Reveal>
             <Reveal show={filtersOpen && filterChoices.length > 0}>
               <ListFilterBar rows={searched} filters={filters} onChange={setFilters} />
             </Reveal>
             <Board
               rows={sorted}
+              changeKey={`${view}|${JSON.stringify(filters)}|${query.trim()}`}
               emptyText={
-                !filtering || searched.length === 0
+                searching && searched.length === 0 && rows.length > 0
+                  ? t("list.searchEmpty", { query: query.trim() })
+                  : searched.length === 0
                   ? undefined
                   : filters.portal.length === 1 && FILTER_KEYS.every((k) => k === "portal" || filters[k].length === 0)
                     ? t("portal.empty", { portal: sourceLabel(filters.portal[0], t) })
@@ -1638,4 +1661,12 @@ export function fetchSummary(report: FetchReport, t: (key: TextKey, params?: Rec
   return t("fetch.none");
 }
 
-
+/** A button's two names in one place - it is as wide as the longer one, so it never jumps when the name changes. */
+function FlipLabel({ open, show, hide }: { open: boolean; show: string; hide: string }) {
+  return (
+    <span className="flip-label">
+      <span aria-hidden={open || undefined}>{show}</span>
+      <span aria-hidden={!open || undefined}>{hide}</span>
+    </span>
+  );
+}

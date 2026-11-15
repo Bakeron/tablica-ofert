@@ -309,11 +309,11 @@ th { font: 700 1rem "Barlow Condensed", "Arial Narrow", sans-serif; text-transfo
         <a href="zrzuty/pc-ekran-startowy.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-ekran-startowy.png" width="1280" height="900" loading="lazy" alt="Ekran startowy z ponumerowanymi częściami: zakładki, przyciski u góry, filtry nad listą, eksport, lista i karta oferty."></a>
       </figure>
       <ol class="marks">
-        <li><strong>Zakładki.</strong> „Własne” - oferty, którymi się zajmujesz (dodane przez Ciebie albo przeniesione z Zebranych); liczba przy nazwie mówi, ile CV czeka na wysłanie. „Zebrane” - oferty pobrane przez aplikację. „Kosz” - odrzucone, wygasłe i usunięte.</li>
+        <li><strong>Zakładki.</strong> „Własne” - oferty, którymi się zajmujesz (dodane przez Ciebie albo przeniesione z Zebranych); liczba przy nazwie mówi, ile CV czeka na wysłanie. „Zebrane” - oferty pobrane przez aplikację. „Kosz” - odrzucone, wygasłe i usunięte. Otwarta zakładka ma czarną tabliczkę.</li>
         <li><strong>Pobierz oferty</strong> - sprawdza teraz wszystkie włączone źródła (bez czekania na pobieranie automatyczne).</li>
         <li><strong>Dodaj ofertę</strong> - ręcznie, z linku albo z wklejonej treści ogłoszenia.</li>
         <li><strong>Ustawienia</strong> - profil, źródła ofert, AI, wygląd, synchronizacja, dane.</li>
-        <li><strong>Filtry nad listą</strong> - wysuwa je przycisk „Pokaż filtry” (liczba przy nim to ile filtrów jest wybranych, także gdy są schowane): <strong>Portal</strong>, <strong>Status</strong>, <strong>Tryb pracy</strong>, <strong>Miasto</strong>, <strong>Widełki</strong> (brak, miesięczne, dzienne, godzinowe) i <strong>Angielski</strong> (wymagany, mile widziany, bez wzmianki - aplikacja czyta to z treści oferty; ogłoszenie po angielsku liczy się jako „wymagany”). Na liście widełki mają okres: „/mies.”, „/dzień” albo „/h”. Poza statusem w każdym zaznaczasz kilka wartości naraz; nic nie zaznaczone = wszystkie. Liczba w nawiasie to ile ofert zostanie po wyborze, (0) - żadna przy pozostałych filtrach. Filtr jest, gdy na liście jest z czego wybierać; wszystkie naraz zdejmuje przycisk Wstecz na telefonie.</li>
+        <li><strong>Filtry nad listą</strong> - wysuwa je przycisk „Pokaż filtry” (schowane filtry dalej działają): <strong>Portal</strong>, <strong>Status</strong>, <strong>Tryb pracy</strong>, <strong>Miasto</strong>, <strong>Widełki</strong> (brak, miesięczne, dzienne, godzinowe) i pole <strong>Wymagany angielski</strong> - niezaznaczone chowa oferty, które wymagają angielskiego, zaznaczone pokazuje wszystkie; liczba przy nim to ile ofert z wymaganym angielskim jest schowanych (aplikacja czyta to z treści oferty; ogłoszenie po angielsku liczy się jako wymagany angielski, a „mile widziany” zostaje na liście). Na liście widełki mają okres: „/mies.”, „/dzień” albo „/h”. W pozostałych (poza statusem) zaznaczasz kilka wartości naraz; nic nie zaznaczone = wszystkie. Liczba w nawiasie to ile ofert zostanie po wyborze, (0) - żadna przy pozostałych filtrach. Filtr jest, gdy na liście jest z czego wybierać; wszystkie naraz zdejmuje przycisk Wstecz na telefonie. Nad filtrami, w każdej zakładce, jest pole <strong>Szukaj</strong> - po stanowisku, firmie albo mieście; filtry liczą wtedy tylko znalezione oferty.</li>
         <li><strong>Eksportuj tę listę</strong> - zapisuje dokładnie to, co widać na liście, do pliku CSV dla Excela.</li>
         <li><strong>Nagłówki kolumn</strong> - kliknięcie zmienia kolejność (np. po widełkach albo dopasowaniu), drugie kliknięcie odwraca ją.</li>
         <li><strong>Karta oferty</strong> - szczegóły oferty wybranej na liście. Opis w części <a href="#karta">Karta oferty</a>.</li>
@@ -404,7 +404,7 @@ th { font: 700 1rem "Barlow Condensed", "Arial Narrow", sans-serif; text-transfo
         <a href="zrzuty/pc-zebrane.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-zebrane.png" width="1280" height="900" loading="lazy" alt="Zakładka Zebrane z przełącznikiem list i oceną AI."></a>
       </figure>
       <ol class="marks">
-        <li><strong>Które oferty pokazać</strong>: „Najlepsze dziś” (najlepsze świeże oferty według oceny, ulubione zawsze na górze), „Wszystkie” (przeszły filtry profilu), „Do sprawdzenia” (filtr nie był pewny) i „Odrzucone przez filtr” (z powodem - nic nie znika bez śladu).</li>
+        <li><strong>Które oferty pokazać</strong> - chowa je przycisk „Ukryj kategorie”, a „Pokaż kategorie” wysuwa z powrotem (gdy są schowane, nazwę otwartej listy widać w nagłówku, np. „Zebrane · Najlepsze dziś · 6 ofert”): „Najlepsze dziś” (najlepsze świeże oferty według oceny, ulubione zawsze na górze), „Wszystkie” (przeszły filtry profilu), „Do sprawdzenia” (filtr nie był pewny) i „Odrzucone przez filtr” (z powodem - nic nie znika bez śladu).</li>
         <li><strong>Jedno zdanie od AI</strong> - dlaczego taka ocena.</li>
         <li><strong>Ocena</strong> - tu ocena AI; pod nią m.in. „Z Twoich ocen”, gdy aplikacja uczy się z Twoich „Bardzo” i „Nie”.</li>
         <li><strong>Do własnych</strong> - zajmujesz się tą ofertą: przechodzi do zakładki „Własne”.</li>
@@ -418,7 +418,7 @@ th { font: 700 1rem "Barlow Condensed", "Arial Narrow", sans-serif; text-transfo
         <a href="zrzuty/pc-kosz.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-kosz.png" width="1280" height="900" loading="lazy" alt="Kosz z rodzajami, wyszukiwarką i przyciskami przywracania."></a>
       </figure>
       <ol class="marks">
-        <li><strong>Rodzaje</strong>: „Nie dla mnie” (ocenione „Nie”), „Wygasłe” i „Usunięte”.</li>
+        <li><strong>Rodzaje</strong> (chowa je przycisk „Ukryj kategorie”): „Nie dla mnie” (ocenione „Nie”), „Wygasłe” i „Usunięte”.</li>
         <li><strong>Szukaj w koszu</strong> - po stanowisku, firmie albo mieście.</li>
         <li><strong>Opróżnij kosz</strong> - usuwa na zawsze to, co pokazuje przełącznik (po pytaniu z liczbą ofert).</li>
         <li><strong>Przywróć</strong> - oferta wraca na swoje miejsce.</li>

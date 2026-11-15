@@ -188,9 +188,26 @@ export function AddOfferDialog({
     return n ? { "aria-describedby": checkId(field), "data-check": n.problem ? "problem" : "source" } : {};
   };
 
-  // Closed and opened again: no old question under the form.
+  /** Counts the closings: a page or a fill that ends after "Cancel" (or Esc) is dropped, not put into the next form. */
+  const round = useRef(0);
+  // Closed ("Cancel", the cross, Esc) and opened again: an empty form, nothing of the last one left.
+  // Emptied on opening, so the closing window does not flash empty fields.
   useEffect(() => {
-    if (!open) setFound(null);
+    if (!open) {
+      round.current++;
+      return;
+    }
+    setFound(null);
+    setReadingId(null);
+    setExact({ published: null, expires: null });
+    setForm(EMPTY);
+    setLink("");
+    setPasted("");
+    setPageTitle(null);
+    setWorking(null);
+    setFilledBy(null);
+    setNotes([]);
+    setLowFunds(null);
   }, [open]);
 
   // Shared from the phone: the link goes to the link field, the rest is the offer text.
@@ -208,8 +225,11 @@ export function AddOfferDialog({
   }, [open, shared?.id]);
 
   async function capture() {
+    const mine = round.current;
     setWorking("capture");
+    setFilledBy(null);
     const page = await onCapture(link.trim());
+    if (round.current !== mine) return;
     setWorking(null);
     if (!page) return;
     setPasted(page.text);
@@ -221,7 +241,11 @@ export function AddOfferDialog({
   async function fill(text = pasted, title = pageTitle, url = link) {
     if (!text.trim()) return;
     setWorking("fill");
+    // The last fill's "AI filled in the fields" must not stand while a new one is still running.
+    setFilledBy(null);
+    const mine = round.current;
     const draft = await onFill(text, title);
+    if (round.current !== mine) return;
     setWorking(null);
     if (!draft) return;
     const v = (x: string | number | null | undefined) => (x === null || x === undefined ? "" : String(x));
@@ -295,6 +319,8 @@ export function AddOfferDialog({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    // Taking the page or filling the fields still runs - the form is not done yet.
+    if (working !== null) return;
     const offer = formOffer();
     setBusy(true);
     // The same offer of the same portal may already be there - the person decides what then.
@@ -388,7 +414,7 @@ export function AddOfferDialog({
           </label>
           <div className="quick-row">
             <span className="hint" role="status">
-              {filledBy === "ai" ? t("quick.byAi") : filledBy === "code" ? t("quick.byCode") : ""}
+              {working !== null ? t("quick.working") : filledBy === "ai" ? t("quick.byAi") : filledBy === "code" ? t("quick.byCode") : ""}
             </span>
             <button type="button" className="btn btn-ghost btn-small" disabled={!pasted.trim() || working !== null} aria-busy={working === "fill"} onClick={() => fill()}>
               {working === "fill" ? t("ai.working") : aiOn ? t("quick.fillAi") : t("quick.fill")}
@@ -563,7 +589,8 @@ export function AddOfferDialog({
               <button type="button" className="btn btn-ghost" onClick={onClose}>
                 {t("add.cancel")}
               </button>
-              <button type="submit" className="btn btn-sign" disabled={busy}>
+              {/* Locked while the page is taken or the fields are filled - saving then would miss them. */}
+              <button type="submit" className="btn btn-sign" disabled={busy || working !== null} aria-busy={working !== null || undefined}>
                 {t("add.save")}
               </button>
             </>

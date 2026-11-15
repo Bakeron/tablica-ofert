@@ -6,18 +6,19 @@ export function rowPortals(row: Pick<OfferRow, "sources" | "children">): string[
 }
 
 /** The choices above every list. Each holds the chosen values - none = all;
- *  status takes one (a list), the others any number (tick boxes). */
+ *  status takes one (a list), the others any number (tick boxes). English is one tick box:
+ *  none = offers that need English stay hidden, `["all"]` = shown too. */
 export type FilterKey = "portal" | "status" | "mode" | "city" | "salary" | "english";
 export type ListFilters = Record<FilterKey, string[]>;
 export const FILTER_KEYS: FilterKey[] = ["portal", "status", "mode", "city", "salary", "english"];
 export const NO_FILTERS: ListFilters = { portal: [], status: [], mode: [], city: [], salary: [], english: [] };
-/** Filters with tick boxes - several values at once (status is one choice from a list). */
-export const MULTI_KEYS: FilterKey[] = ["portal", "mode", "city", "salary", "english"];
+/** Filters with tick boxes - several values at once (status is one choice from a list; English is one tick box). */
+export const MULTI_KEYS: FilterKey[] = ["portal", "mode", "city", "salary"];
+/** The English tick box ticked: offers that need English are shown too. */
+export const ENGLISH_ALL = "all";
 
 /** "Salary": not given, per month, per day, per hour. */
 export const SALARY_CHOICES = ["none", "month", "day", "hour"] as const;
-/** "English": required, a plus, not named. */
-const ENGLISH_CHOICES = ["required", "nice", "none"];
 const REMOTES: Remote[] = ["yes", "hybrid", "no", "unknown"];
 
 type Row = Pick<OfferRow, "sources" | "children" | "stage" | "city" | "remote" | "salaryMin" | "salaryMax" | "salaryPeriod" | "english">;
@@ -42,10 +43,18 @@ export function rowValues(row: Row, key: FilterKey): string[] {
   }
 }
 
-/** The offers that match every filter: any of its chosen values (`except` - one left out, for its own counts). */
+/** An offer that needs English - every ad of the family names it as required (an ad in English counts too). */
+export function needsEnglish(row: Row): boolean {
+  return rowValues(row, "english").every((v) => v === "required");
+}
+
+/** The offers that match every filter: any of its chosen values (`except` - one left out, for its own counts).
+ *  English unticked hides the offers that need it. */
 export function applyFilters<T extends Row>(rows: T[], filters: ListFilters, except?: FilterKey): T[] {
-  const keys = FILTER_KEYS.filter((k) => k !== except && filters[k].length > 0);
-  return keys.length === 0 ? rows : rows.filter((r) => keys.every((k) => rowValues(r, k).some((v) => filters[k].includes(v))));
+  const keys = FILTER_KEYS.filter((k) => k !== except && k !== "english" && filters[k].length > 0);
+  const hideEnglish = except !== "english" && !filters.english.includes(ENGLISH_ALL);
+  if (keys.length === 0 && (!hideEnglish || !rows.some(needsEnglish))) return rows;
+  return rows.filter((r) => keys.every((k) => rowValues(r, k).some((v) => filters[k].includes(v))) && !(hideEnglish && needsEnglish(r)));
 }
 
 /** How many offers each value of one filter has - on the list narrowed by the other filters.
@@ -53,11 +62,13 @@ export function applyFilters<T extends Row>(rows: T[], filters: ListFilters, exc
  *  (choosing one filter never makes the others vanish); chosen values stay with 0 too.
  *  Order: portals and cities the biggest first, statuses, work modes and the rest as in the app. */
 export function filterCounts(rows: Row[], filters: ListFilters, key: FilterKey): { value: string; count: number }[] {
+  // English: one choice - how many offers that need it the tick box would add.
+  if (key === "english") return [{ value: ENGLISH_ALL, count: applyFilters(rows, filters, "english").filter(needsEnglish).length }];
   const counts = new Map<string, number>();
   for (const r of rows) for (const v of rowValues(r, key)) counts.set(v, 0);
   for (const r of applyFilters(rows, filters, key)) for (const v of rowValues(r, key)) counts.set(v, (counts.get(v) ?? 0) + 1);
   for (const v of filters[key]) if (!counts.has(v)) counts.set(v, 0);
-  const order: Partial<Record<FilterKey, readonly string[]>> = { status: STAGES, mode: REMOTES, salary: SALARY_CHOICES, english: ENGLISH_CHOICES };
+  const order: Partial<Record<FilterKey, readonly string[]>> = { status: STAGES, mode: REMOTES, salary: SALARY_CHOICES };
   const fixed = order[key];
   return [...counts]
     .map(([value, count]) => ({ value, count }))

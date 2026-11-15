@@ -6,7 +6,7 @@ import { addedLabel, companyLabel, placeLabel, salaryShort, shortDay, translated
 import { isNarrowLayout } from "../lib/fit";
 import { onBack } from "../lib/back";
 import { isPhone } from "../lib/platform";
-import { motionReduced } from "../lib/presence";
+import { motionReduced, useAppearOn } from "../lib/presence";
 import { isBin, reasonText, sortedReasons } from "../lib/profile";
 import { SWIPE_AT, isSwipe, lockAxis, swipeOffset, type SwipeAxis } from "../lib/swipe";
 import { Flap } from "./Flap";
@@ -70,6 +70,8 @@ interface Props {
   rows: OfferRow[];
   /** Instead of the tab's own "no offers" text - e.g. none from the chosen portal. */
   emptyText?: string;
+  /** Changes when a filter, the search or the list changes - the rows then fade in quickly instead of jumping. */
+  changeKey?: string;
   view: View;
   selectedId: number | null;
   freshIds: Set<number>;
@@ -92,8 +94,10 @@ interface Props {
 /** How long the children slide out when the tree folds (as `tree-out` in app.css). */
 const TREE_OUT_MS = 160;
 
-export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onOwn, onRestore, onNext }: Props) {
+export function Board({ rows, emptyText, changeKey, view, selectedId, freshIds, sort, onSort, onSelect, onOpen, onInterest, onTrash, onExpired, onOwn, onRestore, onNext }: Props) {
   const touch = useRef<{ id: number; x: number; y: number; axis: SwipeAxis | null } | null>(null);
+  const listBox = useRef<HTMLDivElement>(null);
+  useAppearOn(listBox, changeKey, 100);
   /** The row whose interest mark just came from a swipe - the mark flips in. */
   const [flipped, setFlipped] = useState<number | null>(null);
   const { t, lang } = useI18n();
@@ -214,14 +218,14 @@ export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSor
 
   if (rows.length === 0) {
     return (
-      <div className="board board-empty">
+      <div className="board board-empty" ref={listBox}>
         <p>{emptyText ?? t(view === "board" && isPhone() ? "board.empty.phone" : `board.empty.${view}`)}</p>
       </div>
     );
   }
 
   return (
-    <div className="board-wrap">
+    <div className="board-wrap" ref={listBox}>
       <table
         className="board"
         role="treegrid"

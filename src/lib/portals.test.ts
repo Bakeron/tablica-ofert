@@ -87,10 +87,17 @@ describe("status, work mode, city, salary and English filters", () => {
     ]);
   });
 
-  it("English: required, a plus, not named - in this order", () => {
+  it("English: unticked hides offers that need it, ticked shows all; the count is what the box adds", () => {
     const en = [row(["nfj"], [], { english: "nice" }), row(["jjit"], [], { english: "required" }), row(["pracuj"])];
-    expect(applyFilters(en, { ...NO_FILTERS, english: ["required"] })).toEqual([en[1]]);
-    expect(filterCounts(en, NO_FILTERS, "english").map((x) => x.value)).toEqual(["required", "nice", "none"]);
+    expect(applyFilters(en, NO_FILTERS)).toEqual([en[0], en[2]]);
+    expect(applyFilters(en, { ...NO_FILTERS, english: ["all"] })).toEqual(en);
+    expect(filterCounts(en, NO_FILTERS, "english")).toEqual([{ value: "all", count: 1 }]);
+    expect(filterCounts(en, { ...NO_FILTERS, portal: ["nfj"] }, "english")).toEqual([{ value: "all", count: 0 }]);
+  });
+
+  it("English: a family stays while one of its ads does not need it", () => {
+    const fam = row(["jjit"], [["pracuj"]], { english: "required" });
+    expect(applyFilters([fam], NO_FILTERS)).toEqual([fam]);
   });
 
   it("each filter counts on the list narrowed by the others, and keeps every value", () => {

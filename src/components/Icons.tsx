@@ -138,6 +138,13 @@ export const IconQuestion = () => (
   </Icon>
 );
 
+/** "Show categories": a short list - three rows, each with its mark. */
+export const IconList = () => (
+  <Icon>
+    <path d="M9 6h12M9 12h12M9 18h12M4 6h1M4 12h1M4 18h1" />
+  </Icon>
+);
+
 /** "Rejected by filter": a funnel. */
 export const IconFilter = () => (
   <Icon>

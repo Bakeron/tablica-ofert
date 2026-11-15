@@ -36,8 +36,8 @@ export function useLastShown<T>(show: boolean, value: T): T {
   return show ? value : kept.current;
 }
 
-/** A short fade-in of `ref` whenever `key` changes (e.g. the card shows another offer). */
-export function useAppearOn(ref: RefObject<HTMLElement | null>, key: unknown) {
+/** A short fade-in of `ref` whenever `key` changes (e.g. the card shows another offer); `ms` - how long. */
+export function useAppearOn(ref: RefObject<HTMLElement | null>, key: unknown, ms = REVEAL_MS) {
   const first = useRef(true);
   useEffect(() => {
     if (first.current) {
@@ -46,6 +46,6 @@ export function useAppearOn(ref: RefObject<HTMLElement | null>, key: unknown) {
     }
     const el = ref.current;
     if (!el || motionReduced() || typeof el.animate !== "function") return;
-    el.animate([{ opacity: 0.25, translate: "0 6px" }, { opacity: 1, translate: "0 0" }], { duration: REVEAL_MS, easing: "ease-out" });
-  }, [ref, key]);
+    el.animate([{ opacity: 0.25, translate: "0 6px" }, { opacity: 1, translate: "0 0" }], { duration: ms, easing: "ease-out" });
+  }, [ref, key, ms]);
 }
