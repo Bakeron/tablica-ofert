@@ -37,7 +37,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
 import { Tour, type TourStep } from "./components/Tour";
 import { ErrorContext, ProfileDraftContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
-import { IconBoard, IconBriefcase, IconDownload, IconGear, IconHome, IconPlus, IconTrash, IconWarning } from "./components/Icons";
+import { IconBoard, IconBriefcase, IconDownload, IconFilter, IconGear, IconHome, IconPlus, IconTrash, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { ProfileTabs } from "./components/ProfileTabs";
@@ -52,7 +52,7 @@ import { onBack } from "./lib/back";
 import { REVEAL_MS } from "./lib/presence";
 import { keepOrder } from "./lib/browse";
 import { applyFilters, FILTER_KEYS, NO_FILTERS, type ListFilters } from "./lib/portals";
-import { ListFilterBar } from "./components/ListFilterBar";
+import { availableFilters, ListFilterBar } from "./components/ListFilterBar";
 import { BIN, isBin, leavesView, placeName, viewFor, type BinView } from "./lib/profile";
 import { csvCells, csvName, csvSeparator } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
@@ -162,6 +162,8 @@ export default function App() {
   const [binQuery, setBinQuery] = useState("");
   // The filters above every list (portal, status, place, salary) - one choice for all tabs, never remembered after a restart.
   const [filters, setFilters] = useState<ListFilters>(NO_FILTERS);
+  /** "Show filters": the filters slide out above the list (hidden at the start - they take room). */
+  const [filtersOpen, setFiltersOpen] = useState(false);
   /** `null` = the tab's own order: "Today" as Rust ranks it, the others the newest first. */
   const [sort, setSort] = useState<Sort | null>(null);
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
@@ -175,6 +177,11 @@ export default function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
   // Settings → Profile left with changes not saved - a reminder in the corner until they are.
   const [profileDraft, setProfileDraft] = useState(false);
+  /** Its reminder closed with "X" - back with the next change not saved. */
+  const [draftDismissed, setDraftDismissed] = useState(false);
+  useEffect(() => {
+    if (!profileDraft) setDraftDismissed(false);
+  }, [profileDraft]);
   const [confirm, setConfirm] = useState<{ message: string; action: () => void; label?: string } | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   /** null = all profiles together */
@@ -394,7 +401,7 @@ export default function App() {
   useEffect(() => (currentTab !== "own" ? onBack(() => setView("own"), true) : undefined), [currentTab]);
   const searching = isBin(view) && binQuery !== "";
   useEffect(() => (searching ? onBack(() => setBinQuery(""), true) : undefined), [searching]);
-  const filtering = FILTER_KEYS.some((k) => filters[k] !== null);
+  const filtering = FILTER_KEYS.some((k) => filters[k].length > 0);
   useEffect(() => (filtering ? onBack(() => setFilters(NO_FILTERS), true) : undefined), [filtering]);
   // No offer left (the list emptied, or the layout is wide again after turning the phone): the card
   // closes - otherwise "back" would close an invisible card and the next offer's card open by itself.
@@ -704,6 +711,8 @@ export default function App() {
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
   }, [rows, shownSort, view, binQuery, browseOrder]);
   const sorted = useMemo(() => applyFilters(searched, filters), [searched, filters]);
+  const filterChoices = useMemo(() => availableFilters(searched, filters), [searched, filters]);
+  const activeFilters = FILTER_KEYS.filter((k) => filters[k].length > 0).length;
   // A filter chosen (or a new list under it): an offer the filter hid does not stay on the card.
   useEffect(() => {
     if (!filtering) return;
@@ -1194,7 +1203,9 @@ export default function App() {
   return (
     <I18nContext.Provider value={i18n}>
       <ToastContext.Provider value={toastValue}>
-      <ProfileDraftContext.Provider value={profileDraft && !multiProfile}>
+      <ProfileDraftContext.Provider
+        value={{ on: profileDraft && !multiProfile && !draftDismissed, open: () => openSettings("profile"), dismiss: () => setDraftDismissed(true) }}
+      >
       <ErrorContext.Provider value={errorValue}>
       <WorkContext.Provider value={work}>
       <div className={cardShown ? "app is-card" : "app"}>
@@ -1348,6 +1359,23 @@ export default function App() {
                     <IconDownload /> {t("board.export")}
                   </button>
                 )}
+                {/* Hidden filters still work - the number says how many are chosen. */}
+                {filterChoices.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    aria-expanded={filtersOpen}
+                    aria-controls="list-filters"
+                    onClick={() => setFiltersOpen(!filtersOpen)}
+                  >
+                    <IconFilter /> {t(filtersOpen ? "narrow.hide" : "narrow.show")}
+                    {activeFilters > 0 && (
+                      <span className="seg-count" aria-label={t("narrow.active", { count: activeFilters })}>
+                        {activeFilters}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
             {/* "Collected": best today / all / to check / rejected by the filter, with their numbers. */}
@@ -1386,14 +1414,16 @@ export default function App() {
               </div>
             )}
             {/* Portal, status, city / remote, salary - each shown when the list has more than one value, or one is chosen. */}
-            <ListFilterBar rows={searched} filters={filters} onChange={setFilters} />
+            <Reveal show={filtersOpen && filterChoices.length > 0}>
+              <ListFilterBar rows={searched} filters={filters} onChange={setFilters} />
+            </Reveal>
             <Board
               rows={sorted}
               emptyText={
                 !filtering || searched.length === 0
                   ? undefined
-                  : FILTER_KEYS.every((k) => k === "portal" || filters[k] === null)
-                    ? t("portal.empty", { portal: sourceLabel(filters.portal!, t) })
+                  : filters.portal.length === 1 && FILTER_KEYS.every((k) => k === "portal" || filters[k].length === 0)
+                    ? t("portal.empty", { portal: sourceLabel(filters.portal[0], t) })
                     : t("narrow.empty")
               }
               view={view}

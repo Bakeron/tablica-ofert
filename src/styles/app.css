@@ -1807,6 +1807,12 @@ textarea {
   width: min(760px, calc(100vw - 2rem));
 }
 
+/* A big window's yellow head is its top edge: no yellow strip above it, so the space over the
+   title equals the space under it and the scroll bar reaches the very top. */
+.modal:has(> .sheet:not(.sheet-narrow)) {
+  border-top: 0;
+}
+
 /* Pinned to the top, not centred: going through the sections, the window grows and shrinks at
    its bottom edge only - the section buttons stay under the pointer. */
 .modal-settings {
@@ -2201,6 +2207,17 @@ span.verdict-why {
   cursor: pointer;
 }
 
+/* Beside text, "middle" means the middle of the small letters - the square sat 1-1.6 px under the
+   middle of the capitals. Raised by about that much; beside buttons it is centred already. */
+.help-btn {
+  position: relative;
+  top: -0.1em;
+}
+
+:is(.hard-switch, .pass-back-bar) .help-btn {
+  top: 0;
+}
+
 /* Tooltip: a popover in the top layer, under the "?", growing right (flips left or above when there is no room). */
 .help-tip {
   inset: auto;
@@ -2318,12 +2335,20 @@ fieldset.plain {
 }
 
 .crit-head h3 {
+  /* The "?" centred on the capital letters, not on the line's x-height (it sat a bit low). */
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   margin: 0;
   font-family: var(--font-board);
   font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.crit-head h3 .help-btn {
+  margin-left: 0;
 }
 
 .crit-group {
@@ -2625,6 +2650,7 @@ fieldset.plain {
 
 .toast-text {
   flex: 1;
+  margin: 0;
 }
 
 /* "X" in the top right corner of the message. */
@@ -3622,54 +3648,119 @@ fieldset.plain {
 }
 
 /* The portal filter above every list: a small sign "Portal" and the choice beside it. */
+/* Filters above the list ("Show filters"): the name centred above the choice, as many in a row
+   as fit (four at a full window), the ones that wrap centred under them. */
 .list-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  padding: 0 1rem 0.6rem;
+  justify-content: center;
+  gap: 0.6rem 1rem;
+  padding: 0.2rem 1rem 0.7rem;
 }
 
 .portal-filter {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex: 0 1 11.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
   min-width: 0;
 }
 
-/* Narrow screen: two filters in a row, the name above the choice - four of them take two lines, not four. */
-@media (max-width: 600px) {
-  .list-filters {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem 0.75rem;
-  }
-
-  .list-filters .portal-filter {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.2rem;
-  }
-
-  .list-filters .portal-filter span {
-    font-size: 0.8rem;
-  }
-
-  .list-filters .portal-filter select {
-    max-width: none;
-  }
-}
-
-.portal-filter span {
+.portal-filter > span {
   font-family: var(--font-board);
+  font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.04em;
+  text-align: center;
   text-transform: uppercase;
 }
 
 .portal-filter select {
-  flex: 0 1 auto;
+  width: 100%;
   min-width: 0;
-  max-width: 14rem;
+}
+
+/* Tick boxes behind a field that looks like the other lists: the choices fold out under it. */
+.multi-pick {
+  position: relative;
+}
+
+.multi-pick-button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  block-size: 2.55rem;
+  padding: 0 0.55rem;
+  border: 1.5px solid var(--field-line);
+  border-radius: 3px;
+  background: var(--field);
+  color: var(--paper-ink);
+  /* Looks like the list beside it ("Status"), not like a button. */
+  font-family: var(--font-text);
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-align: start;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.multi-pick-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-pick-arrow {
+  flex: none;
+  font-size: 0.8rem;
+}
+
+.multi-pick-button[aria-expanded="true"] .multi-pick-arrow {
+  transform: rotate(180deg);
+}
+
+.multi-pick-panel {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-block-size: min(18rem, 60vh);
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  overflow-y: auto;
+  border: 1.5px solid var(--field-line);
+  border-radius: 3px;
+  background: var(--field);
+  color: var(--paper-ink);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  white-space: nowrap;
+}
+
+.multi-pick-panel .btn {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+}
+
+@media (hover: hover) {
+  .multi-pick-button:hover {
+    border-color: var(--paper-ink);
+  }
+}
+
+/* Narrow screen: two in a row, the fifth centred under them. */
+@media (max-width: 600px) {
+  .list-filters {
+    gap: 0.5rem 0.75rem;
+  }
+
+  .portal-filter {
+    flex-basis: calc(50% - 0.375rem);
+  }
 }
 
 /* Phone: "Empty the bin" beside the search - the words stay whole. */
@@ -4330,7 +4421,8 @@ fieldset.plain {
   }
 
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
-  select {
+  select,
+  .multi-pick-button {
     block-size: max(48px, 2.55rem);
   }
 
@@ -5064,8 +5156,23 @@ html.scanning .scan-overlay * {
 
 /* The tree of duplicates: the other ads of a job hang under the first one, one step in, with a
    thin line like a branch - the indent says it, not only the colour. */
-.board tr.is-child > td:first-child {
-  box-shadow: inset 3px 0 0 var(--perf);
+/* A band four times wider than the old 3 px line: a strong edge and a light tint, with the whole
+   row (date first) a step in after it. */
+.board tbody tr.is-child > td:first-child {
+  padding-left: calc(0.6rem + 12px);
+  background-image: linear-gradient(to right, var(--stamp) 0 3px, color-mix(in srgb, var(--stamp) 28%, transparent) 3px 12px);
+  background-size: 12px 100%;
+  background-repeat: no-repeat;
+}
+
+/* An own offer's yellow stripe stays at the edge; the band comes right after it. */
+.board tbody tr.is-child.is-own > td:first-child {
+  padding-left: calc(0.6rem + 7px + 12px);
+  background-image:
+    repeating-linear-gradient(-45deg, var(--signal) 0 5px, var(--signal-ink) 5px 8px),
+    linear-gradient(to right, var(--stamp) 0 3px, color-mix(in srgb, var(--stamp) 28%, transparent) 3px 12px);
+  background-size: 7px 100%, 12px 100%;
+  background-position: 0 0, 7px 0;
 }
 
 /* A clear step in, with an elbow of a branch from the first ad down to this one - not a list. */
@@ -5081,8 +5188,9 @@ html.scanning .scan-overlay * {
   top: 0;
   width: 1.2rem;
   height: 1.35rem;
-  border-left: 2px solid var(--perf);
-  border-bottom: 2px solid var(--perf);
+  /* The stamp's blue: easy to see against the board in both themes, and not the yellow of "own". */
+  border-left: 2px solid var(--stamp);
+  border-bottom: 2px solid var(--stamp);
   pointer-events: none;
 }
 
@@ -5131,27 +5239,70 @@ html.scanning .scan-overlay * {
   transform: rotate(90deg);
 }
 
-/* The children slide in from under the parent and back up when the tree folds (TREE_OUT_MS). */
-@keyframes tree-in {
+/* The children unfold from under the parent and fold back up (TREE_OUT_MS): each cell's content
+   grows from no height and its padding with it, so the rows below slide instead of jumping. */
+.tree-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.tree-fold-inner {
+  min-height: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+
+@keyframes tree-fold-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@keyframes tree-fold-out {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@keyframes tree-cell-in {
+  from {
+    padding-block: 0;
+  }
+}
+
+@keyframes tree-cell-out {
+  to {
+    padding-block: 0;
+  }
+}
+
+.board tr.is-child.tree-in > td {
+  animation: tree-cell-in 0.18s ease-out;
+}
+
+.board tr.is-child.tree-in .tree-fold {
+  animation: tree-fold-in 0.18s ease-out;
+}
+
+.board tr.is-child.tree-out > td {
+  animation: tree-cell-out 0.16s ease-in forwards;
+}
+
+.board tr.is-child.tree-out .tree-fold {
+  animation: tree-fold-out 0.16s ease-in forwards;
+}
+
+/* The elbow of the branch waits for the row to open (it is drawn on the cell, not inside it). */
+.board tr.is-child.tree-in .c-offer::before {
+  animation: tree-elbow-in 0.18s ease-out;
+}
+
+@keyframes tree-elbow-in {
   from {
     opacity: 0;
-    transform: translateY(-0.5rem);
   }
-}
-
-@keyframes tree-out {
-  to {
-    opacity: 0;
-    transform: translateY(-0.5rem);
-  }
-}
-
-.board tr.is-child.tree-in {
-  animation: tree-in 0.18s ease-out;
-}
-
-.board tr.is-child.tree-out {
-  animation: tree-out 0.16s ease-in forwards;
 }
 
 .tree-ad-stage {
@@ -5186,8 +5337,10 @@ html.scanning .scan-overlay * {
   }
 
   /* The branch line belongs to the table's first column; in a card the first cell is the date. */
-  .board tr.is-child > td:first-child {
-    box-shadow: none;
+  .board tbody tr.is-child > td:first-child,
+  .board tbody tr.is-child.is-own > td:first-child {
+    padding-left: 0;
+    background-image: none;
   }
 }
 

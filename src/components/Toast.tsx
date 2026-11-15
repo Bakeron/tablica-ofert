@@ -64,7 +64,8 @@ function WindowError() {
 }
 
 /** Settings → Profile was left with changes not saved - closing the app would lose them. */
-export const ProfileDraftContext = createContext(false);
+/** Settings → Profile left with changes not saved: the reminder, its "Open profile" and its "X". */
+export const ProfileDraftContext = createContext<{ on: boolean; open: () => void; dismiss: () => void }>({ on: false, open: () => {}, dismiss: () => {} });
 
 /** What fetching or AI is doing now (null = nothing). */
 export const WorkContext = createContext<WorkProgress | null>(null);
@@ -140,15 +141,21 @@ export function ToastView({ inWindow = false }: { inWindow?: boolean }) {
   const { mounted, leaving } = usePresence(live !== null);
   const toast = useLastShown(live !== null, live);
   const draft = useContext(ProfileDraftContext);
-  const reminder = usePresence(draft);
+  const reminder = usePresence(draft.on);
   return (
     <div className="toast-zone" aria-live="polite">
       {inWindow && <WindowError />}
-      {/* Stays until the profile is saved - not a message that goes by itself. */}
+      {/* Stays until the profile is saved or its "X" is clicked - not a message that goes by itself. */}
       {reminder.mounted && (
-        <p className="toast draft-note fade" data-leaving={reminder.leaving || undefined}>
-          <IconWarning /> {t("profile.saveReminder")}
-        </p>
+        <div className="toast draft-note fade" data-leaving={reminder.leaving || undefined} inert={reminder.leaving || undefined}>
+          <p className="toast-text">
+            <IconWarning /> {t("profile.saveReminder")}
+          </p>
+          <button type="button" className="btn btn-ghost" onClick={draft.open}>
+            {t("profile.openToSave")}
+          </button>
+          <CloseButton small onClick={draft.dismiss} label={t("profile.reminderDismiss")} />
+        </div>
       )}
       <WorkLine />
       {mounted && toast && (

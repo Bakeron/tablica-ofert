@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent, TouchEvent } from "react";
+import type { KeyboardEvent, ReactNode, TouchEvent } from "react";
 import { STAGES, type Interest, type OfferRow, type View } from "../api/types";
 import { plural, useI18n, type TextKey } from "../i18n";
 import { addedLabel, companyLabel, placeLabel, salaryShort, shortDay, translatedTitle, shownScore } from "../lib/format";
@@ -324,116 +324,128 @@ export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSor
                 }}
               >
                 <td role="gridcell" className="c-added">
-                  <CellName text={t("col.addedLong")} />
-                  <Flap className="mono" text={addedLabel(o.publishedAt, lang, t)} fresh={fresh} />
-                  {/* Under the date, in the first column: the ads below are a step in from here.
-                      "+1 more" - as many rows as unfold (the first ad is this row). */}
-                  {!child && o.children.length > 0 && (
-                    <button
-                      type="button"
-                      className="tree-toggle"
-                      aria-expanded={isOpen(o.id)}
-                      title={t("tree.moreLabel", { count: o.children.length })}
-                      onClick={(e) => {
-                        // Folding is not choosing the row.
-                        e.stopPropagation();
-                        fold(o.id, !isOpen(o.id));
-                      }}
-                    >
-                      {/* One arrow that turns down - smoothly, with the children. */}
-                      <span className={`tree-mark${isOpen(o.id) ? " is-open" : ""}`} aria-hidden="true">
-                        ▸
-                      </span>
-                      {t(plural(lang, "tree.more", o.children.length), { count: o.children.length })}
-                    </button>
-                  )}
+                  <Fold on={child}>
+                    <CellName text={t("col.addedLong")} />
+                    <Flap className="mono" text={addedLabel(o.publishedAt, lang, t)} fresh={fresh} />
+                    {/* Under the date, in the first column: the ads below are a step in from here.
+                        "+1 more" - as many rows as unfold (the first ad is this row). */}
+                    {!child && o.children.length > 0 && (
+                      <button
+                        type="button"
+                        className="tree-toggle"
+                        aria-expanded={isOpen(o.id)}
+                        title={t("tree.moreLabel", { count: o.children.length })}
+                        onClick={(e) => {
+                          // Folding is not choosing the row.
+                          e.stopPropagation();
+                          fold(o.id, !isOpen(o.id));
+                        }}
+                      >
+                        {/* One arrow that turns down - smoothly, with the children. */}
+                        <span className={`tree-mark${isOpen(o.id) ? " is-open" : ""}`} aria-hidden="true">
+                          ▸
+                        </span>
+                        {t(plural(lang, "tree.more", o.children.length), { count: o.children.length })}
+                      </button>
+                    )}
+                  </Fold>
                 </td>
                 <td role="gridcell" className="c-offer">
-                  <span className="offer-line">
-                    {o.favorite && (
-                      <span className="fav">
-                        <IconStar filled />
-                        <span className="sr-only">{t("favorite.label")}</span>
-                      </span>
-                    )}
-                    <Flap className="offer-title" text={translatedTitle(o, lang) ?? o.title} fresh={fresh} />
-                  </span>
-                  <span className="offer-line">
-                    {/* A child: which ad it is - the portal says it better than the repeated company. */}
-                    {child ? (
-                      <span className="offer-company">{t("tree.childOf", { source: sourceNames.join(" · ") })}</span>
-                    ) : (
-                      <span className="offer-company">{companyLabel(o.company, t)}</span>
-                    )}
-                    {o.interest && (
-                      <span key={o.interest} className={`interest interest-${o.interest}${flipped === o.id ? " flap-in" : ""}`}>
-                        <span className="sr-only">{t("interest.label")}: </span>
-                        {t(`interest.${o.interest}`)}
-                      </span>
-                    )}
-                  </span>
-                  {child ? null : o.sources.length > 1 ? (
-                    <span className="offer-sources">
-                      {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}
+                  <Fold on={child}>
+                    <span className="offer-line">
+                      {o.favorite && (
+                        <span className="fav">
+                          <IconStar filled />
+                          <span className="sr-only">{t("favorite.label")}</span>
+                        </span>
+                      )}
+                      <Flap className="offer-title" text={translatedTitle(o, lang) ?? o.title} fresh={fresh} />
                     </span>
-                  ) : (
-                    // Adzuna's and Himalayas' terms: their offers carry their name also in the list (the credit link is on the card).
-                    (o.sources[0] === "adzuna" || o.sources[0] === "himalayas") && (
-                      <span className="offer-sources">{t("sources.one", { list: sourceNames[0] })}</span>
-                    )
-                  )}
-                  {(view === "review" || view === "rejected") && <RowReasons row={o} />}
-                  {/* "OWN" only where own and collected offers mix (the bin) - in "Own" every one is.
-                      In the bin also why the offer is there, in words. */}
-                  {((o.own && view !== "own") || o.noLink || o.renewAsked || o.dupAsk || o.sentVia || (isBin(view) && o.bin)) && (
-                    <span className="offer-line row-marks">
-                      {isBin(view) && o.bin && <span className={`row-mark row-mark-bin row-mark-${o.bin}`}>{t(`row.bin.${o.bin}`)}</span>}
-                      {o.own && view !== "own" && <span className="row-mark row-mark-own">{t("row.own")}</span>}
-                      {o.noLink && <span className="row-mark row-mark-nolink">{t("row.noLink")}</span>}
-                      {o.renewAsked && <span className="row-mark row-mark-renewed">{t("row.renewed")}</span>}
-                      {o.dupAsk && <span className="row-mark row-mark-dup">{t("row.dup")}</span>}
-                      {/* The CV went through a child: the parent keeps its own stage, the family is one recruitment. */}
-                      {o.sentVia && (
-                        <span className="row-mark row-mark-sent">
-                          {t("tree.sentVia", { source: sourceLabel(o.sentVia.source, t), date: shortDay(o.sentVia.at, lang) })}
+                    <span className="offer-line">
+                      {/* A child: which ad it is - the portal says it better than the repeated company. */}
+                      {child ? (
+                        <span className="offer-company">{t("tree.childOf", { source: sourceNames.join(" · ") })}</span>
+                      ) : (
+                        <span className="offer-company">{companyLabel(o.company, t)}</span>
+                      )}
+                      {o.interest && (
+                        <span key={o.interest} className={`interest interest-${o.interest}${flipped === o.id ? " flap-in" : ""}`}>
+                          <span className="sr-only">{t("interest.label")}: </span>
+                          {t(`interest.${o.interest}`)}
                         </span>
                       )}
                     </span>
-                  )}
-                  {/* AI orders "Today" and never hides: one sentence says why the score. */}
-                  {view === "today" && o.scoreSource === "ai" && o.scoreWhy && (
-                    <span className="offer-why">{t("row.why", { why: o.scoreWhy })}</span>
-                  )}
+                    {child ? null : o.sources.length > 1 ? (
+                      <span className="offer-sources">
+                        {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}
+                      </span>
+                    ) : (
+                      // Adzuna's and Himalayas' terms: their offers carry their name also in the list (the credit link is on the card).
+                      (o.sources[0] === "adzuna" || o.sources[0] === "himalayas") && (
+                        <span className="offer-sources">{t("sources.one", { list: sourceNames[0] })}</span>
+                      )
+                    )}
+                    {(view === "review" || view === "rejected") && <RowReasons row={o} />}
+                    {/* "OWN" only where own and collected offers mix (the bin) - in "Own" every one is.
+                        In the bin also why the offer is there, in words. */}
+                    {((o.own && view !== "own") || o.noLink || o.renewAsked || o.dupAsk || o.sentVia || (isBin(view) && o.bin)) && (
+                      <span className="offer-line row-marks">
+                        {isBin(view) && o.bin && <span className={`row-mark row-mark-bin row-mark-${o.bin}`}>{t(`row.bin.${o.bin}`)}</span>}
+                        {o.own && view !== "own" && <span className="row-mark row-mark-own">{t("row.own")}</span>}
+                        {o.noLink && <span className="row-mark row-mark-nolink">{t("row.noLink")}</span>}
+                        {o.renewAsked && <span className="row-mark row-mark-renewed">{t("row.renewed")}</span>}
+                        {o.dupAsk && <span className="row-mark row-mark-dup">{t("row.dup")}</span>}
+                        {/* The CV went through a child: the parent keeps its own stage, the family is one recruitment. */}
+                        {o.sentVia && (
+                          <span className="row-mark row-mark-sent">
+                            {t("tree.sentVia", { source: sourceLabel(o.sentVia.source, t), date: shortDay(o.sentVia.at, lang) })}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {/* AI orders "Today" and never hides: one sentence says why the score. */}
+                    {view === "today" && o.scoreSource === "ai" && o.scoreWhy && (
+                      <span className="offer-why">{t("row.why", { why: o.scoreWhy })}</span>
+                    )}
+                  </Fold>
                 </td>
                 <td role="gridcell" className="c-place">
-                  <CellName text={t("cell.place")} />
-                  <Flap text={placeLabel(o, t)} fresh={fresh} />
+                  <Fold on={child}>
+                    <CellName text={t("cell.place")} />
+                    <Flap text={placeLabel(o, t)} fresh={fresh} />
+                  </Fold>
                 </td>
                 <td role="gridcell" className="c-salary">
-                  <CellName text={t("col.salary")} />
-                  <Flap className="mono" text={salaryShort(o, lang, t)} fresh={fresh} />
+                  <Fold on={child}>
+                    <CellName text={t("col.salary")} />
+                    <Flap className="mono" text={salaryShort(o, lang, t)} fresh={fresh} />
+                  </Fold>
                 </td>
                 <td role="gridcell" className="c-match">
-                  <CellName text={t("col.matchLong")} />
-                  {o.score !== null && (
-                    <span className="match-cap" aria-hidden="true">
-                      {t("col.match")}
-                    </span>
-                  )}
-                  {o.score === null ? (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="sr-only">{t("card.matchNone")}</span>
-                    </>
-                  ) : (
-                    <span className={o.scoreSource === "keywords" ? "score score-plain" : "score"}>
-                      <Flap className="mono" text={String(shownScore(o))} fresh={fresh} />
-                      {o.scoreSource === "keywords" && <span className="sr-only"> ({t("card.matchKeywords")})</span>}
-                    </span>
-                  )}
+                  <Fold on={child}>
+                    <CellName text={t("col.matchLong")} />
+                    {o.score !== null && (
+                      <span className="match-cap" aria-hidden="true">
+                        {t("col.match")}
+                      </span>
+                    )}
+                    {o.score === null ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="sr-only">{t("card.matchNone")}</span>
+                      </>
+                    ) : (
+                      <span className={o.scoreSource === "keywords" ? "score score-plain" : "score"}>
+                        <Flap className="mono" text={String(shownScore(o))} fresh={fresh} />
+                        {o.scoreSource === "keywords" && <span className="sr-only"> ({t("card.matchKeywords")})</span>}
+                      </span>
+                    )}
+                  </Fold>
                 </td>
                 <td role="gridcell" className="c-status">
-                  <StatusTag offer={o} fresh={fresh} />
+                  <Fold on={child}>
+                    <StatusTag offer={o} fresh={fresh} />
+                  </Fold>
                 </td>
               </tr>
               </Fragment>
@@ -441,6 +453,17 @@ export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSor
           }))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Another ad's cell: its content unfolds in height (a table row cannot), so the rows below
+ *  slide down with it instead of jumping. */
+function Fold({ on, children }: { on: boolean; children: ReactNode }) {
+  if (!on) return <>{children}</>;
+  return (
+    <div className="tree-fold">
+      <div className="tree-fold-inner">{children}</div>
     </div>
   );
 }

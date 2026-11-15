@@ -78,8 +78,10 @@ const card = (page) => page.locator("aside.pass");
 const SHOTS = [
   {
     name: "pc-ekran-startowy",
-    run: async (p) =>
-      mark(p, [
+    run: async (p) => {
+      await p.getByRole("button", { name: "Pokaż filtry" }).click();
+      await wait(p, 500);
+      await mark(p, [
         [p.locator(".topbar .tabs"), 1],
         [p.getByRole("button", { name: "Pobierz oferty" }), 2],
         [p.getByRole("button", { name: "Dodaj ofertę" }), 3],
@@ -88,7 +90,8 @@ const SHOTS = [
         [p.getByRole("button", { name: "Eksportuj tę listę" }), 6],
         [p.locator("table.board thead"), 7],
         [card(p).locator(".pass-stub"), 8],
-      ]),
+      ]);
+    },
   },
   { name: "pc-przewodnik", tour: true, run: async () => {} },
   {
