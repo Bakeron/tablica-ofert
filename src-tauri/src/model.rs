@@ -50,7 +50,10 @@ word_enum!(Interest { High => "high", Maybe => "maybe", No => "no" });
 
 word_enum!(Remote { Yes => "yes", Hybrid => "hybrid", No => "no", Unknown => "unknown" });
 
-word_enum!(SalaryPeriod { Month => "month", Hour => "hour" });
+word_enum!(SalaryPeriod { Month => "month", Hour => "hour", Day => "day" });
+
+// "English required?" read from the offer's words (`english.rs`) - the list's filter.
+word_enum!(EnglishNeed { Required => "required", Nice => "nice", Unnamed => "none" });
 
 word_enum!(FilterResult { Pass => "pass", Fail => "fail", Unsure => "unsure" });
 
@@ -302,6 +305,8 @@ pub struct OfferRow {
     pub sent_at: Option<String>,
     /// On a parent: the CV went through one of its children - "sent through: OLX, 5.11".
     pub sent_via: Option<SentVia>,
+    /// English required, a plus, or not named - the list's filter.
+    pub english: EnglishNeed,
     /// The other ads of this job, the first seen on top - shown under it on the list.
     pub children: Vec<OfferRow>,
 }

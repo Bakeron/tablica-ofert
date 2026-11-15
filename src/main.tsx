@@ -1,3 +1,4 @@
+import "./freeze";
 import React from "react";
 import ReactDOM from "react-dom/client";
 // Fonts are bundled with the app (SIL OFL) - nothing is loaded from the internet.

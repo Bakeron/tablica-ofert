@@ -771,6 +771,8 @@ fn language(f: &Facts, c: &Criteria, out: &mut Out) {
 
 /// Full-time hours in a month - to compare hourly and monthly rates.
 const HOURS_PER_MONTH: f64 = 168.0;
+/// Working days in a month - to compare day rates (B2B "1200 zł / dzień") with monthly pay.
+const DAYS_PER_MONTH: f64 = 21.0;
 /// Rough share of a gross employment-contract salary that is paid out (2026, orientacyjnie).
 const UOP_NET_SHARE: f64 = 0.72;
 const VAT: f64 = 1.23;
@@ -779,6 +781,7 @@ fn monthly(amount: i64, period: SalaryPeriod) -> f64 {
     match period {
         SalaryPeriod::Month => amount as f64,
         SalaryPeriod::Hour => amount as f64 * HOURS_PER_MONTH,
+        SalaryPeriod::Day => amount as f64 * DAYS_PER_MONTH,
     }
 }
 

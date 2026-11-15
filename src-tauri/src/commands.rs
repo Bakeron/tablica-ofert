@@ -643,6 +643,12 @@ pub async fn capture_preview(app: tauri::AppHandle) -> AppResult<crate::preview:
     crate::preview::capture(&app).await
 }
 
+/// "Take the text from the page" in "Add offer": opens the page, takes its text, closes it.
+#[tauri::command]
+pub async fn fetch_page(app: tauri::AppHandle, url: String) -> AppResult<crate::preview::Captured> {
+    crate::preview::fetch(&app, &url).await
+}
+
 #[tauri::command]
 pub async fn close_preview(app: tauri::AppHandle) -> AppResult<()> {
     crate::preview::close(&app);

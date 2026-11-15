@@ -40,10 +40,14 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/024_renewed.sql"),
     include_str!("migrations/025_tree.sql"),
     include_str!("migrations/026_dup.sql"),
+    include_str!("migrations/027_day_rate.sql"),
 ];
 
 /// The version with the tree of duplicates (`025_tree.sql`).
 const TREE_VERSION: usize = 25;
+
+/// The version with day rates and "English required?" (`027_day_rate.sql`).
+const DAY_VERSION: usize = 27;
 
 /// Schema version this app writes (copies from newer versions are refused).
 pub fn latest_version() -> i64 {
@@ -82,8 +86,34 @@ pub fn migrate(conn: &mut Connection) -> AppResult<()> {
         if index + 1 == TREE_VERSION {
             crate::tree::convert(&tx)?;
         }
+        if index + 1 == DAY_VERSION {
+            allow_day_rate(&tx)?;
+        }
         tx.pragma_update(None, "user_version", (index + 1) as i64)?;
         tx.commit()?;
+    }
+    Ok(())
+}
+
+/// Version 27: `salary_period` may be "day" too. SQLite cannot change a CHECK in place, so the
+/// table's stored definition gets the wider CHECK - the way SQLite's docs give for loosening a
+/// constraint (no data changes, no rebuild of a table that eight others point to).
+fn allow_day_rate(tx: &rusqlite::Transaction) -> AppResult<()> {
+    const OLD: &str = "CHECK (salary_period IN ('month', 'hour'))";
+    const NEW: &str = "CHECK (salary_period IN ('month', 'hour', 'day'))";
+    let sql: String = tx.query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'offers'", [], |r| r.get(0))?;
+    if !sql.contains(OLD) {
+        return Err(AppError::Invalid("offers table: the salary period check is not as expected".into()));
+    }
+    let version: i64 = tx.pragma_query_value(None, "schema_version", |r| r.get(0))?;
+    tx.execute_batch("PRAGMA writable_schema = ON")?;
+    tx.execute("UPDATE sqlite_master SET sql = ?1 WHERE type = 'table' AND name = 'offers'", [sql.replace(OLD, NEW)])?;
+    // A new schema version makes every connection read the changed definition.
+    tx.pragma_update(None, "schema_version", version + 1)?;
+    tx.execute_batch("PRAGMA writable_schema = OFF")?;
+    let check: String = tx.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+    if check != "ok" {
+        return Err(AppError::Invalid(format!("database check after version 27: {check}")));
     }
     Ok(())
 }
@@ -251,6 +281,12 @@ fn open_with_vault(data_dir: &Path, backup: bool, vault: &dyn KeyVault) -> AppRe
         crate::profiles::recheck_all(&tx)?;
         tx.commit()?;
     }
+    // Version 27: "English required?" for every offer saved before (the filter check fills it).
+    if exists && (1..DAY_VERSION as i64).contains(&before) {
+        let tx = conn.transaction()?;
+        crate::profiles::recheck_all(&tx)?;
+        tx.commit()?;
+    }
     // "Several profiles" off (the default since 13.11.2026): offers checked before against the
     // profiles asleep now are checked again, once.
     if exists && crate::profiles::sleeping_results(&conn)? {
@@ -379,6 +415,24 @@ pub mod tests {
             .query_row("SELECT count(*) FROM events WHERE offer_id = ?1", [id], |r| r.get(0))
             .unwrap();
         assert_eq!(events, 1);
+    }
+
+    /// Version 27 widens the CHECK in place: a day rate fits, anything else is still refused.
+    #[test]
+    fn day_rate_fits_after_version_27() {
+        let mut conn = open(&temp_dir("dayrate").join(DB_FILE), TEST_KEY).unwrap();
+        migrate(&mut conn).unwrap();
+        let insert = |uid: &str, period: &str| {
+            conn.execute(
+                "INSERT INTO offers (uid, fingerprint, title, company, salary_min, salary_period, stage, stage_changed_at, added_at, updated_at)
+                 VALUES (?1, ?1, 'Tester', 'Firma Przykładowa', 1200, ?2, 'new', ?3, ?3, ?3)",
+                rusqlite::params![uid, period, "2026-11-15T00:00:00Z"],
+            )
+        };
+        assert!(insert("u-day", "day").is_ok());
+        assert!(insert("u-week", "week").is_err());
+        let check: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+        assert_eq!(check, "ok");
     }
 
     /// Part 1 of 11.11.2026 on a database of version 20 (before it): offers with merged links

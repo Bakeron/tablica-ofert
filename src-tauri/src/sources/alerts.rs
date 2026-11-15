@@ -509,8 +509,9 @@ pub fn parse_salary(line: &str) -> Option<(i64, Option<i64>, String, SalaryPerio
         return None;
     }
     let hourly = lower.contains("/h") || lower.contains("/godz") || lower.contains("godzin") || lower.contains("hour") || lower.contains("/hr");
-    // A day or week rate is no month - left out (the amount stays in the text), never "too low".
-    if ["dzień", "dzien", "dziennie", "/day", "per day", "daily", "/d ", "tydz", "week"].iter().any(|w| lower.contains(w)) {
+    // A B2B day rate ("1200 zł/dzień") is its own period; a week rate is left out (the amount stays in the text), never "too low".
+    let daily = ["dzień", "dzien", "dziennie", "dniówk", "dniowk", "/day", "per day", "daily", "/d "].iter().any(|w| lower.contains(w));
+    if ["tydz", "week"].iter().any(|w| lower.contains(w)) {
         return None;
     }
     // "120 000 zł rocznie": a year, counted as a month.
@@ -560,18 +561,26 @@ pub fn parse_salary(line: &str) -> Option<(i64, Option<i64>, String, SalaryPerio
         numbers.push(value);
     }
     // "12-16k": the first number shares the unit of the second.
-    if numbers.len() == 2 && numbers[0] < 1000.0 && numbers[1] >= 1000.0 && thousands_word && !hourly {
+    if numbers.len() == 2 && numbers[0] < 1000.0 && numbers[1] >= 1000.0 && thousands_word && !hourly && !daily {
         numbers[0] *= 1000.0;
     }
     // "100 zł" (Jooble): an amount this small is per hour, even when the alert does not say so.
-    let hourly = hourly
-        || (!currency.is_empty() && !thousands_word && !numbers.is_empty() && numbers.iter().all(|v| (5.0..500.0).contains(v)));
-    if yearly && !hourly {
+    let hourly = !daily
+        && (hourly || (!currency.is_empty() && !thousands_word && !numbers.is_empty() && numbers.iter().all(|v| (5.0..500.0).contains(v))));
+    if yearly && !hourly && !daily {
         numbers.iter_mut().for_each(|v| *v /= 12.0);
     }
     let min = *numbers.first()?;
     let max = numbers.get(1).copied().filter(|m| *m >= min);
-    let plausible = |v: f64| if hourly { (5.0..=2_000.0).contains(&v) } else { (500.0..=500_000.0).contains(&v) };
+    let plausible = |v: f64| {
+        if hourly {
+            (5.0..=2_000.0).contains(&v)
+        } else if daily {
+            (50.0..=20_000.0).contains(&v)
+        } else {
+            (500.0..=500_000.0).contains(&v)
+        }
+    };
     if !plausible(min) || max.is_some_and(|m| !plausible(m)) {
         return None;
     }
@@ -580,7 +589,13 @@ pub fn parse_salary(line: &str) -> Option<(i64, Option<i64>, String, SalaryPerio
         min.round() as i64,
         max.map(|m| m.round() as i64),
         currency.into(),
-        if hourly { SalaryPeriod::Hour } else { SalaryPeriod::Month },
+        if hourly {
+            SalaryPeriod::Hour
+        } else if daily {
+            SalaryPeriod::Day
+        } else {
+            SalaryPeriod::Month
+        },
     ))
 }
 
@@ -920,7 +935,7 @@ fn jooble_redirect_uid(url: &Url) -> Option<String> {
     (!digits.is_empty() && digits.len() <= 25 && digits.bytes().all(|b| b.is_ascii_digit())).then_some(uid)
 }
 
-fn short_id(url: &str) -> String {
+pub(crate) fn short_id(url: &str) -> String {
     // FNV-1a - stable between runs, no extra dependency.
     let mut h: u32 = 0x811c9dc5;
     for b in url.bytes() {
@@ -967,8 +982,10 @@ mod tests {
         assert_eq!(s("Wrocław, ul. Długa 12"), None);
         assert_eq!(s("React Developer"), None);
         assert_eq!(s("3 lata doświadczenia"), None);
-        // A day rate is no month; a year is counted as a month.
-        assert_eq!(s("1 000 - 1 400 zł/dzień netto (B2B)"), None);
+        // A day rate is its own period, a week rate is left out; a year is counted as a month.
+        assert_eq!(s("1 000 - 1 400 zł/dzień netto (B2B)"), Some((1000, Some(1400), "PLN".into(), SalaryPeriod::Day)));
+        assert_eq!(s("900-1200 PLN dziennie"), Some((900, Some(1200), "PLN".into(), SalaryPeriod::Day)));
+        assert_eq!(s("5000 zł / tydzień"), None);
         assert_eq!(s("120 000 - 144 000 zł rocznie"), Some((10000, Some(12000), "PLN".into(), SalaryPeriod::Month)));
     }
 

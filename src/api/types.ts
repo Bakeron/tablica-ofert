@@ -15,7 +15,9 @@ export type Stage = (typeof STAGES)[number];
 
 export type Interest = "high" | "maybe" | "no";
 export type Remote = "yes" | "hybrid" | "no" | "unknown";
-export type SalaryPeriod = "month" | "hour";
+export type SalaryPeriod = "month" | "day" | "hour";
+/** "English required?" read from the offer's words (Rust `english.rs`): required, a plus, not named. */
+export type EnglishNeed = "required" | "nice" | "none";
 export type FilterResult = "pass" | "fail" | "unsure";
 export type View = "own" | "today" | "board" | "review" | "rejected" | "declined" | "archive" | "trash" | "bin";
 export type Contract = "uop" | "b2b" | "mandate";
@@ -184,6 +186,8 @@ export interface OfferRow {
   sentAt: string | null;
   /** On a parent: the CV went through one of its children - "sent through: OLX, 5.11". */
   sentVia: SentVia | null;
+  /** English required, a plus, or not named - the list's filter. */
+  english: EnglishNeed;
   /** The other ads of this job, the first seen on top - shown under it on the list. */
   children: OfferRow[];
 }
@@ -582,6 +586,8 @@ export interface Settings {
   multi_profile: "off" | "on";
   /** "First steps" at the first start, until finished or skipped. */
   onboarding: "pending" | "done";
+  /** The guide in bubbles - once on each device, after "First steps" (Settings → About shows it again). */
+  tour: "pending" | "done";
   /** "Collect offers automatically": off = only own offers ("Collected", "Fetch offers" and the
    *  sources' settings disappear; collected offers stay in the database). */
   collect: "on" | "off";
@@ -647,8 +653,8 @@ export interface Settings {
   learn_scores: "on" | "off";
 }
 
-/** Defaults - the same as the first value of every rule in settings.rs, except `onboarding`:
- * "done" before the settings load, so "First steps" do not flash on every start. */
+/** Defaults - the same as the first value of every rule in settings.rs, except `onboarding` and
+ * `tour`: "done" before the settings load, so "First steps" and the guide do not flash on every start. */
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   language: "system",
@@ -658,6 +664,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tilt: "off",
   multi_profile: "off",
   onboarding: "done",
+  tour: "done",
   collect: "on",
   fetch_auto: "on",
   fetch_every: "6",

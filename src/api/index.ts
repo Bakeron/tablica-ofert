@@ -157,6 +157,8 @@ export interface Api {
   openPreview(url: string): Promise<void>;
   /** "Take the text from the page" in the preview window. */
   capturePreview(): Promise<Captured>;
+  /** "Take the text from the page" in one click: opens the page, takes its text, closes it. */
+  fetchPage(url: string): Promise<Captured>;
   closePreview(): Promise<void>;
   /** Is the Task Scheduler task really there? */
   backgroundStatus(): Promise<TaskStatus>;
@@ -295,6 +297,7 @@ async function tauriApi(): Promise<Api> {
     fillOffer: (text, title) => invoke("fill_offer", { text, title }),
     openPreview: (url) => invoke("open_preview", { url }),
     capturePreview: () => invoke("capture_preview"),
+    fetchPage: (url) => invoke("fetch_page", { url }),
     closePreview: () => invoke("close_preview"),
     backgroundStatus: () => invoke("background_status"),
     setBackground: (on) => invoke("set_background", { on }),

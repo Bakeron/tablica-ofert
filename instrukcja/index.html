@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Tablica Ofert - instrukcja</title>
+<meta name="description" content="Instrukcja Tablicy Ofert krok po kroku, ze zrzutami ekranu.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<style>
+/* Barlow Condensed (SIL Open Font License 1.1) - the same headings as in the app. */
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/barlow-condensed-latin-ext-700-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/barlow-condensed-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+:root {
+  --paper: #f5f3ee;
+  --card: #ffffff;
+  --ink: #161616;
+  --ink-dim: #57534c;
+  --line: #d6d2c9;
+  --board: #1b1d1f;
+  --board-ink: #ece7dc;
+  --signal: #ffc61a;
+  --signal-ink: #111111;
+  --mark: #c0392b;
+  --link: #1f4fa3;
+  --tip-bg: #fff4cc;
+  --tip-line: #d9a400;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121314;
+    --card: #1b1d1f;
+    --ink: #ece7dc;
+    --ink-dim: #b0aaa0;
+    --line: #2c2f33;
+    --board: #0b0c0d;
+    --link: #93b8ff;
+    --tip-bg: #3a3217;
+    --tip-line: #ffc61a;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.6 "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+}
+a { color: var(--link); text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+h1, h2, h3, .sign, .toc-title {
+  font-family: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Top: the departures board with a yellow wayfinding sign. */
+.top {
+  background: var(--board);
+  color: var(--board-ink);
+  border-bottom: 6px solid var(--signal);
+}
+.top-in {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1.1rem 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+.top h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+.top p { margin: 0.2rem 0 0; color: #b0aaa0; }
+.top-links { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.3rem 1rem;
+  border: 2px solid var(--signal);
+  border-radius: 4px;
+  color: var(--signal);
+  font: 700 1.05rem/1 "Barlow Condensed", "Arial Narrow", sans-serif;
+  text-transform: uppercase;
+  text-decoration: none;
+  letter-spacing: 0.03em;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.btn:hover { background: var(--signal); color: var(--signal-ink); }
+.btn-solid { background: var(--signal); color: var(--signal-ink); }
+.btn-solid:hover { background: #ffd65c; }
+
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1.5rem 16px 4rem;
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 2.5rem;
+}
+@media (max-width: 860px) { .page { grid-template-columns: 1fr; gap: 1rem; } }
+
+/* Contents: a list of gates. */
+.toc {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  font-size: 0.95rem;
+}
+@media (max-width: 860px) { .toc { position: static; max-height: none; } }
+.toc-title { margin: 0 0 0.4rem; font-size: 1.1rem; text-transform: uppercase; }
+.toc ol { margin: 0; padding: 0; list-style: none; counter-reset: gate; }
+.toc li { counter-increment: gate; }
+.toc a {
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: none;
+  transition: background-color 120ms ease-out;
+}
+.toc a::before {
+  content: counter(gate, decimal-leading-zero);
+  flex: none;
+  min-width: 1.9rem;
+  font: 700 0.95rem/1.6 "Barlow Condensed", "Arial Narrow", sans-serif;
+  color: var(--ink-dim);
+}
+.toc a:hover { background: var(--line); }
+
+article { min-width: 0; }
+section { margin: 0 0 3rem; }
+/* Section titles: the yellow wayfinding sign with an arrow box. */
+h2.sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.9rem;
+  padding: 0.35rem 0.9rem 0.35rem 0.4rem;
+  background: var(--signal);
+  color: var(--signal-ink);
+  border-radius: 4px;
+  font-size: clamp(1.45rem, 3vw, 1.85rem);
+  text-transform: uppercase;
+  line-height: 1.15;
+  box-shadow: inset 0 0 0 3px var(--signal), inset 0 0 0 4.5px var(--signal-ink);
+}
+h2.sign::before {
+  content: "→";
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 3px;
+  background: var(--signal-ink);
+  color: var(--signal);
+  font-size: 1.3rem;
+}
+h3 { margin: 1.6rem 0 0.4rem; font-size: 1.35rem; text-transform: uppercase; }
+p, ul, ol { margin: 0 0 0.9rem; }
+li { margin-bottom: 0.3rem; }
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 0.35em;
+  border: 1px solid var(--ink-dim);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  font: 600 0.9em/1.4 ui-monospace, Consolas, monospace;
+  text-align: center;
+}
+
+figure { margin: 1rem 0 1.2rem; }
+figure a { display: block; }
+figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+figure.phone { max-width: 360px; }
+.phones { display: flex; flex-wrap: wrap; gap: 1rem; }
+.phones figure { flex: 1 1 260px; max-width: 360px; margin: 0; }
+figcaption { margin-top: 0.4rem; color: var(--ink-dim); font-size: 0.92rem; }
+
+/* Steps that match the red numbers on the screenshot. */
+ol.marks { list-style: none; padding: 0; counter-reset: mark; }
+ol.marks > li {
+  counter-increment: mark;
+  position: relative;
+  padding-left: 2.4rem;
+  margin-bottom: 0.55rem;
+}
+ol.marks > li::before {
+  content: counter(mark);
+  position: absolute;
+  left: 0;
+  top: 0.1rem;
+  width: 1.65rem;
+  height: 1.65rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--mark);
+  color: #fff;
+  font: 700 0.9rem/1 Arial, sans-serif;
+}
+ol.steps { padding-left: 1.4rem; }
+
+.tip {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 5px solid var(--tip-line);
+  background: var(--tip-bg);
+  border-radius: 4px;
+}
+.tip p:last-child { margin-bottom: 0; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 700 1rem "Barlow Condensed", "Arial Narrow", sans-serif; text-transform: uppercase; letter-spacing: 0.03em; }
+.foot { color: var(--ink-dim); font-size: 0.9rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div>
+      <h1>Tablica Ofert - instrukcja</h1>
+      <p>Każda funkcja krok po kroku. Zrzuty z wersji demonstracyjnej - firmy i oferty są zmyślone.</p>
+    </div>
+    <nav class="top-links" aria-label="Odnośniki">
+      <a class="btn btn-solid" href="../">Otwórz demo</a>
+      <a class="btn" href="https://github.com/Bakeron/tablica-ofert">Kod na GitHubie</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page">
+  <nav class="toc" aria-labelledby="toc-title">
+    <p class="toc-title" id="toc-title">Spis treści</p>
+    <ol>
+      <li><a href="#start">Na start</a></li>
+      <li><a href="#ekran">Ekran startowy</a></li>
+      <li><a href="#dodaj">Dodawanie oferty</a></li>
+      <li><a href="#karta">Karta oferty</a></li>
+      <li><a href="#etap">Etap, terminy, notatki</a></li>
+      <li><a href="#ogloszenia">Jedna oferta, kilka ogłoszeń</a></li>
+      <li><a href="#zebrane">Zebrane</a></li>
+      <li><a href="#kosz">Kosz</a></li>
+      <li><a href="#lista">Lista i klawisze</a></li>
+      <li><a href="#profil">Profil - czego szukasz</a></li>
+      <li><a href="#zrodla">Źródła ofert</a></li>
+      <li><a href="#ai">AI</a></li>
+      <li><a href="#wyglad">Wygląd</a></li>
+      <li><a href="#sync">Komputer i telefon</a></li>
+      <li><a href="#dane">Kopia i eksport danych</a></li>
+      <li><a href="#telefon">Na telefonie</a></li>
+    </ol>
+  </nav>
+
+  <article>
+    <section id="start" aria-labelledby="start-h">
+      <h2 class="sign" id="start-h">Na start</h2>
+      <p>Tablica Ofert to osobista lista ofert pracy na komputerze (Windows) i telefonie (Android). Zbiera oferty z legalnych źródeł, odsiewa je Twoimi filtrami, pomaga ocenić je z AI i przypomina o rozmowach. <strong>Nigdy nie wysyła zgłoszeń sama</strong> - CV zawsze wysyłasz Ty.</p>
+      <p>Dane są na Twoim urządzeniu, w zaszyfrowanej bazie. Nie ma kont ani serwera aplikacji - jeśli chcesz, wspólne dane komputera i telefonu idą przez Twój własny Google Dysk.</p>
+      <h3>Pierwsze uruchomienie</h3>
+      <ol class="steps">
+        <li><strong>Pierwsze kroki</strong> (tylko na komputerze) - trzy krótkie ekrany: czego szukasz, dostawca AI i czy aplikacja ma sama zbierać oferty. Każdy krok można pominąć i wrócić do niego w Ustawieniach.</li>
+        <li><strong>Przewodnik po ekranie</strong> - żółte znaki ze strzałką pokazują najważniejsze miejsca: zakładki, „Dodaj ofertę”, listę, kartę oferty i Ustawienia. <kbd>Enter</kbd> albo <kbd>→</kbd> - dalej, <kbd>←</kbd> - wstecz, <kbd>Esc</kbd> - pomiń. Przewodnik pokażesz znowu w <em>Ustawienia → O aplikacji → „Pokaż przewodnik po ekranie”</em>.</li>
+      </ol>
+      <figure>
+        <a href="zrzuty/pc-przewodnik.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-przewodnik.png" width="1280" height="900" loading="lazy" alt="Pierwszy znak przewodnika wskazuje zakładki Własne, Zebrane i Kosz."></a>
+        <figcaption>Przewodnik po ekranie - pierwszy z pięciu znaków.</figcaption>
+      </figure>
+    </section>
+
+    <section id="ekran" aria-labelledby="ekran-h">
+      <h2 class="sign" id="ekran-h">Ekran startowy</h2>
+      <figure>
+        <a href="zrzuty/pc-ekran-startowy.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-ekran-startowy.png" width="1280" height="900" loading="lazy" alt="Ekran startowy z ponumerowanymi częściami: zakładki, przyciski u góry, filtry nad listą, eksport, lista i karta oferty."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Zakładki.</strong> „Własne” - oferty, którymi się zajmujesz (dodane przez Ciebie albo przeniesione z Zebranych); liczba przy nazwie mówi, ile CV czeka na wysłanie. „Zebrane” - oferty pobrane przez aplikację. „Kosz” - odrzucone, wygasłe i usunięte.</li>
+        <li><strong>Pobierz oferty</strong> - sprawdza teraz wszystkie włączone źródła (bez czekania na pobieranie automatyczne).</li>
+        <li><strong>Dodaj ofertę</strong> - ręcznie, z linku albo z wklejonej treści ogłoszenia.</li>
+        <li><strong>Ustawienia</strong> - profil, źródła ofert, AI, wygląd, synchronizacja, dane.</li>
+        <li><strong>Filtry nad listą</strong>: <strong>Portal</strong>, <strong>Status</strong>, <strong>Miasto / zdalnie</strong> (tryb pracy albo miasto) <strong>Widełki</strong> (podane, brak, miesięczne, dzienne, godzinowe) i <strong>Angielski</strong> (wymagany, mile widziany, bez wzmianki - aplikacja czyta to z treści oferty; ogłoszenie po angielsku liczy się jako „wymagany”). Na liście widełki mają okres: „/mies.”, „/dzień” albo „/h”. Liczba w nawiasie to ile ofert zostanie po wyborze. Każdy filtr pojawia się, gdy na liście jest z czego wybierać; wszystkie naraz zdejmuje przycisk Wstecz na telefonie.</li>
+        <li><strong>Eksportuj tę listę</strong> - zapisuje dokładnie to, co widać na liście, do pliku CSV dla Excela.</li>
+        <li><strong>Nagłówki kolumn</strong> - kliknięcie zmienia kolejność (np. po widełkach albo dopasowaniu), drugie kliknięcie odwraca ją.</li>
+        <li><strong>Karta oferty</strong> - szczegóły oferty wybranej na liście. Opis w części <a href="#karta">Karta oferty</a>.</li>
+      </ol>
+      <p>Pasek „Wersja demonstracyjna” widać tylko w demie - w aplikacji go nie ma.</p>
+    </section>
+
+    <section id="dodaj" aria-labelledby="dodaj-h">
+      <h2 class="sign" id="dodaj-h">Dodawanie oferty</h2>
+      <figure>
+        <a href="zrzuty/pc-dodaj-oferte.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-dodaj-oferte.png" width="1280" height="900" loading="lazy" alt="Okno Nowa oferta z ponumerowanymi polami."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Link do oferty</strong> - wklej adres ogłoszenia.</li>
+        <li><strong>Pobierz treść ze strony</strong> - strona otwiera się na chwilę w osobnym oknie (jak w trybie incognito), aplikacja sama pobiera z niej treść i zamyka okno.</li>
+        <li><strong>Albo wklej treść oferty</strong> - skopiowaną ze strony (<kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>). Instrukcję dla różnych przeglądarek rozwiniesz pod polem.</li>
+        <li><strong>Uzupełnij pola</strong> - aplikacja sama wpisuje stanowisko, firmę, widełki i resztę. Z włączonym AI robi to AI (sprawdź pola przed zapisaniem), bez AI - tylko to, co da się odczytać na pewno.</li>
+        <li><strong>Stanowisko</strong> - jedyne wymagane pole. Resztę możesz dopisać później.</li>
+        <li><strong>Firma</strong> - gdy ogłoszenie jej nie podaje, zostaw puste: oferta będzie jako „firma nieznana”.</li>
+        <li><strong>Zapisz ofertę</strong> - oferta trafia do zakładki „Własne”.</li>
+      </ol>
+      <div class="tip">
+        <p>Gdy ta sama oferta już jest na liście, aplikacja nie robi drugiej - dopisuje tylko nowe informacje i mówi o tym w komunikacie.</p>
+      </div>
+    </section>
+
+    <section id="karta" aria-labelledby="karta-h">
+      <h2 class="sign" id="karta-h">Karta oferty</h2>
+      <p>Karta jest jak karta pokładowa: u góry najważniejsze dane (stanowisko, firma, widełki, miejsce, umowa), niżej wszystko, co z ofertą robisz.</p>
+      <figure>
+        <a href="zrzuty/pc-karta.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-karta.png" width="1280" height="900" loading="lazy" alt="Karta oferty z ponumerowanymi częściami."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Dopasowanie</strong> (0-100) - jak bardzo oferta pasuje do Twojego profilu. Bez AI to „zgodność ze słowami” z profilu, z AI - ocena AI. Znak <kbd>?</kbd> wyjaśnia, skąd ta liczba.</li>
+        <li><strong>Sprawdź duplikaty</strong> - szuka na liście tego samego ogłoszenia pod innym tytułem albo bez nazwy firmy. O połączeniu zawsze decydujesz Ty.</li>
+        <li><strong>Ocena AI</strong> i przyciski pod nią: najpierw „Oceń tę ofertę” obok „Sprawdź duplikaty”, a pod przerywaną linią teksty od AI - „Pytania na rozmowę”, „Czego mi brakuje” i „Wiadomość do rekrutera”. Przyciski AI działają, gdy w Ustawieniach jest włączone AI.</li>
+        <li><strong>Bardzo / Może / Nie</strong> - Twoje zainteresowanie. „Nie” przenosi ofertę do kosza („Nie dla mnie”). Drugie kliknięcie zdejmuje oznaczenie.</li>
+        <li><strong>Gwiazdka</strong> - ulubiona; w „Najlepsze dziś” takie oferty są zawsze na górze.</li>
+        <li><strong>Wygasła</strong> - oferta trafia do kosza („Wygasłe”).</li>
+        <li><strong>Otwórz ofertę</strong> - otwiera ogłoszenie w przeglądarce.</li>
+      </ol>
+      <p>Niżej na karcie są też: <strong>Uzupełnij pełny opis</strong> (otwiera stronę ogłoszenia i pobiera z niej całą treść, gdy źródło dało tylko początek), <strong>wymagania</strong>, przycisk <strong>Opis</strong> (cała treść ogłoszenia w osobnym oknie, żeby nie zajmowała miejsca na karcie), <strong>Historia</strong> zmian etapu i <strong>Do kosza</strong> - daleko od głównych przycisków, żeby nie kliknąć przez pomyłkę. Usunięcie można od razu cofnąć przyciskiem „Cofnij” w komunikacie.</p>
+    </section>
+
+    <section id="etap" aria-labelledby="etap-h">
+      <h2 class="sign" id="etap-h">Etap, terminy, notatki</h2>
+      <figure>
+        <a href="zrzuty/pc-karta-etap.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-karta-etap.png" width="1280" height="900" loading="lazy" alt="Dolna część karty: etap rekrutacji, własna oferta, terminy, notatki i filtr."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Etap rekrutacji</strong> - od „Nowa” i „Chcę aplikować”, przez „Wysłano”, „Odpowiedź”, „Rozmowa HR”, „Zadanie / rozmowa techniczna”, do „Oferta pracy”, „Odrzucona” albo „Wycofana”. Każda zmiana trafia do historii z datą.</li>
+        <li><strong>Własna oferta</strong> - zaznaczone: oferta jest w zakładce „Własne”. Odznaczenie oddaje ją do „Zebranych”.</li>
+        <li><strong>Dodaj termin</strong> - rozmowa, termin zadania albo inny termin (niżej).</li>
+        <li><strong>Notatki</strong> - zapisują się same, gdy wyjdziesz z pola.</li>
+        <li><strong>Filtr</strong> - czy oferta pasuje do każdego profilu: „pasuje”, „do sprawdzenia” albo „nie pasuje”, z powodem (np. cytat z treści ogłoszenia).</li>
+      </ol>
+      <h3>Termin rozmowy albo zadania</h3>
+      <figure>
+        <a href="zrzuty/pc-termin.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-termin.png" width="1280" height="900" loading="lazy" alt="Formularz terminu na karcie oferty."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Rodzaj</strong> - rozmowa, termin zadania albo inny termin.</li>
+        <li><strong>Kiedy</strong> - dzień i godzina.</li>
+        <li><strong>Ile minut</strong> - długość (np. rozmowy).</li>
+        <li><strong>Zapisz</strong>.</li>
+      </ol>
+      <p>Przypomnienie przyjdzie dzień wcześniej i godzinę przed. Zapisany termin dodasz jednym kliknięciem do <strong>Kalendarza Google</strong> albo zapiszesz jako <strong>plik .ics</strong> (Outlook, kalendarz Windows, telefon).</p>
+      <p>W <em>Ustawienia → Wygląd → Części ekranu</em> włączysz też <strong>Kontakty i historię kontaktów</strong> przy ofercie: osoby (np. rekruter, z e-mailem, telefonem i LinkedIn) i wpisy „Telefon”, „Mail”, „Spotkanie”, „Wiadomość”.</p>
+    </section>
+
+    <section id="ogloszenia" aria-labelledby="ogloszenia-h">
+      <h2 class="sign" id="ogloszenia-h">Jedna oferta, kilka ogłoszeń</h2>
+      <p>Ta sama oferta często wisi na kilku portalach. Aplikacja łączy takie ogłoszenia w drzewko - pierwsze dodane jest na górze, kolejne pod nim.</p>
+      <figure>
+        <a href="zrzuty/pc-ogloszenia.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-ogloszenia.png" width="1280" height="900" loading="lazy" alt="Rozwinięte drzewko trzech ogłoszeń jednej oferty."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>„+2 kolejne”</strong> - pod datą: rozwija i zwija kolejne ogłoszenia tej oferty.</li>
+        <li><strong>Kolejne ogłoszenie</strong> - z nazwą portalu. Jeśli to jednak inna oferta, na jego karcie kliknij „Odłącz”.</li>
+        <li><strong>„Wysłano przez”</strong> - którym ogłoszeniem poszło CV i kiedy, żeby nie wysłać drugi raz.</li>
+      </ol>
+    </section>
+
+    <section id="zebrane" aria-labelledby="zebrane-h">
+      <h2 class="sign" id="zebrane-h">Zebrane</h2>
+      <p>Tu trafiają oferty pobrane przez aplikację: z agregatorów (Adzuna, Remotive, Himalayas, We Work Remotely, Remote OK, Jooble) i z alertów e-mail portali. Zakładka jest tylko wtedy, gdy włączone jest zbieranie ofert.</p>
+      <figure>
+        <a href="zrzuty/pc-zebrane.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-zebrane.png" width="1280" height="900" loading="lazy" alt="Zakładka Zebrane z przełącznikiem list i oceną AI."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Które oferty pokazać</strong>: „Najlepsze dziś” (najlepsze świeże oferty według oceny, ulubione zawsze na górze), „Wszystkie” (przeszły filtry profilu), „Do sprawdzenia” (filtr nie był pewny) i „Odrzucone przez filtr” (z powodem - nic nie znika bez śladu).</li>
+        <li><strong>Jedno zdanie od AI</strong> - dlaczego taka ocena.</li>
+        <li><strong>Ocena</strong> - tu ocena AI; pod nią m.in. „Z Twoich ocen”, gdy aplikacja uczy się z Twoich „Bardzo” i „Nie”.</li>
+        <li><strong>Do własnych</strong> - zajmujesz się tą ofertą: przechodzi do zakładki „Własne”.</li>
+      </ol>
+      <p>Oferta, przy której przez kilka dni od publikacji nic nie zrobiono, sama idzie do kosza („Wygasłe”). Ile dni - ustawisz w <em>Ustawienia → Wygląd → Lista ofert</em>.</p>
+    </section>
+
+    <section id="kosz" aria-labelledby="kosz-h">
+      <h2 class="sign" id="kosz-h">Kosz</h2>
+      <figure>
+        <a href="zrzuty/pc-kosz.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-kosz.png" width="1280" height="900" loading="lazy" alt="Kosz z rodzajami, wyszukiwarką i przyciskami przywracania."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Rodzaje</strong>: „Nie dla mnie” (ocenione „Nie”), „Wygasłe” i „Usunięte”.</li>
+        <li><strong>Szukaj w koszu</strong> - po stanowisku, firmie albo mieście.</li>
+        <li><strong>Opróżnij kosz</strong> - usuwa na zawsze to, co pokazuje przełącznik (po pytaniu z liczbą ofert).</li>
+        <li><strong>Przywróć</strong> - oferta wraca na swoje miejsce.</li>
+        <li><strong>Usuń na zawsze</strong> - oferta nie wróci też przy następnym pobieraniu.</li>
+      </ol>
+    </section>
+
+    <section id="lista" aria-labelledby="lista-h">
+      <h2 class="sign" id="lista-h">Lista i klawisze</h2>
+      <p>Na komputerze ofertami da się przejść bez myszy. Podpowiedź skrótów jest nad listą (wyłączysz ją w <em>Ustawienia → Wygląd</em>).</p>
+      <table>
+        <thead><tr><th scope="col">Klawisz</th><th scope="col">Co robi</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>poprzednia / następna oferta</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>„Bardzo”, „Może”, „Nie” - i od razu następna oferta</td></tr>
+          <tr><td><kbd>W</kbd></td><td>wygasła</td></tr>
+          <tr><td><kbd>D</kbd></td><td>do własnych (w Zebranych)</td></tr>
+          <tr><td><kbd>Del</kbd></td><td>do kosza</td></tr>
+          <tr><td><kbd>P</kbd></td><td>przywróć (w Koszu)</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>+</kbd> / <kbd>Ctrl</kbd> <kbd>-</kbd> / <kbd>Ctrl</kbd> <kbd>0</kbd></td><td>większy / mniejszy / zwykły tekst</td></tr>
+        </tbody>
+      </table>
+      <p>Eksport do Excela: „Eksportuj tę listę” nad listą (to, co widać, w tej kolejności) albo <em>Ustawienia → Dane → Eksport do Excela (CSV)</em> (wybrana zakładka albo wszystko). Plik otwiera się w Excelu z polskimi znakami.</p>
+    </section>
+
+    <section id="profil" aria-labelledby="profil-h">
+      <h2 class="sign" id="profil-h">Profil - czego szukasz</h2>
+      <p>Profil mówi aplikacji, czego szukasz. Jest w <em>Ustawienia → Profil</em>.</p>
+      <figure>
+        <a href="zrzuty/pc-profil.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-profil.png" width="1280" height="900" loading="lazy" alt="Profil: opis czego szukam, przyciski AI, doświadczenie i sposób użycia filtrów."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Czego szukam</strong> - własnymi słowami: stanowisko, technologie, forma pracy, czego nie chcesz. Pomocne pytania są obok. Bez danych osobowych - ten tekst trafia do dostawcy AI.</li>
+        <li><strong>Zaproponuj filtry (AI)</strong> - AI wypełnia filtry niżej na podstawie opisu. Obok: „Uporządkuj” (poprawia tekst) i „Zaproponuj zawody” (podobne stanowiska do rozważenia).</li>
+        <li><strong>Doświadczenie zawodowe</strong> - niewymagane: technologie, lata pracy, języki, certyfikaty. Pomaga AI w ocenie.</li>
+        <li><strong>Twardy filtr / Tylko w ocenie AI</strong> - przy każdej grupie: twardy filtr od razu odrzuca to, co na pewno nie pasuje; „tylko w ocenie AI” - AI bierze to pod uwagę, ale nic nie odrzuca. Znak <kbd>?</kbd> wyjaśnia każde pole.</li>
+      </ol>
+      <figure>
+        <a href="zrzuty/pc-profil-filtry.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-profil-filtry.png" width="1280" height="900" loading="lazy" alt="Dalsza część profilu: oczekiwania finansowe, słowa kluczowe i wykluczające."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Oczekiwania finansowe</strong> - minimum i kwota oczekiwana, osobno dla umowy o pracę / zlecenia i dla B2B, brutto albo netto, za miesiąc albo godzinę.</li>
+        <li><strong>Słowa kluczowe / technologie</strong> - po przecinku. Służą też do wyszukiwania ofert w agregatorach.</li>
+        <li><strong>Słowa wykluczające</strong> - np. „sprzedaż bezpośrednia, call center”. Obok jest też lista firm do pominięcia.</li>
+        <li><strong>Zapisz profil</strong>.</li>
+      </ol>
+      <h3>Kilka profili</h3>
+      <p>Gdy szukasz dwóch różnych rzeczy (np. „zdalnie” i „w biurze we Wrocławiu”), włącz <em>Ustawienia → Wygląd → Kilka profili</em>. Profile pojawią się nad listą:</p>
+      <figure>
+        <a href="zrzuty/pc-kilka-profili.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-kilka-profili.png" width="1280" height="900" loading="lazy" alt="Profile nad listą ofert: Wszystkie profile, Plan A, Plan B i Nowy profil."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Profile</strong> - „Wszystkie profile” albo jeden z nich; ołówek obok nazwy otwiera profil do zmiany, „Nowy profil” dodaje kolejny. Oferta zostaje, jeśli pasuje do choć jednego profilu.</li>
+      </ol>
+      <p>Wyłączenie opcji niczego nie usuwa - dodatkowe profile czekają ukryte.</p>
+    </section>
+
+    <section id="zrodla" aria-labelledby="zrodla-h">
+      <h2 class="sign" id="zrodla-h">Źródła ofert</h2>
+      <p>Aplikacja korzysta tylko ze źródeł, które na to pozwalają: z publicznych interfejsów agregatorów i z alertów e-mail, które portale same wysyłają. Ustawienia są w <em>Ustawienia → Źródła ofert</em>.</p>
+      <figure>
+        <a href="zrzuty/pc-zrodla.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-zrodla.png" width="1280" height="900" loading="lazy" alt="Ustawienia zbierania ofert."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Zbieraj oferty automatycznie</strong> - wyłączone: zostają tylko Twoje oferty (zakładki „Własne” i „Kosz”); zebrane nie znikają z bazy.</li>
+        <li><strong>Pobieraj nowe oferty automatycznie</strong> - przy starcie i co 3, 6 albo 12 godzin, gdy aplikacja jest otwarta.</li>
+        <li><strong>Pobieraj też przy zamkniętej aplikacji</strong> - Harmonogram zadań Windows uruchamia ją co godzinę bez okna. Aplikacja nie startuje razem z Windows.</li>
+        <li><strong>Przypomnienia</strong> - rozmowy i terminy (dzień i godzinę przed), brak odpowiedzi po 7 dniach, oferty z wysoką oceną AI. Wyżej: powiadomienie o nowych ofertach.</li>
+      </ol>
+      <figure>
+        <a href="zrzuty/pc-zrodla-lista.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-zrodla-lista.png" width="1280" height="900" loading="lazy" alt="Lista agregatorów z przełącznikami."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Pokaż ustawienia</strong> - przy każdym źródle: opis i ustawienia, np. darmowy klucz, którego potrzebuje Adzuna.</li>
+        <li><strong>Włączone / Wyłączone</strong> - przełącznik źródła.</li>
+      </ol>
+      <h3>Alerty e-mail z portali</h3>
+      <p>Just Join IT, No Fluff Jobs, Pracuj.pl i inne nie pozwalają na automaty, ale same wysyłają nowe oferty mailem. Aplikacja czyta osobną skrzynkę z tymi alertami - niczego w niej nie usuwa i nic nie wysyła.</p>
+      <figure>
+        <a href="zrzuty/pc-alerty.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-alerty.png" width="1280" height="900" loading="lazy" alt="Ustawienia skrzynki z alertami e-mail."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Adres e-mail</strong> - osobna skrzynka tylko do zbierania ofert (zgłoszenia wysyłaj z innego konta).</li>
+        <li><strong>Hasło aplikacji Google</strong> - przy Gmailu zamiast zwykłego hasła (Konto Google → Bezpieczeństwo → Hasła do aplikacji). Hasło trafia do sejfu Windows, nie do pliku.</li>
+        <li><strong>Sprawdź połączenie</strong>.</li>
+        <li><strong>Słowa do alertów</strong> - każde słowo to osobny alert na portalach i osobne wyszukiwanie w Adzunie i Jooble.</li>
+        <li><strong>Jak założyć alerty na portalach</strong> - rozwija gotowe wyszukiwania na każdym portalu (przycisk ze słowem); zostaje tylko włączyć tam powiadomienia o nowych ofertach. Niżej, dla chętnych: oferty z Jooble przez API (z darmowym kluczem).</li>
+      </ol>
+    </section>
+
+    <section id="ai" aria-labelledby="ai-h">
+      <h2 class="sign" id="ai-h">AI</h2>
+      <p>AI czyta oferty, które przeszły twarde filtry: uzupełnia brakujące pola, pisze krótkie streszczenie i „Uwagi”, ocenia dopasowanie do każdego profilu z cytatem z oferty. Nikogo nie odrzuca i nic nie wysyła. Bez AI aplikacja też działa.</p>
+      <figure>
+        <a href="zrzuty/pc-ai.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-ai.png" width="1280" height="900" loading="lazy" alt="Ustawienia AI: wybór darmowe albo płatne, Claude, uczenie z ocen i dzienny limit."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Jakie AI</strong>: „Darmowe” (Groq, OpenRouter, Ollama - słabsze, mogą same oceniać zebrane oferty) albo „Płatne - Claude” (dokładniejsze; działa tylko po Twoim kliknięciu). Nigdy obu naraz.</li>
+        <li><strong>Dostawca</strong> - klucz API i model. Przy każdym dostawcy jest uczciwy opis, jak dokładny jest i ile kosztuje.</li>
+        <li><strong>Ucz się z moich ocen</strong> - po co najmniej 2 ocenach „Bardzo” i 2 „Nie” słowa z tych ofert podnoszą albo obniżają wynik podobnych (najwyżej o 15 punktów). Działa bez AI.</li>
+        <li><strong>Dzienny limit wydatków</strong> (w $) - po tej kwocie Claude nie dostaje dziś kolejnych zapytań. Pod nim: ile dziś wydano, w złotych po kursie NBP, i „Oceń teraz” (najpierw pokazuje liczbę ofert i przybliżony koszt).</li>
+      </ol>
+      <div class="tip">
+        <p>Do AI trafia treść oferty, opisy profili, oczekiwania finansowe i doświadczenie. Klucze, hasła i Twoje notatki - nigdy. Dlatego w opisach nie wpisuj danych osobowych.</p>
+      </div>
+    </section>
+
+    <section id="wyglad" aria-labelledby="wyglad-h">
+      <h2 class="sign" id="wyglad-h">Wygląd</h2>
+      <figure>
+        <a href="zrzuty/pc-wyglad.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-wyglad.png" width="1280" height="900" loading="lazy" alt="Ustawienia wyglądu."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Motyw</strong> - ciemny, jasny albo jak w systemie. Wyżej: język (polski / angielski).</li>
+        <li><strong>Wielkość tekstu</strong> - od małego do bardzo dużego (też <kbd>Ctrl</kbd> <kbd>+</kbd> i <kbd>Ctrl</kbd> <kbd>-</kbd>). Wyżej: animacje pełne albo ograniczone.</li>
+        <li><strong>Kilka profili</strong> - opis w części <a href="#profil">Profil</a>.</li>
+        <li><strong>Lista ofert</strong> - ile dni oferta jest świeża i ile ofert pokazuje „Najlepsze dziś”.</li>
+      </ol>
+      <p>Niżej, w „Części ekranu”: terminy, kontakty, podpowiedź skrótów, dźwięki (ciche klekotanie klapek przy nowych ofertach, gong godzinę przed rozmową) i krzywa pieczątka z oceną. Wyłączona część znika z ekranu, a jej dane zostają.</p>
+    </section>
+
+    <section id="sync" aria-labelledby="sync-h">
+      <h2 class="sign" id="sync-h">Komputer i telefon</h2>
+      <p>Wspólne dane idą przez Twój Google Dysk: jeden zaszyfrowany plik „tablica-ofert.sync”. Klucz do niego jest tylko na Twoich urządzeniach - nawet ktoś z dostępem do konta Google pliku nie odczyta.</p>
+      <h3>Na komputerze</h3>
+      <figure>
+        <a href="zrzuty/pc-synchronizacja.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-synchronizacja.png" width="1280" height="900" loading="lazy" alt="Synchronizacja na komputerze."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Synchronizuj z Google Dyskiem</strong> - włącz.</li>
+        <li><strong>Połącz z Google Dyskiem</strong> - skopiuj kod, otwórz stronę Google, wklej kod i zezwól na dostęp. Aplikacja sama dokończy łączenie.</li>
+        <li><strong>Pokaż kod QR dla telefonu</strong> - kod z kluczem pokazuje się na chwilę i nie idzie przez internet.</li>
+      </ol>
+      <h3>Na telefonie</h3>
+      <figure class="phone">
+        <a href="zrzuty/tel-synchronizacja.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/tel-synchronizacja.png" width="400" height="860" loading="lazy" alt="Synchronizacja na telefonie."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Synchronizuj z Google Dyskiem</strong> - włącz i połącz się z tym samym kontem Google.</li>
+        <li><strong>Zeskanuj kod QR</strong> - z ekranu komputera. Klucz zostaje w sejfie telefonu.</li>
+      </ol>
+      <div class="tip">
+        <p>Gdy przepadną oba urządzenia, kopii z Dysku nie da się odczytać. Dlatego co jakiś czas zapisz też kopię z hasłem (niżej).</p>
+      </div>
+    </section>
+
+    <section id="dane" aria-labelledby="dane-h">
+      <h2 class="sign" id="dane-h">Kopia i eksport danych</h2>
+      <figure>
+        <a href="zrzuty/pc-dane.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/pc-dane.png" width="1280" height="900" loading="lazy" alt="Ustawienia danych: zapis i wczytanie kopii, eksport CSV."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Zapisz kopię jako…</strong> - cała baza w jednym pliku zabezpieczonym Twoim hasłem (co najmniej 8 znaków). Bez hasła kopii nie da się odczytać. Klucze API i hasła nie trafiają do kopii.</li>
+        <li><strong>Wczytaj kopię…</strong> - zastępuje wszystkie dane danymi z kopii; obecne dane trafiają najpierw do kopii zapasowych.</li>
+        <li><strong>Eksport do Excela (CSV)</strong> - wybrana zakładka albo wszystkie oferty.</li>
+      </ol>
+      <p>Na samym dole jest „Usuń wszystkie dane” - usuwa bazę, kopie zapasowe, klucze i hasła z sejfu Windows oraz zadanie w Harmonogramie. Tego nie da się cofnąć.</p>
+    </section>
+
+    <section id="telefon" aria-labelledby="telefon-h">
+      <h2 class="sign" id="telefon-h">Na telefonie</h2>
+      <p>Telefon jest pomocnikiem: przeglądasz oferty i oceny, zmieniasz etap, dopisujesz notatkę po rozmowie, dostajesz przypomnienia i dodajesz oferty z przeglądarki. Zbieranie ofert, AI i skrzynka z alertami zostają na komputerze.</p>
+      <div class="phones">
+        <figure>
+          <a href="zrzuty/tel-ekran-startowy.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/tel-ekran-startowy.png" width="400" height="860" loading="lazy" alt="Ekran startowy na telefonie."></a>
+          <figcaption>Ekran startowy</figcaption>
+        </figure>
+        <figure>
+          <a href="zrzuty/tel-karta.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/tel-karta.png" width="400" height="860" loading="lazy" alt="Karta oferty na telefonie."></a>
+          <figcaption>Karta oferty</figcaption>
+        </figure>
+      </div>
+      <h3>Ekran startowy</h3>
+      <ol class="marks">
+        <li><strong>Zakładki</strong> - na dole ekranu, pod kciukiem.</li>
+        <li><strong>Dodaj ofertę</strong>.</li>
+        <li><strong>Ustawienia</strong> - profil, synchronizacja, wygląd, o aplikacji.</li>
+        <li><strong>Oferta</strong> - dotknij, żeby otworzyć kartę. Przesunięcie palcem w prawo oznacza „Bardzo”, w lewo - „Nie”; drugie takie przesunięcie zdejmuje oznaczenie.</li>
+      </ol>
+      <h3>Karta oferty</h3>
+      <ol class="marks">
+        <li><strong>Wróć do listy</strong> - to samo robi przycisk „Wstecz” telefonu.</li>
+        <li><strong>?</strong> - jak działa przesuwanie palcem. Na karcie przesunięcie od razu otwiera następną ofertę.</li>
+        <li><strong>Bardzo / Może / Nie</strong> i gwiazdka - na dole, pod kciukiem.</li>
+        <li><strong>Otwórz ofertę</strong> - w przeglądarce telefonu.</li>
+      </ol>
+      <h3>Dodawanie oferty z przeglądarki</h3>
+      <figure class="phone">
+        <a href="zrzuty/tel-dodaj-oferte.png" title="Otwórz zrzut w pełnym rozmiarze"><img src="zrzuty/tel-dodaj-oferte.png" width="400" height="860" loading="lazy" alt="Okno nowej oferty na telefonie."></a>
+      </figure>
+      <ol class="marks">
+        <li><strong>Wklej treść oferty</strong> - skopiowaną ze strony. Jeszcze prościej: w przeglądarce telefonu wybierz „Udostępnij” i Tablicę Ofert - okno otworzy się z gotową treścią.</li>
+        <li><strong>Uzupełnij pola</strong> - stanowisko, firma i reszta wpisują się same.</li>
+      </ol>
+      <h3>Przycisk „Wstecz”</h3>
+      <p>„Wstecz” najpierw cofa ostatni ruch: zamyka okno albo dymek, wraca z karty do listy, czyści wyszukiwanie, przechodzi z „Zebranych” i „Kosza” do „Własnych”. Z aplikacji wychodzi dopiero z ekranu startowego, gdy nic nie jest otwarte.</p>
+    </section>
+
+    <p class="foot">Instrukcja opisuje wersję z listopada 2026. Zrzuty robi skrypt <code>scripts/instrukcja-zrzuty.mjs</code> na wersji demonstracyjnej, więc po zmianach w aplikacji powstają od nowa.</p>
+  </article>
+</div>
+</body>
+</html>

@@ -12,10 +12,19 @@ export interface Toast {
   undo?: () => void;
 }
 
-export const ToastContext = createContext<{ toast: Toast | null; close: () => void; hold: (held: boolean) => void }>({
+export const ToastContext = createContext<{
+  toast: Toast | null;
+  close: () => void;
+  hold: (held: boolean) => void;
+  /** How long the message stays, in ms - the bar at its bottom shrinks over this time. */
+  ms: number;
+  held: boolean;
+}>({
   toast: null,
   close: () => {},
   hold: () => {},
+  ms: 10_000,
+  held: false,
 });
 
 export interface ErrorNote {
@@ -127,7 +136,7 @@ function WorkLine() {
  */
 export function ToastView({ inWindow = false }: { inWindow?: boolean }) {
   const { t } = useI18n();
-  const { toast: live, close, hold } = useContext(ToastContext);
+  const { toast: live, close, hold, ms, held } = useContext(ToastContext);
   const { mounted, leaving } = usePresence(live !== null);
   const toast = useLastShown(live !== null, live);
   const draft = useContext(ProfileDraftContext);
@@ -177,6 +186,15 @@ export function ToastView({ inWindow = false }: { inWindow?: boolean }) {
             </button>
           )}
           <CloseButton small onClick={close} />
+          {/* Time left: shrinks to nothing as the message goes; held = full again, and a new
+              key on release starts it from full, like the timer. */}
+          <span
+            key={held ? "held" : "run"}
+            className="toast-bar"
+            data-held={held || undefined}
+            style={{ "--toast-ms": `${ms}ms` } as CSSProperties}
+            aria-hidden="true"
+          />
         </div>
       )}
     </div>

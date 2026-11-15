@@ -77,6 +77,7 @@ export function SettingsDialog({
   version,
   onConfirm,
   onLoaded,
+  onTour,
 }: {
   open: boolean;
   api: Api | null;
@@ -94,6 +95,8 @@ export function SettingsDialog({
   version: string;
   onConfirm: (message: string, action: () => void, label?: string) => void;
   onLoaded: () => void;
+  /** "Show the guide again" in About - closes the settings and starts the bubbles. */
+  onTour: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -113,6 +116,7 @@ export function SettingsDialog({
         version={version}
         onConfirm={onConfirm}
         onLoaded={onLoaded}
+        onTour={onTour}
         closeLabel={t("settings.close")}
       />
     </Modal>
@@ -135,6 +139,7 @@ function SettingsBody({
   version,
   onConfirm,
   onLoaded,
+  onTour,
   closeLabel,
 }: {
   api: Api | null;
@@ -151,6 +156,7 @@ function SettingsBody({
   version: string;
   onConfirm: (message: string, action: () => void, label?: string) => void;
   onLoaded: () => void;
+  onTour: () => void;
   closeLabel: string;
 }) {
   const { t } = useI18n();
@@ -329,7 +335,7 @@ function SettingsBody({
         <DataSettings api={api} onError={onError} onToast={onToast} onConfirm={onConfirm} onLoaded={onLoaded} />
       )}
 
-      {section === "about" && <AboutPart version={version} onOpenLink={onOpenLink} />}
+      {section === "about" && <AboutPart version={version} onOpenLink={onOpenLink} onTour={onTour} />}
 
       {section === "sync" && api && (
         <SyncSettings

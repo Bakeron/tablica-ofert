@@ -3,11 +3,12 @@ import react from "@vitejs/plugin-react";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
 // @ts-expect-error type error without @types/node package
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 const host = process.env.TAURI_DEV_HOST;
 
 /** The website demo (`npm run build:demo`, published by Cloudflare Pages from `main`): it opens in a
- *  frame on the author's home page only, stays out of search engines, and gets the app icon. */
+ *  frame on the author's home page only, stays out of search engines, and gets the app icon and the
+ *  user guide (`instrukcja/`, served at /instrukcja/). */
 function demoSite(): Plugin {
   const headers = [
     "/*",
@@ -21,6 +22,11 @@ function demoSite(): Plugin {
     generateBundle() {
       this.emitFile({ type: "asset", fileName: "_headers", source: headers });
       this.emitFile({ type: "asset", fileName: "favicon.svg", source: readFileSync("src-tauri/icons/source.svg", "utf8") });
+      for (const file of readdirSync("instrukcja", { recursive: true, withFileTypes: true })) {
+        if (!file.isFile()) continue;
+        const path = `${file.parentPath}/${file.name}`.replace(/\\/g, "/");
+        this.emitFile({ type: "asset", fileName: path, source: readFileSync(path) });
+      }
     },
     transformIndexHtml: () => [
       { tag: "link", attrs: { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }, injectTo: "head" },

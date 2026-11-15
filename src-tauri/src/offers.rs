@@ -129,7 +129,17 @@ pub(crate) fn clean(input: OfferInput) -> AppResult<OfferInput> {
     let has_salary = salary_min.is_some() || salary_max.is_some();
     Ok(OfferInput {
         title: required(input.title, MAX_SHORT, "title")?,
-        company: required(input.company, MAX_SHORT, "company")?,
+        // No company in the ad (autor 14.11.2026: not required): "? (…)" like an e-mail alert
+        // without one - "unknown company" on the board, AI may find the real name later.
+        company: if input.company.trim().is_empty() {
+            let id = match input.url.as_deref() {
+                Some(url) => crate::sources::alerts::short_id(&crate::sources::alerts::link_key(url)),
+                None => crate::secrets::random_hex(4)?,
+            };
+            format!("? ({id})")
+        } else {
+            required(input.company, MAX_SHORT, "company")?
+        },
         source: source_name(&input.source)?,
         url: safe_url(input.url)?,
         city: text(input.city, MAX_SHORT, "city")?,
@@ -704,14 +714,16 @@ fn cutoff_now(conn: &Connection) -> AppResult<String> {
     Ok(cutoff(&clock::now(), fresh_days(conn)?))
 }
 
-/// Offers nobody touched leave for the archive some days after they were published.
+/// Offers nobody touched leave for the archive some days after they were published - unless
+/// their own "valid until" date has not passed yet (that date beats the guess by age, as does
+/// the "Probably expired" mark in `ROW_COLUMNS`).
 pub fn archive_old(conn: &Connection, now: &str) -> AppResult<usize> {
     let old = cutoff(now, fresh_days(conn)?);
     Ok(conn.execute(
         &format!(
             "UPDATE offers AS o SET archived_at = ?1, updated_at = ?1
              WHERE o.deleted_at IS NULL AND o.archived_at IS NULL AND o.parent_id IS NULL AND NOT {TOUCHED}
-                AND {FRESH_AT} < '{old}'"
+                AND {FRESH_AT} < '{old}' AND (o.expires_at IS NULL OR o.expires_at < ?1)"
         ),
         [now],
     )?)
@@ -773,16 +785,16 @@ const ROW_COLUMNS: &str = "o.id, o.title, o.company, o.city, o.remote, o.salary_
     (SELECT group_concat(v, char(31)) FROM (SELECT DISTINCT CASE WHEN s.source = 'manual'
         THEN 'manual ' || COALESCE(s.url, o.url, '') ELSE s.source END AS v FROM offer_sources s WHERE s.offer_id = o.id)),
     o.expired, {result}, o.added_at, {reasons}, {next}, o.ai_tr_lang, o.ai_title_tr,
-    {fresh}, ({fresh} < '{old}' AND NOT {recruit}), {recruit}, {manual}, o.archived_at,
+    {fresh}, ({fresh} < '{old}' AND NOT {recruit} AND o.expires_at IS NULL), {recruit}, {manual}, o.archived_at,
     (SELECT sc.why FROM offer_scores sc WHERE sc.offer_id = o.id AND sc.source = 'ai' ORDER BY sc.score DESC LIMIT 1),
     COALESCE((SELECT l.points FROM offer_learned l WHERE l.offer_id = o.id), 0),
     (SELECT l.words FROM offer_learned l WHERE l.offer_id = o.id), {nolink}, COALESCE(o.own, 0) = 1, {bin},
     COALESCE(o.renew_asked, 0) = 1, o.parent_id,
     (o.dup_of IS NOT NULL AND EXISTS (SELECT 1 FROM offers d WHERE d.id = o.dup_of AND d.deleted_at IS NULL AND d.parent_id IS NULL)),
-    {sent}";
+    {sent}, COALESCE(o.english, 'none')";
 
 /// Number of columns in `ROW_COLUMNS` - the offer card reads its own after them.
-const ROW_LEN: usize = 38;
+const ROW_LEN: usize = 39;
 
 /// When the CV went (the first stage past "interested" in the history; the stage's own date when
 /// the history has none); NULL = not in a recruitment.
@@ -909,6 +921,7 @@ fn row_from(r: &Row) -> rusqlite::Result<OfferRow> {
         parent_id: r.get(35)?,
         dup_ask: r.get(36)?,
         sent_at: r.get(37)?,
+        english: r.get(38)?,
         sent_via: None,
         children: Vec::new(),
     })
@@ -1526,6 +1539,20 @@ mod tests {
         assert!(add(&mut conn, ok).is_ok());
         let count: i64 = conn.query_row("SELECT count(*) FROM offers", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn an_offer_without_a_company_is_saved_as_unknown() {
+        let mut conn = test_db();
+        let mut o = offer("Programista", "  ", "manual");
+        o.url = Some("https://www.olx.pl/oferta/praca/programista-CID4-ID1.html".into());
+        let id = id_of(add(&mut conn, o).unwrap());
+        let company: String = conn.query_row("SELECT company FROM offers WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        assert!(company.starts_with("? (") && company.ends_with(')'), "{company}");
+        assert!(crate::dups::company_hidden(&company));
+        // Without a link too; the title stays required.
+        assert!(add(&mut conn, offer("Tester", "", "manual")).is_ok());
+        assert!(matches!(add(&mut conn, offer(" ", "", "manual")), Err(AppError::Invalid(_))));
     }
 
     #[test]
@@ -2200,6 +2227,15 @@ mod tests {
         let by_hand = published_days_ago(&mut conn, "Księgowy", "manual", 12);
         let applied = published_days_ago(&mut conn, "Programista", "adzuna", 12);
         set_stage(&mut conn, applied, Stage::Applied).unwrap();
+        // Old, but its own "valid until" is still ahead: neither archived nor "probably expired".
+        let mut open = offer("Projektant", "Firma Testowa", "adzuna");
+        open.published_at = Some(cutoff(&clock::now(), 26));
+        open.expires_at = Some(cutoff(&clock::now(), -4));
+        let open = id_of(add(&mut conn, open).unwrap());
+        let mut own_open = offer("Architekt", "Firma Testowa", "manual");
+        own_open.published_at = Some(cutoff(&clock::now(), 26));
+        own_open.expires_at = Some(cutoff(&clock::now(), -4));
+        let own_open = id_of(add(&mut conn, own_open).unwrap());
 
         assert_eq!(archive_old(&conn, &clock::now()).unwrap(), 1);
         let archive: Vec<i64> = list(&conn, View::Archive, None).unwrap().iter().map(|r| r.id).collect();
@@ -2210,6 +2246,7 @@ mod tests {
         let stale = |id: i64| board.iter().find(|r| r.id == id).unwrap().stale;
         assert!(!stale(fresh));
         assert!(stale(starred) && stale(noted) && stale(by_hand));
+        assert!(!stale(open) && !stale(own_open));
         // In a recruitment: never "probably expired", only its stage.
         assert!(!stale(applied));
         assert!(board.iter().find(|r| r.id == applied).unwrap().in_recruitment);

@@ -23,14 +23,16 @@ describe("score learned from ratings", () => {
 });
 
 describe("salary", () => {
-  it("shows monthly PLN in thousands", () => {
-    expect(salaryShort({ salaryMin: 12000, salaryMax: 16000, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("12-16 tys.");
-    expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("9,5 tys.");
-    expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "en", (k) => translate("en", k))).toBe("9.5 k");
+  it("shows monthly PLN in thousands, with the period", () => {
+    expect(salaryShort({ salaryMin: 12000, salaryMax: 16000, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("12-16 tys./mies.");
+    expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "pl", t)).toBe("9,5 tys./mies.");
+    expect(salaryShort({ salaryMin: 9500, salaryMax: null, salaryCurrency: "PLN", salaryPeriod: "month" }, "en", (k) => translate("en", k))).toBe("9.5 k/mo");
   });
 
-  it("shows hourly rates and foreign currency", () => {
+  it("shows hourly and day rates and foreign currency", () => {
     expect(salaryShort({ salaryMin: 45, salaryMax: 60, salaryCurrency: "EUR", salaryPeriod: "hour" }, "pl", t)).toBe("45-60 EUR/h");
+    expect(salaryShort({ salaryMin: 1200, salaryMax: 1400, salaryCurrency: "PLN", salaryPeriod: "day" }, "pl", t)).toBe("1200-1400/dzień");
+    expect(salaryFull({ salaryMin: 1200, salaryMax: 1400, salaryCurrency: "PLN", salaryPeriod: "day" }, "pl", t).replace(/\s/g, " ")).toBe("1200-1400 PLN / dzień");
   });
 
   it("marks a missing salary instead of hiding the offer", () => {

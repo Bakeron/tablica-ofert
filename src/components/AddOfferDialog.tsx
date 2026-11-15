@@ -6,7 +6,6 @@ import { IconWarning } from "./Icons";
 import { useI18n, type TextKey } from "../i18n";
 import { isPhone } from "../lib/platform";
 import { CloseButton, Modal } from "./Modal";
-import { Reveal } from "./Reveal";
 import { SameOfferPanel } from "./SameOfferPanel";
 import { FieldError, FieldErrorsProvider, useFieldErrors } from "./FieldError";
 import { OFFER_LONG_MAX, OFFER_SHORT_MAX, OFFER_URL_MAX } from "../lib/limits";
@@ -137,7 +136,6 @@ export function AddOfferDialog({
   onUpdate,
   onCompare,
   onJudge,
-  onOpenPreview,
   onCapture,
   onFill,
 }: {
@@ -160,8 +158,8 @@ export function AddOfferDialog({
   onCompare: (id: number, offer: OfferInput) => Promise<SameOffer | null>;
   /** AI's word about "probably the same" offers. */
   onJudge: (offer: OfferInput, ids: number[]) => Promise<DupVerdict[] | null>;
-  onOpenPreview: (url: string) => Promise<boolean>;
-  onCapture: () => Promise<Captured | null>;
+  /** "Take the text from the page": opens the page, takes its text, closes it. */
+  onCapture: (url: string) => Promise<Captured | null>;
   onFill: (text: string, title: string | null) => Promise<Draft | null>;
 }) {
   const { t, lang } = useI18n();
@@ -171,7 +169,6 @@ export function AddOfferDialog({
   const [link, setLink] = useState("");
   const [pasted, setPasted] = useState("");
   const [pageTitle, setPageTitle] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [working, setWorking] = useState<"capture" | "fill" | null>(null);
   const [filledBy, setFilledBy] = useState<"ai" | "code" | null>(null);
   const [readingId, setReadingId] = useState<string | null>(null);
@@ -210,13 +207,9 @@ export function AddOfferDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, shared?.id]);
 
-  async function openPreview() {
-    if (await onOpenPreview(link.trim())) setPreviewOpen(true);
-  }
-
   async function capture() {
     setWorking("capture");
-    const page = await onCapture();
+    const page = await onCapture(link.trim());
     setWorking(null);
     if (!page) return;
     setPasted(page.text);
@@ -377,19 +370,18 @@ export function AddOfferDialog({
                 <span>{t("quick.link")}</span>
                 <input type="url" maxLength={OFFER_URL_MAX} placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} />
               </label>
-              <button type="button" className="btn btn-ghost btn-small" disabled={!/^https?:\/\/.+/i.test(link.trim())} onClick={openPreview}>
-                {t("quick.open")}
-              </button>
-            </div>
-          )}
-          <Reveal show={previewOpen}>
-            <div className="quick-row quick-capture">
-              <p className="hint">{t("quick.captureHint")}</p>
-              <button type="button" className="btn btn-sign btn-small" disabled={working !== null} aria-busy={working === "capture"} onClick={capture}>
+              <button
+                type="button"
+                className="btn btn-sign btn-small"
+                disabled={!/^https?:\/\/.+/i.test(link.trim()) || working !== null}
+                aria-busy={working === "capture"}
+                onClick={capture}
+              >
                 {working === "capture" ? t("quick.capturing") : t("quick.capture")}
               </button>
             </div>
-          </Reveal>
+          )}
+          {!isPhone() && <p className="hint">{t("quick.captureHint")}</p>}
           <label className="field">
             <span>{t(isPhone() ? "quick.pastePhone" : "quick.paste")}</span>
             <textarea rows={3} maxLength={OFFER_LONG_MAX} value={pasted} onChange={(e) => setPasted(e.target.value)} />
@@ -429,11 +421,11 @@ export function AddOfferDialog({
           </label>
           <label className="field span-2">
             <span>
-              {t("add.fieldCompany")} <em className="req">({t("add.required")})</em>
+              {t("add.fieldCompany")}
             </span>
             <input
-              required
               maxLength={OFFER_SHORT_MAX}
+              placeholder={t("card.unknownCompany")}
               value={form.company}
               onChange={(e) => set("company", e.target.value)}
               data-check={checked("company")["data-check"]}
@@ -502,6 +494,7 @@ export function AddOfferDialog({
             <span>{t("add.fieldPeriod")}</span>
             <select value={form.salaryPeriod} onChange={(e) => set("salaryPeriod", e.target.value as SalaryPeriod)}>
               <option value="month">{t("add.periodMonth")}</option>
+              <option value="day">{t("add.periodDay")}</option>
               <option value="hour">{t("add.periodHour")}</option>
             </select>
           </label>

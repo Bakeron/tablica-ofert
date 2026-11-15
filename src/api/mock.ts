@@ -10,7 +10,20 @@ import { bestResult, isKept, viewFor } from "../lib/profile";
 import { JOOBLE_KEY_CALLS } from "../lib/limits";
 import type { Api } from "./index";
 import { DEMO, DEMO_ERROR } from "../lib/demo";
-import { DEFAULT_SETTINGS, type DupCandidate, type FieldNote, type OfferDetail, type OfferInput, type OfferRow, type SentVia, type SameField, type SameOffer, type SameWas, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
+import { csvFileName, csvText } from "../lib/csv";
+import { DEFAULT_SETTINGS, type DupCandidate, type EnglishNeed, type FieldNote, type OfferDetail, type OfferInput, type OfferRow, type SentVia, type SameField, type SameOffer, type SameWas, type Profile, type SecretHints, type SecretName, type Settings, type SourceStatus, type View } from "./types";
+
+/** "English required?" as Rust `english.rs` reads it - a smaller copy for the browser demo. */
+function englishOf(o: Pick<OfferInput, "title" | "language" | "requirements" | "description">): EnglishNeed {
+  if (o.language === "en") return "required";
+  let found: EnglishNeed = "none";
+  for (const part of [o.title, o.requirements, o.description].filter(Boolean).join("\n").toLowerCase().split(/[\n.;•]/)) {
+    if (!part.includes("angielsk") && !part.includes("english")) continue;
+    if (/mile widzian|atut|nice to have|is a plus|advantage|preferred/.test(part)) found = "nice";
+    else return "required";
+  }
+  return found;
+}
 
 /** Listeners of the line at the bottom ("work-progress"). */
 const progressListeners = new Set<(step: WorkProgress | null) => void>();
@@ -91,6 +104,8 @@ export function createMockApi(): Api {
   const settings: Settings = {
     ...DEFAULT_SETTINGS,
     onboarding: firstRun ? "pending" : "done",
+    // The guide in bubbles: in the website demo for every visitor; in the preview after first steps or with `?tour`.
+    tour: DEMO || firstRun || (typeof location !== "undefined" && new URLSearchParams(location.search).has("tour")) ? "pending" : "done",
     source_remotive: "on",
     // The demo shows a working setup: paid Claude chosen, a few sources on (nothing is called).
     ...(DEMO ? { ai_mode: "claude", source_himalayas: "on", source_weworkremotely: "on", source_mail: "on", mail_user: "alerty.przyklad@example.com" } : {}),
@@ -127,6 +142,7 @@ export function createMockApi(): Api {
       salaryMax: input.salaryMax ?? null,
       salaryCurrency: input.salaryMin || input.salaryMax ? (input.salaryCurrency ?? "PLN") : null,
       salaryPeriod: input.salaryMin || input.salaryMax ? (input.salaryPeriod ?? "month") : null,
+      english: englishOf(input),
       stage,
       stageChangedAt: added,
       interest: demo.interest ?? null,
@@ -400,7 +416,7 @@ export function createMockApi(): Api {
       sentVia: o.parentId === null ? sentVia(o.id, true) : null,
       filterResult: f.result,
       filterReasons: f.reasons ?? [],
-      stale: isOld(o) && !inRecruitment(o),
+      stale: isOld(o) && !inRecruitment(o) && !o.expiresAt,
       inRecruitment: inRecruitment(o),
       manual: isManual(o),
       noLink: !o.url && o.links.every((l) => !l.url),
@@ -518,12 +534,14 @@ export function createMockApi(): Api {
       offers.set(id, {
         id,
         title: input.title.trim(),
-        company: input.company.trim(),
+        // No company: "? (…)" like the app ("unknown company").
+        company: input.company.trim() || `? (${id.toString(16).padStart(8, "0")})`,
         city: input.city ?? null,
         remote: input.remote ?? "unknown",
         salaryMin: input.salaryMin ?? null,
         salaryMax: input.salaryMax ?? null,
         salaryCurrency: input.salaryMin || input.salaryMax ? (input.salaryCurrency ?? "PLN") : null,
+        english: englishOf(input),
         salaryPeriod: input.salaryMin || input.salaryMax ? (input.salaryPeriod ?? "month") : null,
         stage: input.source === "manual" ? "interested" : "new",
         stageChangedAt: at,
@@ -1203,6 +1221,10 @@ export function createMockApi(): Api {
         expiredPhrase: "oferta wygasła",
       };
     },
+    async fetchPage(url) {
+      await this.openPreview(url);
+      return this.capturePreview();
+    },
     async closePreview() {},
     async backgroundStatus() {
       return { exists: settings.background_task === "on" };
@@ -1288,9 +1310,19 @@ export function createMockApi(): Api {
           publishedAt: o.publishedAt,
         }));
     },
-    async saveCsv(name) {
-      outside();
-      return `C:\\Users\\Przyklad\\Documents\\tablica-${name}.csv`;
+    async saveCsv(name, cells, separator) {
+      if (!DEMO) return `C:\\Users\\Przyklad\\Documents\\tablica-${name}.csv`;
+      // The website demo: the same file as in the app, downloaded by the browser.
+      if (!/^[a-z0-9-]{1,40}$/.test(name) || (separator !== ";" && separator !== ",")) throw { code: "invalid", detail: "csv" };
+      const file = csvFileName(name);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([csvText(cells, separator)], { type: "text/csv;charset=utf-8" }));
+      link.download = file;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+      return file;
     },
     async wipeAll() {
       outside();

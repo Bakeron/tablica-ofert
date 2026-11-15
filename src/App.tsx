@@ -6,6 +6,7 @@ import {
   aiOn,
   TEXT_SIZES,
   describeError,
+  isAppError,
   type AppStatus,
   type AssistKind,
   type CareerIdea,
@@ -34,6 +35,7 @@ import { AssistDialog } from "./components/AiDialogs";
 import { Board, DEFAULT_SORT, sortRows, sourceLabel, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
+import { Tour, type TourStep } from "./components/Tour";
 import { ErrorContext, ProfileDraftContext, ToastContext, ToastView, WorkContext, type Toast } from "./components/Toast";
 import { IconBoard, IconBriefcase, IconDownload, IconGear, IconHome, IconPlus, IconTrash, IconWarning } from "./components/Icons";
 import { OfferCard } from "./components/OfferCard";
@@ -47,8 +49,10 @@ import { askNotifications, isPhone, scheduleReminders } from "./lib/platform";
 import { isWebUrl } from "./lib/format";
 import { isNarrowLayout, useFitLevels } from "./lib/fit";
 import { onBack } from "./lib/back";
+import { REVEAL_MS } from "./lib/presence";
 import { keepOrder } from "./lib/browse";
-import { byPortal, portalCounts } from "./lib/portals";
+import { applyFilters, FILTER_KEYS, NO_FILTERS, type ListFilters } from "./lib/portals";
+import { ListFilterBar } from "./components/ListFilterBar";
 import { BIN, isBin, leavesView, placeName, viewFor, type BinView } from "./lib/profile";
 import { csvCells, csvName, csvSeparator } from "./lib/csv";
 import { JOOBLE_KEY_CALLS } from "./lib/limits";
@@ -156,8 +160,8 @@ export default function App() {
   const listScroll = useRef<number[]>([]);
   /** What the bin's search box holds (title, company or city). */
   const [binQuery, setBinQuery] = useState("");
-  // The portal filter above every list - one choice for all tabs, never remembered after a restart.
-  const [portal, setPortal] = useState<string | null>(null);
+  // The filters above every list (portal, status, place, salary) - one choice for all tabs, never remembered after a restart.
+  const [filters, setFilters] = useState<ListFilters>(NO_FILTERS);
   /** `null` = the tab's own order: "Today" as Rust ranks it, the others the newest first. */
   const [sort, setSort] = useState<Sort | null>(null);
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
@@ -180,6 +184,8 @@ export default function App() {
   const [editing, setEditing] = useState<{ profile: Profile | null } | null>(null);
   const [experience, setExperience] = useState("");
   const [firstSteps, setFirstSteps] = useState(false);
+  /** The guide shown again from Settings → About (the first time it comes from the `tour` setting). */
+  const [tourAgain, setTourAgain] = useState(false);
   /** Offer to select once the list of a newly opened tab has loaded. */
   const [pendingSelect, setPendingSelect] = useState<number | null>(null);
   const [fetching, setFetching] = useState(false);
@@ -188,7 +194,7 @@ export default function App() {
   const [experiencePrev, setExperiencePrev] = useState<string | null>(null);
   const [assist, setAssist] = useState<{ kind: AssistKind; text: string; busy: boolean } | null>(null);
   /** The preview window shows the page of this offer ("Fill in the full description"). */
-  const [fullFor, setFullFor] = useState<{ id: number; title: string } | null>(null);
+  const [fullFor, setFullFor] = useState<{ id: number; title: string; url: string } | null>(null);
   const [capturing, setCapturing] = useState(false);
   /** The page just taken says its offer is over - the card proposes "Mark as expired". */
   const [expiredPage, setExpiredPage] = useState<{ id: number; phrase: string } | null>(null);
@@ -388,8 +394,8 @@ export default function App() {
   useEffect(() => (currentTab !== "own" ? onBack(() => setView("own"), true) : undefined), [currentTab]);
   const searching = isBin(view) && binQuery !== "";
   useEffect(() => (searching ? onBack(() => setBinQuery(""), true) : undefined), [searching]);
-  const filtering = portal !== null;
-  useEffect(() => (filtering ? onBack(() => setPortal(null), true) : undefined), [filtering]);
+  const filtering = FILTER_KEYS.some((k) => filters[k] !== null);
+  useEffect(() => (filtering ? onBack(() => setFilters(NO_FILTERS), true) : undefined), [filtering]);
   // No offer left (the list emptied, or the layout is wide again after turning the phone): the card
   // closes - otherwise "back" would close an invisible card and the next offer's card open by itself.
   useEffect(() => {
@@ -432,15 +438,19 @@ export default function App() {
   // The pointer over it or focus inside it (e.g. on "Undo") holds it - the time starts again after.
   const closeToast = useCallback(() => setToast(null), []);
   const [toastHeld, setToastHeld] = useState(false);
-  const toastValue = useMemo(() => ({ toast, close: closeToast, hold: setToastHeld }), [toast, closeToast]);
+  // On a phone a screen reader moves its own focus, not the page's - give "Undo" more time.
+  const toastMs = toast?.undo && isPhone() ? 20_000 : 10_000;
+  const toastValue = useMemo(
+    () => ({ toast, close: closeToast, hold: setToastHeld, ms: toastMs, held: toastHeld }),
+    [toast, closeToast, toastMs, toastHeld],
+  );
   // The same error is shown inside an open window (the bar below is behind it).
   const errorValue = useMemo(() => ({ error, close: () => setError(null) }), [error]);
   useEffect(() => {
     if (!toast || toastHeld) return;
-    // On a phone a screen reader moves its own focus, not the page's - give "Undo" more time.
-    const timer = window.setTimeout(() => setToast(null), toast.undo && isPhone() ? 20_000 : 10_000);
+    const timer = window.setTimeout(() => setToast(null), toastMs);
     return () => window.clearTimeout(timer);
-  }, [toast, toastHeld]);
+  }, [toast, toastHeld, toastMs]);
   useEffect(() => {
     if (!toast) setToastHeld(false);
   }, [toast]);
@@ -556,10 +566,26 @@ export default function App() {
     }
   }
 
-  async function capturePage(): Promise<Captured | null> {
+  async function capturePage(url: string): Promise<Captured | null> {
     if (!api) return null;
     try {
       return await api.capturePreview();
+    } catch (e) {
+      // The preview window is gone (closed by the person or by the page) - open it again
+      // (`preview::CLOSED`).
+      if (isAppError(e) && e.detail === "the preview is closed" && url && (await openPreview(url))) {
+        setToast({ text: t("quick.reopened") });
+        return null;
+      }
+      fail(e);
+      return null;
+    }
+  }
+
+  async function fetchPage(url: string): Promise<Captured | null> {
+    if (!api) return null;
+    try {
+      return await api.fetchPage(url);
     } catch (e) {
       fail(e);
       return null;
@@ -577,13 +603,13 @@ export default function App() {
   }
 
   async function startFullText(offer: OfferDetail) {
-    if (offer.url && (await openPreview(offer.url))) setFullFor({ id: offer.id, title: offer.title });
+    if (offer.url && (await openPreview(offer.url))) setFullFor({ id: offer.id, title: offer.title, url: offer.url });
   }
 
   async function takeFullText() {
     if (!api || !fullFor) return;
     setCapturing(true);
-    const page = await capturePage();
+    const page = await capturePage(fullFor.url);
     setCapturing(false);
     if (!page) return;
     setExpiredPage(page.expiredPhrase ? { id: fullFor.id, phrase: page.expiredPhrase } : null);
@@ -677,15 +703,14 @@ export default function App() {
     if (!isBin(view) || !q) return list;
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
   }, [rows, shownSort, view, binQuery, browseOrder]);
-  const portals = useMemo(() => portalCounts(searched, portal), [searched, portal]);
-  const sorted = useMemo(() => byPortal(searched, portal), [searched, portal]);
-  // A portal chosen (or a new list under it): an offer the filter hid does not stay on the card.
+  const sorted = useMemo(() => applyFilters(searched, filters), [searched, filters]);
+  // A filter chosen (or a new list under it): an offer the filter hid does not stay on the card.
   useEffect(() => {
-    if (portal === null) return;
+    if (!filtering) return;
     const shown = (id: number) => sorted.some((r) => r.id === id || r.children.some((c) => c.id === id));
     setSelectedId((id) => (id !== null && shown(id) ? id : (sorted[0]?.id ?? null)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the list or the portal changes
-  }, [searched, portal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the list or the filters change
+  }, [searched, filters]);
 
   // ----- actions -----
   async function run(action: () => Promise<unknown>, after?: () => void) {
@@ -1116,6 +1141,29 @@ export default function App() {
 
   const locked = status !== null && !status.ok;
 
+  /** The guide in bubbles: once on each device after "First steps", or again from Settings → About. */
+  const tourOpen = !locked && !firstSteps && !settingsOpen && !adding && editing === null && (settings.tour === "pending" || tourAgain);
+  const narrowNow = tourOpen && isNarrowLayout();
+  const tourSteps: TourStep[] = [
+    { target: ".topbar .tabs .tab", title: "tour.tabsTitle", text: collecting ? "tour.tabs" : "tour.tabsOwn" },
+    { target: ".topbar .btn-add", title: "tour.addTitle", text: isPhone() ? "tour.addPhone" : "tour.add" },
+    { target: ".board-wrap, .board-empty", title: "tour.listTitle", text: isPhone() ? "tour.listPhone" : narrowNow ? "tour.listNarrow" : "tour.list" },
+    // The card stands next to the list only on a wide screen.
+    ...(narrowNow ? [] : [{ target: ".pass", title: "tour.cardTitle", text: "tour.card" } as TourStep]),
+    { target: ".topbar-actions .icon-btn", title: "tour.settingsTitle", text: isPhone() ? "tour.settingsPhone" : "tour.settings" },
+  ];
+
+  function finishTour() {
+    setTourAgain(false);
+    if (settings.tour === "pending") changeSetting("tour", "done");
+  }
+
+  function showTourAgain() {
+    setSettingsOpen(false);
+    // After the settings window has slid away.
+    window.setTimeout(() => setTourAgain(true), REVEAL_MS);
+  }
+
   /** Phone: the first date is when the question about notifications makes sense. */
   async function addEvent(event: Parameters<Api["addEvent"]>[1]): Promise<boolean> {
     if (selectedId === null) return false;
@@ -1205,7 +1253,20 @@ export default function App() {
           </div>
         </header>
 
-        {status?.version.endsWith("preview") && <p className="preview-badge">{t(DEMO ? "demo.badge" : "preview.badge")}</p>}
+        {status?.version.endsWith("preview") && (
+          <p className="preview-badge">
+            {t(DEMO ? "demo.badge" : "preview.badge")}
+            {/* The guide is published with the demo; a new tab, since the demo sits in a frame. */}
+            {DEMO && (
+              <>
+                {" · "}
+                <a href="/instrukcja/" target="_blank" rel="noopener">
+                  {t("demo.guide")}
+                </a>
+              </>
+            )}
+          </p>
+        )}
 
         <Reveal show={locked || error !== null}>
           {(locked || error) && (
@@ -1324,23 +1385,17 @@ export default function App() {
                 {isPhone() && emptyBin}
               </div>
             )}
-            {/* One portal at a time - shown when the list has more than one, or a portal is chosen. */}
-            {(portals.length > 1 || portal !== null) && (
-              <label className="portal-filter">
-                <span>{t("portal.label")}</span>
-                <select value={portal ?? ""} onChange={(e) => setPortal(e.target.value === "" ? null : e.target.value)}>
-                  <option value="">{t("portal.all", { count: searched.length })}</option>
-                  {portals.map((p) => (
-                    <option key={p.portal} value={p.portal}>
-                      {sourceLabel(p.portal, t)} ({p.count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            {/* Portal, status, city / remote, salary - each shown when the list has more than one value, or one is chosen. */}
+            <ListFilterBar rows={searched} filters={filters} onChange={setFilters} />
             <Board
               rows={sorted}
-              emptyText={portal !== null && searched.length > 0 ? t("portal.empty", { portal: sourceLabel(portal, t) }) : undefined}
+              emptyText={
+                !filtering || searched.length === 0
+                  ? undefined
+                  : FILTER_KEYS.every((k) => k === "portal" || filters[k] === null)
+                    ? t("portal.empty", { portal: sourceLabel(filters.portal!, t) })
+                    : t("narrow.empty")
+              }
               view={view}
               selectedId={selectedId}
               freshIds={freshIds}
@@ -1444,8 +1499,7 @@ export default function App() {
           onUpdate={updateSame}
           onCompare={compareSame}
           onJudge={(offer, ids) => judgeDuplicates({ offer }, ids)}
-          onOpenPreview={openPreview}
-          onCapture={capturePage}
+          onCapture={fetchPage}
           onFill={fillOffer}
         />
         <ProfileDialog
@@ -1469,6 +1523,7 @@ export default function App() {
           onSaveProfile={saveProfile}
           onFinish={finishFirstSteps}
         />
+        <Tour open={tourOpen} steps={tourSteps} onFinish={finishTour} />
         <SettingsDialog
           open={settingsOpen}
           api={api}
@@ -1500,6 +1555,7 @@ export default function App() {
           onNotificationsAllowed={() => setReplan((n) => n + 1)}
           version={status?.version ?? ""}
           onConfirm={(message, action, label) => setConfirm({ message, action, label })}
+          onTour={showTourAgain}
           onLoaded={async () => {
             if (!api) return;
             setSettings(await api.getSettings());

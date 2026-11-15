@@ -334,6 +334,15 @@ fn store(tx: &Connection, offer_id: i64, facts: &Facts, profiles: &[Profile]) ->
         "UPDATE offers SET filter_result = ?2, filter_reason = NULL WHERE id = ?1",
         params![offer_id, filter::best(results.iter().copied())],
     )?;
+    // "English required?" for the list's filter comes from the same words, checked here once.
+    // An upgrade from before version 27 checks offers at version 25 (the tree) - the column is
+    // not there yet then, and the check after version 27 fills it.
+    match tx.execute("UPDATE offers SET english = ?2 WHERE id = ?1", params![offer_id, crate::english::need(facts)]) {
+        Err(rusqlite::Error::SqliteFailure(_, Some(m))) if m.contains("no such column: english") => {}
+        other => {
+            other?;
+        }
+    }
     // Score without AI for every profile the offer did not fail; AI scores stay as they are.
     tx.execute("DELETE FROM offer_scores WHERE offer_id = ?1 AND source = 'keywords'", [offer_id])?;
     for ((p, result), score) in profiles.iter().zip(&results).zip(scores) {

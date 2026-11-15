@@ -4,6 +4,7 @@
 import type { Criteria, FilterResult, Interest, OfferAi, OfferInput, Reason, Stage } from "../api/types";
 import { emptyCriteria } from "../lib/profile";
 import { MORE_OFFERS } from "./more";
+import { DEMO } from "../lib/demo";
 
 export interface DemoProfile {
   name: string;
@@ -183,11 +184,13 @@ export const DEMO_OFFERS: DemoOffer[] = [
       url: "https://example.com/oferty/mewa-web",
       city: "Łódź",
       remote: "hybrid",
-      salaryMin: 9000,
-      salaryMax: 12000,
+      salaryMin: 600,
+      salaryMax: 750,
+      salaryPeriod: "day",
       contract: "B2B",
       level: "mid",
       language: "pl",
+      requirements: "SQL, Power BI, angielski na poziomie B2.",
       description: "Raporty sprzedaży i prognozy dla sieci piekarni. Praca hybrydowa.",
     },
   },
@@ -214,7 +217,7 @@ export const DEMO_OFFERS: DemoOffer[] = [
       contract: "UoP",
       level: "mid",
       language: "pl",
-      requirements: "Node.js, TypeScript, PostgreSQL, pisanie testów.",
+      requirements: "Node.js, TypeScript, PostgreSQL, pisanie testów. Angielski mile widziany.",
       description: "Tworzymy system obiegu dokumentów dla biur projektowych. 100% zdalnie.",
     },
   },
@@ -556,5 +559,6 @@ export const DEMO_OFFERS: DemoOffer[] = [
       description: "Rozwój systemu rezerwacji dla sieci hosteli. Biuro w Gdańsku raz w tygodniu.",
     },
   },
-  ...MORE_OFFERS,
+  // The extra offers only in the website demo - the normal preview stays small for design work.
+  ...(DEMO ? MORE_OFFERS : []),
 ];

@@ -326,6 +326,27 @@ export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSor
                 <td role="gridcell" className="c-added">
                   <CellName text={t("col.addedLong")} />
                   <Flap className="mono" text={addedLabel(o.publishedAt, lang, t)} fresh={fresh} />
+                  {/* Under the date, in the first column: the ads below are a step in from here.
+                      "+1 more" - as many rows as unfold (the first ad is this row). */}
+                  {!child && o.children.length > 0 && (
+                    <button
+                      type="button"
+                      className="tree-toggle"
+                      aria-expanded={isOpen(o.id)}
+                      title={t("tree.moreLabel", { count: o.children.length })}
+                      onClick={(e) => {
+                        // Folding is not choosing the row.
+                        e.stopPropagation();
+                        fold(o.id, !isOpen(o.id));
+                      }}
+                    >
+                      {/* One arrow that turns down - smoothly, with the children. */}
+                      <span className={`tree-mark${isOpen(o.id) ? " is-open" : ""}`} aria-hidden="true">
+                        ▸
+                      </span>
+                      {t(plural(lang, "tree.more", o.children.length), { count: o.children.length })}
+                    </button>
+                  )}
                 </td>
                 <td role="gridcell" className="c-offer">
                   <span className="offer-line">
@@ -351,24 +372,6 @@ export function Board({ rows, emptyText, view, selectedId, freshIds, sort, onSor
                       </span>
                     )}
                   </span>
-                  {!child && o.children.length > 0 && (
-                    <button
-                      type="button"
-                      className="tree-toggle"
-                      aria-expanded={isOpen(o.id)}
-                      onClick={(e) => {
-                        // Folding is not choosing the row.
-                        e.stopPropagation();
-                        fold(o.id, !isOpen(o.id));
-                      }}
-                    >
-                      {/* One arrow that turns down - smoothly, with the children. */}
-                      <span className={`tree-mark${isOpen(o.id) ? " is-open" : ""}`} aria-hidden="true">
-                        ▸
-                      </span>{" "}
-                      {t(plural(lang, "tree.ads", o.children.length + 1), { count: o.children.length + 1 })}
-                    </button>
-                  )}
                   {child ? null : o.sources.length > 1 ? (
                     <span className="offer-sources">
                       {t("sources.many", { count: o.sources.length, list: sourceNames.join(" · ") })}

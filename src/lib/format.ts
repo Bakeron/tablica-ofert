@@ -58,14 +58,15 @@ export function salaryShort(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salar
   const { salaryMin: min, salaryMax: max } = o;
   if (min == null && max == null) return t("salary.none");
   const currency = o.salaryCurrency && o.salaryCurrency !== "PLN" ? ` ${o.salaryCurrency}` : "";
-  if (o.salaryPeriod === "hour") {
-    return `${range(min, max, (v) => String(v))}${currency}${t("salary.perHour")}`;
+  // An hour and a day in plain numbers, a month in thousands - each with its period.
+  if (o.salaryPeriod === "hour" || o.salaryPeriod === "day") {
+    return `${range(min, max, (v) => String(v))}${currency}${t(o.salaryPeriod === "hour" ? "salary.perHour" : "salary.perDay")}`;
   }
   const k = (v: number) => {
     const thousands = v / 1000;
     return Number.isInteger(thousands) ? String(thousands) : thousands.toFixed(1).replace(".", lang === "pl" ? "," : ".");
   };
-  return `${range(min, max, k)} ${t("salary.thousand")}${currency}`;
+  return `${range(min, max, k)} ${t("salary.thousand")}${currency}${t("salary.perMonth")}`;
 }
 
 /** Full salary for the card: "12 000 - 16 000 PLN / miesiąc". */
@@ -73,7 +74,7 @@ export function salaryFull(o: Pick<OfferRow, "salaryMin" | "salaryMax" | "salary
   const { salaryMin: min, salaryMax: max } = o;
   if (min == null && max == null) return t("flag.noSalary");
   const nf = new Intl.NumberFormat(lang === "pl" ? "pl-PL" : "en-GB");
-  const period = o.salaryPeriod === "hour" ? t("add.periodHour") : t("add.periodMonth");
+  const period = o.salaryPeriod === "hour" ? t("add.periodHour") : o.salaryPeriod === "day" ? t("add.periodDay") : t("add.periodMonth");
   // No-break spaces: "PLN / miesiąc" stays together when the line wraps.
   return `${range(min, max, (v) => nf.format(v))} ${o.salaryCurrency ?? "PLN"} / ${period}`;
 }

@@ -84,3 +84,26 @@ export function csvCells(rows: ExportRow[], lang: Lang): string[][] {
 
 /** The list as a part of the file name ("oferty" → tablica-oferty-<date>.csv). */
 export const csvName = (list: CsvList, lang: Lang) => translate(lang, `csv.file.${list}` as TextKey);
+
+/** Longest cell, as in Rust (`backup.rs` - Excel keeps at most 32 767 characters in a cell). */
+const CSV_MAX_CELL = 32_000;
+
+/** One cell safe for Excel - the same as `csv_cell` in Rust: a formula start gets a `'`, quotes doubled. */
+export function csvCell(value: string): string {
+  const chars = Array.from(value);
+  const cut = chars.length > CSV_MAX_CELL ? chars.slice(0, CSV_MAX_CELL).join("").trimEnd() : value;
+  const safe = /^[=+\-@\t\r]/.test(cut) ? `'${cut}` : cut;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+/** The file text with a BOM (Excel opens Polish letters right) - the same as `csv_text` in Rust.
+ *  Used only by the website demo, which downloads the file instead of asking Rust to save it. */
+export function csvText(cells: string[][], separator: string): string {
+  return "﻿" + cells.map((row) => row.map(csvCell).join(separator) + "\r\n").join("");
+}
+
+/** The file name the app saves: `tablica-<list>-<UTC date and time>.csv`, as `file_stamp` in Rust. */
+export function csvFileName(name: string, now = new Date()): string {
+  const stamp = now.toISOString().slice(0, 19).replace(/-|:/g, "").replace("T", "-");
+  return `tablica-${name}-${stamp}.csv`;
+}

@@ -132,14 +132,14 @@ fn predicted(v: &serde_json::Value) -> bool {
 /// For Poland amounts under 60 000 are taken as monthly - the filter must never reject an
 /// offer because of a wrong guess, and monthly pay in PLN is below that. Amounts from 300 to
 /// 3000 PLN are B2B day rates (justjoin.it offers "1200-1400" a day) - below any monthly pay,
-/// so they are left out rather than taken as a month.
+/// so they are a day rate, never taken as a month.
 fn salary(value: Option<f64>, country: &str) -> (Option<i64>, Option<SalaryPeriod>) {
     let Some(v) = value.filter(|v| v.is_finite() && *v > 0.0) else { return (None, None) };
     if v < 300.0 {
         return (Some(v.round() as i64), Some(SalaryPeriod::Hour));
     }
     if country == "pl" && v < 3000.0 {
-        return (None, None);
+        return (Some(v.round() as i64), Some(SalaryPeriod::Day));
     }
     let yearly_from = if country == "pl" { 60_000.0 } else { 10_000.0 };
     let monthly = if v >= yearly_from { v / 12.0 } else { v };
@@ -275,8 +275,8 @@ mod tests {
         assert_eq!(salary(Some(45.0), "gb"), (Some(45), Some(SalaryPeriod::Hour)));
         assert_eq!(salary(Some(36000.0), "gb"), (Some(3000), Some(SalaryPeriod::Month)));
         assert_eq!(salary(Some(18000.0), "pl"), (Some(18000), Some(SalaryPeriod::Month)));
-        // A B2B day rate (real case: "PHP Developer", 1200-1400) is not a month - left out, never "too low".
-        assert_eq!(salary(Some(1200.0), "pl"), (None, None));
+        // A B2B day rate (real case: "PHP Developer", 1200-1400) is a day rate, never a month "too low".
+        assert_eq!(salary(Some(1200.0), "pl"), (Some(1200), Some(SalaryPeriod::Day)));
         assert_eq!(salary(Some(272_000.0), "pl"), (Some(22700), Some(SalaryPeriod::Month)));
         assert_eq!(salary(Some(f64::NAN), "pl"), (None, None));
     }

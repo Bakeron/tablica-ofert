@@ -8,6 +8,7 @@ mod commands;
 mod db;
 mod dedup;
 mod dups;
+mod english;
 mod diag;
 mod error;
 mod extract;
@@ -101,6 +102,7 @@ pub fn run() {
             };
             app.manage(AppState { db: Mutex::new(state), fetching: AtomicBool::new(false), rating: AtomicBool::new(false), stop_rating: AtomicBool::new(false), syncing: AtomicBool::new(false) });
             app.manage(preview::Pending::default());
+            app.manage(preview::Loading::default());
             if background {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -195,6 +197,7 @@ pub fn run() {
             commands::fill_offer,
             commands::open_preview,
             commands::capture_preview,
+            commands::fetch_page,
             commands::close_preview,
             commands::update_description,
             commands::background_status,

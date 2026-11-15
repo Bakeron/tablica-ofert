@@ -46,6 +46,9 @@ const ALLOWED: &[(&str, Rule)] = &[
     ("multi_profile", Rule::One(&["off", "on"])),
     // "First steps" shown at the first start until finished or skipped.
     ("onboarding", Rule::One(&["pending", "done"])),
+    // The guide in bubbles (tabs, "Add offer", the card, Settings) - once on each device,
+    // after "First steps"; Settings → About shows it again.
+    ("tour", Rule::One(&["pending", "done"])),
     // "Collect offers automatically" (sources, mail alerts, AI on its own); off = only the
     // person's own offers - "Collected", "Fetch offers" and the sources' settings disappear.
     ("collect", Rule::One(&["on", "off"])),

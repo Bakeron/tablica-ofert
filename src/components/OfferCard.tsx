@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { STAGES, type AssistKind, type DupCandidate, type DupVerdict, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { plural, useI18n } from "../i18n";
 import { companyLabel, fullDate, fullDay, isWebUrl, linksByCity, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
@@ -14,6 +14,7 @@ import { AgendaPart, type AgendaActions } from "./AgendaPart";
 import { Help } from "./Help";
 import { StatusTag } from "./StatusTag";
 import { DupCandidates, type Verdicts } from "./DupCandidates";
+import { CloseButton, Modal } from "./Modal";
 // Official logo from adzuna.com/press.html, scaled down (Adzuna's API terms ask for it next to their offers).
 import adzunaLogo from "../assets/adzuna-logo.png";
 
@@ -94,6 +95,9 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
   /** "Check duplicates": the offers found and AI's word; `null` = not checked. */
   const [dups, setDups] = useState<{ id: number; list: DupCandidate[] | "wait"; verdicts: Verdicts } | null>(null);
   useEffect(() => setDups(null), [offer?.id]);
+  /** "Description" opened in its window. */
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  useEffect(() => setDescriptionOpen(false), [offer?.id]);
   /** Where a finger started on the card (a swipe = the next offer). */
   const touch = useRef<{ x: number; y: number; axis: SwipeAxis | null } | null>(null);
   // Another offer chosen - the card changes with a short fade, not a jump.
@@ -131,6 +135,47 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
     const verdicts = await onJudgeDuplicates(list.map((c) => c.was.id));
     setDups((d) => (d?.id === id ? { ...d, verdicts: verdicts ?? "error" } : d));
   }
+
+  // "Check duplicates": code finds, AI (when set) says what it thinks, the person decides.
+  // The button stands beside "Rate this offer"; what it found comes right under that row.
+  const canCheckDups = offer.parentId === null && !inTrash;
+  const dupButton = canCheckDups && (dups === null || dups.list === "wait") && (
+    <button type="button" className="btn btn-ghost btn-small" onClick={checkDuplicates} title={t("dup.checkHint")} disabled={dups !== null} aria-busy={dups !== null}>
+      {t("dup.check")}
+    </button>
+  );
+  const dupResult = canCheckDups && dups !== null && (
+    <div className="dup-check">
+      {dups.list === "wait" ? (
+        <p className="hint" role="status">
+          {t("dup.looking")}
+        </p>
+      ) : dups.list.length === 0 ? (
+        <p className="hint" role="status">
+          {t("dup.none")}
+        </p>
+      ) : (
+        <>
+          <h4 className="pass-label">{t("dup.found")}</h4>
+          <DupCandidates
+            candidates={dups.list}
+            verdicts={dups.verdicts}
+            actions={(c) => (
+              <>
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => onJoin(c.was.id)}>
+                  {t("dup.join")}
+                </button>
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(c.was.id)}>
+                  {t("same.showThat")}
+                </button>
+              </>
+            )}
+          />
+          <p className="hint">{t("dup.youDecide")}</p>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <aside
@@ -353,44 +398,6 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           </div>
         )}
 
-        {/* "Check duplicates": code finds, AI (when set) says what it thinks, the person decides. */}
-        {offer.parentId === null && !inTrash && (
-          <section className="pass-text dup-check">
-            {dups === null ? (
-              <button type="button" className="btn btn-ghost btn-small" onClick={checkDuplicates} title={t("dup.checkHint")}>
-                {t("dup.check")}
-              </button>
-            ) : dups.list === "wait" ? (
-              <p className="hint" role="status">
-                {t("dup.looking")}
-              </p>
-            ) : dups.list.length === 0 ? (
-              <p className="hint" role="status">
-                {t("dup.none")}
-              </p>
-            ) : (
-              <>
-                <h3 className="pass-label">{t("dup.found")}</h3>
-                <DupCandidates
-                  candidates={dups.list}
-                  verdicts={dups.verdicts}
-                  actions={(c) => (
-                    <>
-                      <button type="button" className="btn btn-ghost btn-small" onClick={() => onJoin(c.was.id)}>
-                        {t("dup.join")}
-                      </button>
-                      <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(c.was.id)}>
-                        {t("same.showThat")}
-                      </button>
-                    </>
-                  )}
-                />
-                <p className="hint">{t("dup.youDecide")}</p>
-              </>
-            )}
-          </section>
-        )}
-
         {/* The ad came again after the CV went: the decision is the person's - the app sends nothing. */}
         {offer.renewAsked && !inTrash && (
           <div className="pass-proposal">
@@ -430,6 +437,8 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
           onRatePrecise={onRatePrecise}
           onAssist={onAssist}
           onOpenAiSettings={onOpenAiSettings}
+          dupButton={dupButton || null}
+          dupResult={dupResult || null}
         />
 
         {/* The job closed on a source whose terms ask to drop it - only the user's own record is left. */}
@@ -445,21 +454,38 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             <p>{offer.requirements}</p>
           </section>
         )}
-        {offer.description && (
-          <section className="pass-text">
-            <h3 className="pass-label">{t("card.description")}</h3>
-            <p lang={translated && descriptionTr ? lang : (foreign ?? undefined)}>
-              {translated && descriptionTr ? descriptionTr : offer.description}
-            </p>
-          </section>
-        )}
-        {!inTrash && isWebUrl(offer.url) && !isPhone() && (
+        {/* The description is a wall of text read rarely - a window on a click, not a long scroll. */}
+        {(offer.description || (!inTrash && isWebUrl(offer.url) && !isPhone())) && (
           <div className="pass-actions">
-            <button type="button" className="btn btn-ghost" onClick={onFullText} title={t("full.hint")}>
-              {t("full.button")}
-            </button>
+            {offer.description && (
+              <button type="button" className="btn btn-ghost" onClick={() => setDescriptionOpen(true)} aria-haspopup="dialog">
+                {t("card.description")}
+              </button>
+            )}
+            {!inTrash && isWebUrl(offer.url) && !isPhone() && (
+              <button type="button" className="btn btn-ghost" onClick={onFullText} title={t("full.hint")}>
+                {t("full.button")}
+              </button>
+            )}
           </div>
         )}
+        <Modal open={descriptionOpen && Boolean(offer.description)} onClose={() => setDescriptionOpen(false)} labelledBy="description-title" className="modal-wide">
+          <div className="sheet">
+            <header className="sheet-head">
+              <h2 id="description-title">{t("card.description")}</h2>
+              <CloseButton onClick={() => setDescriptionOpen(false)} />
+            </header>
+            <p className="description-text" lang={translated && descriptionTr ? lang : (foreign ?? undefined)}>
+              {/* Ads often leave whole runs of empty lines - one is enough. */}
+              {(translated && descriptionTr ? descriptionTr : (offer.description ?? "")).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()}
+            </p>
+            <footer className="sheet-foot">
+              <button type="button" className="btn btn-ghost" onClick={() => setDescriptionOpen(false)}>
+                {t("settings.close")}
+              </button>
+            </footer>
+          </div>
+        </Modal>
 
         {!inTrash && (
           <>
@@ -730,6 +756,8 @@ function AiPart({
   onRatePrecise,
   onAssist,
   onOpenAiSettings,
+  dupButton,
+  dupResult,
 }: {
   offer: OfferDetail;
   aiOn: boolean;
@@ -741,6 +769,10 @@ function AiPart({
   onRatePrecise: () => void;
   onAssist: (kind: AssistKind) => void;
   onOpenAiSettings: () => void;
+  /** "Check duplicates" - beside "Rate this offer" (also without AI: code finds them). */
+  dupButton: ReactNode;
+  /** What "Check duplicates" found, under that row. */
+  dupResult: ReactNode;
 }) {
   const { t } = useI18n();
   const ai = offer.ai;
@@ -803,25 +835,35 @@ function AiPart({
           </div>
         </>
       )}
+      {/* Checking the offer first (rate, duplicates), then texts written for the person: two in a row, one whole. */}
+      {(aiOn || dupButton) && (
+        // Alone in its row (duplicates checked, or no AI) - a button takes the whole width.
+        <div className={`ai-grid${aiOn && dupButton ? "" : " ai-grid-one"}`}>
+          {aiOn && (
+            <button type="button" className="btn btn-ghost btn-small" onClick={onRateAgain}>
+              {ai.status === null ? t("ai.rateThis") : t("ai.rateAgain")}
+            </button>
+          )}
+          {dupButton}
+          {aiOn && precise && (
+            <button type="button" className="btn btn-ghost btn-small ai-grid-wide" onClick={onRatePrecise}>
+              {t("ai.ratePrecise")}
+            </button>
+          )}
+        </div>
+      )}
+      {dupResult}
       {aiOn && (
-        <div className="ai-row">
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => onAssist("message")}>
-            {t("assist.message")}
-          </button>
+        <div className="ai-grid ai-grid-write">
           <button type="button" className="btn btn-ghost btn-small" onClick={() => onAssist("questions")}>
             {t("assist.questions")}
           </button>
           <button type="button" className="btn btn-ghost btn-small" onClick={() => onAssist("gaps")}>
             {t("assist.gaps")}
           </button>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onRateAgain}>
-            {ai.status === null ? t("ai.rateThis") : t("ai.rateAgain")}
+          <button type="button" className="btn btn-ghost btn-small ai-grid-wide" onClick={() => onAssist("message")}>
+            {t("assist.message")}
           </button>
-          {precise && (
-            <button type="button" className="btn btn-ghost btn-small" onClick={onRatePrecise}>
-              {t("ai.ratePrecise")}
-            </button>
-          )}
         </div>
       )}
     </section>

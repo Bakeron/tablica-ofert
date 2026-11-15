@@ -2,6 +2,8 @@
 
 Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe oferty z legalnych źródeł (alerty e-mail z portali, Adzuna, Remotive, Jooble, Himalayas, We Work Remotely, Remote OK), odsiewa je Twoimi filtrami, ocenia z pomocą AI (albo bez AI - ze słów) i przypomina o rozmowach. Ta sama oferta z kilku portali to jedno drzewko ogłoszeń, etapy rekrutacji mają historię. Bez konta i bez serwera - dane leżą na komputerze, w zaszyfrowanej bazie.
 
+**[Zobacz wersję demo w przeglądarce](https://oferty.szymonbakonis.pl)** (zmyślone dane, zmiany znikają po odświeżeniu) · **[Instrukcja ze zrzutami ekranu](https://oferty.szymonbakonis.pl/instrukcja/)**
+
 > **Stan (12.11.2026):** aplikacja na PC działa na prawdziwych danych (agregatory, alerty e-mail, AI, Harmonogram zadań). Nowy układ z 11.11.2026 (zakładki Własne / Zebrane / Kosz, drzewko ogłoszeń, oferta z treści strony) działa też w wersji na Androida i przechodzi przez synchronizację z telefonem (drzewko i pytanie „To samo?” razem z ofertą); test na prawdziwym telefonie przed nami.
 
 ![Tablica ofert - zakładka „Własne” z kartą oferty, motyw ciemny](Podgląd/01-tablica.png)

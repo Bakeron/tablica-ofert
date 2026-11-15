@@ -219,7 +219,10 @@ fn lines_with(text: &str, kind: Kind, now: OffsetDateTime) -> Vec<(String, Vec<O
     for (i, line) in lines.iter().enumerate() {
         let n = normalize(line);
         let spaced = format!(" {n}");
-        let named = words.iter().any(|w| spaced.contains(&format!(" {w}")));
+        // "od: 19 października 2026" / "do: 18 listopada 2026" - a short line of its own (theprotocol.it).
+        let label = if kind == Kind::Published { "od:" } else { "do:" };
+        let labelled = line.to_lowercase().starts_with(label) && n.split(' ').count() <= 5;
+        let named = labelled || words.iter().any(|w| spaced.contains(&format!(" {w}")));
         let dates = if named || (kind == Kind::Published && age_line(&n)) { all_in(line, kind, now) } else { Vec::new() };
         if !dates.is_empty() {
             out.push((one_line(line, 200), dates));
@@ -278,6 +281,12 @@ mod tests {
         assert_eq!(found("Apply by Dec 5, 2026", Kind::Expires).map(|d| day(&d)).as_deref(), Some("2026-12-05"));
         // The word alone, the date on the next line.
         assert_eq!(found("Ważna do:\n15.12.2026", Kind::Expires).map(|d| day(&d)).as_deref(), Some("2026-12-15"));
+        // theprotocol.it: "od:" and "do:" on short lines of their own.
+        let page = "Full Stack Software Developer\nFirma: Zmyślona Firma sp. z o.o.\nod: 19 października 2026\ndo: 18 listopada 2026";
+        assert_eq!(found(page, Kind::Published).map(|d| day(&d)).as_deref(), Some("2026-10-19"));
+        assert_eq!(found(page, Kind::Expires).map(|d| day(&d)).as_deref(), Some("2026-11-18"));
+        // Not a label at the start of a short line: nothing.
+        assert_eq!(found("Pracujemy od poniedziałku do piątku, 9-17. Start do 5 grudnia 2026 albo później.", Kind::Expires), None);
     }
 
     #[test]

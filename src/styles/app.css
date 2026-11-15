@@ -358,6 +358,15 @@ textarea {
   text-transform: uppercase;
 }
 
+.preview-badge a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+
+.preview-badge a:hover {
+  text-decoration-thickness: 2px;
+}
+
 /* ---------- buttons ---------- */
 
 .btn {
@@ -917,8 +926,13 @@ details[open]::details-content {
   width: 9.5rem;
 }
 
+/* Room for the period too ("13-15,5 tys./mies.", "600-750/dzień") - on one line. */
 .c-salary {
-  width: 7.5rem;
+  width: 9.75rem;
+}
+
+.c-salary .flap {
+  white-space: nowrap;
 }
 
 .c-match {
@@ -2619,6 +2633,39 @@ fieldset.plain {
   color: var(--signal);
 }
 
+.toast:has(.toast-bar) {
+  position: relative;
+}
+
+/* Time left before the message goes by itself: shrinks from full to nothing. Held (pointer
+   over it, focus inside) - full and dimmed, it waits. */
+.toast-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--signal);
+  transform-origin: left;
+  animation: toast-time var(--toast-ms) linear forwards;
+}
+
+.toast-bar[data-held] {
+  animation: none;
+  opacity: 0.45;
+}
+
+@keyframes toast-time {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* Without motion a bar that never shrinks would only mislead. */
+[data-motion="reduced"] .toast-bar {
+  display: none;
+}
+
 /* ---------- narrower windows ---------- */
 
 @container app (max-width: 68.75rem) {
@@ -3189,6 +3236,39 @@ fieldset.plain {
   gap: 0.4rem;
 }
 
+/* The card's AI buttons: two in a row, a long one across; checking the offer above, texts written for the person below the dashes. */
+.ai-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.ai-grid .btn {
+  justify-content: center;
+  text-align: center;
+}
+
+.ai-grid-wide {
+  grid-column: 1 / -1;
+}
+
+.ai-grid-one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ai-grid-write {
+  margin-top: 0.2rem;
+  padding-top: 0.7rem;
+  border-top: 2px dashed var(--perf);
+}
+
+/* The offer's description in its window: the lines as the ad wrote them (runs of empty lines cut to one in OfferCard). */
+.description-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .ai-part {
   display: flex;
   flex-direction: column;
@@ -3542,11 +3622,41 @@ fieldset.plain {
 }
 
 /* The portal filter above every list: a small sign "Portal" and the choice beside it. */
+.list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  padding: 0 1rem 0.6rem;
+}
+
 .portal-filter {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 1rem 0.6rem;
+  min-width: 0;
+}
+
+/* Narrow screen: two filters in a row, the name above the choice - four of them take two lines, not four. */
+@media (max-width: 600px) {
+  .list-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 0.75rem;
+  }
+
+  .list-filters .portal-filter {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.2rem;
+  }
+
+  .list-filters .portal-filter span {
+    font-size: 0.8rem;
+  }
+
+  .list-filters .portal-filter select {
+    max-width: none;
+  }
 }
 
 .portal-filter span {
@@ -3559,7 +3669,7 @@ fieldset.plain {
 .portal-filter select {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 20rem;
+  max-width: 14rem;
 }
 
 /* Phone: "Empty the bin" beside the search - the words stay whole. */
@@ -4958,19 +5068,34 @@ html.scanning .scan-overlay * {
   box-shadow: inset 3px 0 0 var(--perf);
 }
 
+/* A clear step in, with an elbow of a branch from the first ad down to this one - not a list. */
 .board tr.is-child .c-offer {
-  padding-left: 1.2rem;
+  position: relative;
+  padding-left: 2.6rem;
+}
+
+.board tr.is-child .c-offer::before {
+  content: "";
+  position: absolute;
+  left: 0.9rem;
+  top: 0;
+  width: 1.2rem;
+  height: 1.35rem;
+  border-left: 2px solid var(--perf);
+  border-bottom: 2px solid var(--perf);
+  pointer-events: none;
 }
 
 .board tr.is-child .offer-title {
   font-size: 0.95em;
 }
 
+/* Under the date in the first column - the ads unfold a step in from here. */
 .tree-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: 0.2rem;
+  margin-top: 0.35rem;
   padding: 0.1rem 0.4rem;
   border: 1.5px dashed currentColor;
   border-radius: 2px;
@@ -4981,6 +5106,11 @@ html.scanning .scan-overlay * {
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
+}
+
+.c-added .tree-toggle {
+  display: flex;
+  width: max-content;
 }
 
 .tree-toggle:hover {
@@ -5051,6 +5181,10 @@ html.scanning .scan-overlay * {
     padding-left: 0;
   }
 
+  .board tr.is-child .c-offer::before {
+    content: none;
+  }
+
   /* The branch line belongs to the table's first column; in a card the first cell is the date. */
   .board tr.is-child > td:first-child {
     box-shadow: none;
@@ -5073,4 +5207,222 @@ html.scanning .scan-overlay * {
     height: max(48px, 2.75rem);
     translate: 0 -50%;
   }
+}
+
+/* ---------- the guide in bubbles: a yellow wayfinding sign pointing at a lit part ---------- */
+
+/* The whole window is the guide's layer: the page under it is inert, the light and the sign
+   stand on top. Its own dim is the shadow around the light, so the backdrop stays clear. */
+.tour {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+  color: var(--signal-ink);
+}
+
+.tour::backdrop {
+  background: transparent;
+}
+
+.tour[open] {
+  animation: dim-in var(--t-reveal) ease-out;
+}
+
+.tour[open][data-leaving] {
+  animation: dim-out var(--t-reveal) ease-in forwards;
+}
+
+/* The lit part: a frame in signal yellow; the dim around it has a hole cut for it. */
+.tour-light {
+  position: absolute;
+  border-radius: 4px;
+  outline: 3px solid var(--signal);
+  pointer-events: none;
+  transition:
+    top var(--t-reveal) ease-out,
+    left var(--t-reveal) ease-out,
+    width var(--t-reveal) ease-out,
+    height var(--t-reveal) ease-out;
+}
+
+.tour-dim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.62);
+  transition: clip-path var(--t-reveal) ease-out;
+}
+
+/* The sign: yellow plate with a thin dark rule inside, like the signs in a terminal. */
+.tour-sign {
+  position: absolute;
+  width: min(23rem, calc(100vw - 32px));
+  padding: 0.85rem 1rem 0.9rem;
+  border-radius: 4px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  box-shadow:
+    inset 0 0 0 3px var(--signal),
+    inset 0 0 0 4.5px var(--signal-ink),
+    0 10px 28px rgb(0 0 0 / 0.45);
+  transition:
+    top var(--t-reveal) ease-out,
+    left var(--t-reveal) ease-out;
+}
+
+/* The pointer on the sign's edge, towards the part. */
+.tour-sign::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: var(--signal);
+  rotate: 45deg;
+}
+
+.tour-sign[data-side="below"]::before {
+  top: -7px;
+  left: calc(var(--arrow) - 8px);
+}
+
+.tour-sign[data-side="above"]::before {
+  bottom: -7px;
+  left: calc(var(--arrow) - 8px);
+}
+
+.tour-sign[data-side="left"]::before {
+  right: -7px;
+  top: calc(var(--arrow) - 8px);
+}
+
+.tour-sign[data-side="right"]::before {
+  left: -7px;
+  top: calc(var(--arrow) - 8px);
+}
+
+.tour-sign[data-side="over"]::before {
+  display: none;
+}
+
+.tour-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* The arrow box of a wayfinding sign: black square, yellow arrow towards the part. */
+.tour-arrow {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 3px;
+  background: var(--signal-ink);
+  color: var(--signal);
+}
+
+.tour-arrow svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  transition: rotate var(--t-reveal) ease-out;
+}
+
+.tour-arrow[data-side="below"] svg {
+  rotate: 0deg;
+}
+
+.tour-arrow[data-side="above"] svg,
+.tour-arrow[data-side="over"] svg {
+  rotate: 180deg;
+}
+
+.tour-arrow[data-side="left"] svg {
+  rotate: 90deg;
+}
+
+.tour-arrow[data-side="right"] svg {
+  rotate: -90deg;
+}
+
+.tour-title {
+  flex: 1;
+  margin: 0;
+  font-family: var(--font-board);
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tour-count {
+  flex: none;
+  font-family: var(--font-board);
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-text {
+  margin: 0.6rem 0 0.85rem;
+  line-height: 1.45;
+}
+
+.tour-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.tour-btn {
+  min-height: 2.75rem;
+  padding: 0.35rem 1rem;
+  border: 2px solid var(--signal-ink);
+  border-radius: 4px;
+  font-family: var(--font-board);
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.tour-skip {
+  background: transparent;
+  color: var(--signal-ink);
+}
+
+.tour-skip:hover {
+  background: rgb(0 0 0 / 0.12);
+}
+
+.tour-next {
+  background: var(--signal-ink);
+  color: var(--signal);
+}
+
+.tour-next:hover {
+  background: #2e2e2e;
+}
+
+/* Yellow focus ring is lost on the yellow sign - a dark one instead. */
+.tour-btn:focus-visible {
+  outline: 3px solid var(--signal-ink);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.about-tour {
+  margin: 0;
 }

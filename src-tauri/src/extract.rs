@@ -54,6 +54,23 @@ pub(crate) fn contract_of(text: &str) -> Option<String> {
     (!found.is_empty()).then(|| found.join(", "))
 }
 
+/// The part of a contract (AI's answer) the text really names: "UoP, B2B" with only B2B in the
+/// text gives "B2B"; a contract outside `contract_of`'s list counts when its words are in the text.
+pub(crate) fn named_in(contract: &str, text: &str) -> Option<String> {
+    match contract_of(contract) {
+        Some(named) => {
+            let in_text = contract_of(text).unwrap_or_default();
+            let in_text: Vec<&str> = in_text.split(", ").collect();
+            let kept: Vec<&str> = named.split(", ").filter(|c| in_text.contains(c)).collect();
+            (!kept.is_empty()).then(|| kept.join(", "))
+        }
+        None => {
+            let n = normalize(contract);
+            (n.chars().count() >= 2 && format!(" {} ", normalize(text)).contains(&format!(" {n} "))).then(|| one_line(contract, 100))
+        }
+    }
+}
+
 fn level_of(title: &str) -> Option<String> {
     let n = format!(" {} ", normalize(title));
     [("junior", " junior "), ("mid", " mid "), ("mid", " regular "), ("senior", " senior "), ("senior", " lead ")]
@@ -101,6 +118,17 @@ pub fn from_text(text: &str, title_hint: Option<&str>) -> Draft {
 mod tests {
     use super::*;
     use crate::model::Remote;
+
+    #[test]
+    fn a_contract_only_when_the_text_names_it() {
+        // Useme: "Zleceniodawca" is the client, the offer says nothing about the contract.
+        let useme = "Zleceniodawca\nAgencja Testowa\nOpis\nPoszukujemy freelancera do współpracy przy tworzeniu stron.";
+        assert_eq!(named_in("umowa zlecenie", useme), None);
+        assert_eq!(named_in("UoP, B2B", "Oferujemy kontrakt B2B."), Some("B2B".into()));
+        assert_eq!(named_in("Umowa o pracę", "Zatrudnienie na UoP, pełny etat."), Some("UoP".into()));
+        assert_eq!(named_in("umowa o dzieło", "Forma: umowa o dzieło."), Some("umowa o dzieło".into()));
+        assert_eq!(named_in("umowa o dzieło", "Forma do ustalenia."), None);
+    }
 
     #[test]
     fn reads_what_is_sure() {

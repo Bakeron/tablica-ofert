@@ -317,7 +317,7 @@ Answer with this JSON object (write summary, flags and why in {language}):\n\
   \"remote\": \"yes\" | \"hybrid\" | \"no\" | \"unknown\",\n\
   \"remote_quote\": the sentence of the offer about remote or office work, or null,\n\
   \"salary_min\": number or null, \"salary_max\": number or null,\n\
-  \"salary_currency\": 3-letter code or null, \"salary_period\": \"month\" | \"hour\" | null,\n\
+  \"salary_currency\": 3-letter code or null, \"salary_period\": \"month\" | \"day\" | \"hour\" | null,\n\
   \"contract\": e.g. \"UoP\", \"B2B\", \"UoP, B2B\", \"umowa zlecenie\" or null,\n\
   \"level\": \"junior\" | \"mid\" | \"senior\" | null,\n\
   \"published\": when the offer was published, copied exactly as the offer writes it (e.g. \"10.11.2026\", \"2 dni temu\"), or null,\n\
@@ -457,11 +457,13 @@ pub(crate) fn number_in_text(n: i64, text: &str) -> bool {
     alone(&n.to_string(), &[]) || (n % 1000 == 0 && alone(&(n / 1000).to_string(), &["k", "tys"]))
 }
 
-/// "month", "monthly", "per hour", "h"… - `None` when AI did not say.
+/// "month", "monthly", "per day", "per hour", "h"… - `None` when AI did not say.
 fn salary_period(v: &Value) -> Option<SalaryPeriod> {
     let p = normalize(v.get("salary_period")?.as_str()?);
     if ["hour", "hourly", "per hour", "h", "godzina", "godzinowo"].contains(&p.as_str()) {
         Some(SalaryPeriod::Hour)
+    } else if ["day", "daily", "per day", "d", "dzien", "dziennie", "dniowka"].contains(&p.as_str()) {
+        Some(SalaryPeriod::Day)
     } else if ["month", "monthly", "per month", "m", "miesiac", "miesiecznie"].contains(&p.as_str()) {
         Some(SalaryPeriod::Month)
     } else {
@@ -525,7 +527,8 @@ pub fn read_answer(v: &Value, offer_text: &str, allowed_profiles: &[i64], app_la
         salary_max,
         salary_currency: if has_salary { currency.or(Some("PLN".into())) } else { None },
         salary_period: if has_salary { period } else { None },
-        contract: s(v, "contract", 100),
+        // Only what the text names - "Zleceniodawca" (the client on Useme) is no "umowa zlecenie".
+        contract: s(v, "contract", 100).and_then(|c| crate::extract::named_in(&c, offer_text)),
         level,
         language,
         requirements: s(v, "requirements", 1000),
@@ -1520,7 +1523,8 @@ fn draft_of(r: Reading, text: &str, title_hint: Option<&str>, reading_id: Option
         salary_max: if r.salary_min.is_some() { r.salary_max } else { fallback.salary_max },
         salary_currency: r.salary_currency.or(fallback.salary_currency),
         salary_period: r.salary_period.or(fallback.salary_period),
-        contract: r.contract.or(fallback.contract),
+        // Only what the text names - "Zleceniodawca" (the client on Useme) is no "umowa zlecenie".
+        contract: r.contract.and_then(|c| crate::extract::named_in(&c, text)).or(fallback.contract),
         level: r.level.or(fallback.level),
         requirements: r.requirements,
         description: fallback.description,
@@ -2361,10 +2365,13 @@ mod tests {
         }
 
         // Made-up city, contract, level, title.
-        let (_, notes) = with(2, json!({ "city": "Kraków", "contract": "B2B", "level": "junior", "title": "Junior Tester" }));
-        for f in [Field::City, Field::Contract, Field::Level, Field::Title] {
+        let (d, notes) = with(2, json!({ "city": "Kraków", "contract": "B2B", "level": "junior", "title": "Junior Tester" }));
+        for f in [Field::City, Field::Level, Field::Title] {
             assert_eq!(problem(&notes, f), Some(Problem::NotInText), "{f:?}");
         }
+        // A made-up contract never reaches the form (the text's own one may, read by plain code).
+        assert!(d.contract.as_deref().is_none_or(|c| !c.contains("B2B")), "{d:?}");
+        assert_ne!(problem(&notes, Field::Contract), Some(Problem::NotInText));
         // Remote work without a sentence about it is not taken.
         let (d, notes) = with(0, json!({ "remote": "yes", "remote_quote": "Praca w 100% zdalna" }));
         assert!(d.remote != Some(Remote::Yes));

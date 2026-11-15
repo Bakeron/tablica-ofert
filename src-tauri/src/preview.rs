@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
-use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{webview::PageLoadEvent, Url, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 
 use crate::dedup::normalize;
@@ -25,6 +25,8 @@ const CAPTURE_HOST: &str = "capture.tablica-ofert.invalid";
 const MAX_TEXT: usize = 60_000;
 /// Only the top of a page counts: further down come "similar offers", with their own marks.
 const EXPIRED_TOP: usize = 1_500;
+/// The error when the preview window is gone - the app opens it again (`App.tsx`).
+pub const CLOSED: &str = "the preview is closed";
 
 /// What a page says when its offer is over (Polish and English), written as a card shows them.
 const EXPIRED_PHRASES: &[&str] = &[
@@ -111,10 +113,74 @@ pub fn expired_phrase(title: &str, text: &str) -> Option<String> {
     EXPIRED_PHRASES.iter().find(|p| page.contains(&format!(" {} ", normalize(p)))).map(|p| p.to_string())
 }
 
+/// Waiting for the page in the preview window to load (`fetch`).
+#[derive(Default)]
+pub struct Loading(pub Mutex<Option<oneshot::Sender<()>>>);
+
+/// `fetch`: how long a page may load, then the text is read anyway.
+#[cfg(desktop)]
+const LOAD_WAIT: Duration = Duration::from_secs(20);
+/// `fetch`: a moment for the page's own scripts after loading, between readings too.
+#[cfg(desktop)]
+const SETTLE: Duration = Duration::from_millis(1500);
+/// `fetch`: readings when the text is still short (the page may still be drawing the offer).
+#[cfg(desktop)]
+const READ_TRIES: usize = 4;
+/// `fetch`: this much text means the offer is there - no more readings.
+#[cfg(desktop)]
+const ENOUGH_TEXT: usize = 400;
+const NO_TEXT: &str = "the page did not give its text - copy and paste it instead";
+
 /// The phone has no separate windows - "Share" from the browser does this job there.
 #[cfg(mobile)]
 pub fn open(_app: &AppHandle, _url: &str) -> AppResult<()> {
     Err(AppError::Invalid("the page preview is available on the computer".into()))
+}
+
+#[cfg(mobile)]
+pub async fn fetch(_app: &AppHandle, _url: &str) -> AppResult<Captured> {
+    Err(AppError::Invalid("the page preview is available on the computer".into()))
+}
+
+/// "Take the text from the page" in one click: opens the page in the preview window, waits
+/// until it is loaded, takes its text and closes the window. One page, on a click - like a
+/// person opening it.
+#[cfg(desktop)]
+pub async fn fetch(app: &AppHandle, url: &str) -> AppResult<Captured> {
+    let (sender, receiver) = oneshot::channel();
+    *app.state::<Loading>().0.lock().map_err(|_| AppError::Invalid("internal state is broken".into()))? = Some(sender);
+    let result = async {
+        open(app, url)?;
+        // A page that never says "loaded" is still read after the wait.
+        let _ = tokio::time::timeout(LOAD_WAIT, receiver).await;
+        let mut best: Option<Captured> = None;
+        for _ in 0..READ_TRIES {
+            tokio::time::sleep(SETTLE).await;
+            if let Ok(page) = capture(app).await {
+                let enough = page.text.chars().count() >= ENOUGH_TEXT;
+                if best.as_ref().is_none_or(|b| page.text.len() > b.text.len()) {
+                    best = Some(page);
+                }
+                if enough {
+                    break;
+                }
+            }
+        }
+        best.ok_or_else(|| AppError::Invalid(NO_TEXT.into()))
+    }
+    .await;
+    close(app);
+    result
+}
+
+#[cfg(desktop)]
+fn loaded(app: &AppHandle) {
+    let Some(loading) = app.try_state::<Loading>() else { return };
+    if let Ok(mut slot) = loading.0.lock() {
+        if let Some(sender) = slot.take() {
+            let _ = sender.send(());
+        }
+    }
 }
 
 /// Opens (or reuses) the preview window with an offer page.
@@ -129,6 +195,7 @@ pub fn open(app: &AppHandle, url: &str) -> AppResult<()> {
         return Ok(());
     }
     let handle = app.clone();
+    let load_handle = app.clone();
     let polish = crate::notify::polish(&app.state::<crate::commands::AppState>());
     WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(parsed))
         .title(if polish { "Tablica Ofert - podgląd strony" } else { "Tablica Ofert - page preview" })
@@ -143,6 +210,11 @@ pub fn open(app: &AppHandle, url: &str) -> AppResult<()> {
             }
             receive(&handle, target);
             false
+        })
+        .on_page_load(move |_, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                loaded(&load_handle);
+            }
         })
         .build()
         .map_err(|e| AppError::Invalid(e.to_string()))?;
@@ -204,7 +276,7 @@ fn percent_decode(s: &str) -> String {
 
 /// "Take the text from the page": asks the preview window for its text and waits for it.
 pub async fn capture(app: &AppHandle) -> AppResult<Captured> {
-    let window = app.get_webview_window(LABEL).ok_or_else(|| AppError::Invalid("the preview is closed".into()))?;
+    let window = app.get_webview_window(LABEL).ok_or_else(|| AppError::Invalid(CLOSED.into()))?;
     let code = crate::secrets::random_hex(16)?;
     let (sender, receiver) = oneshot::channel();
     {
@@ -217,7 +289,7 @@ pub async fn capture(app: &AppHandle) -> AppResult<Captured> {
     window.eval(&script).map_err(|e| AppError::Invalid(e.to_string()))?;
     match tokio::time::timeout(Duration::from_secs(8), receiver).await {
         Ok(Ok(captured)) => Ok(captured),
-        _ => Err(AppError::Invalid("the page did not give its text - copy and paste it instead".into())),
+        _ => Err(AppError::Invalid(NO_TEXT.into())),
     }
 }
 

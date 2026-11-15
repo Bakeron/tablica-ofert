@@ -79,7 +79,7 @@ function PrivacyText({ id, onOpenLink }: { id: string; onOpenLink: (url: string)
 }
 
 /** Settings → "About": version, privacy in short, licences. */
-export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink: (url: string) => void }) {
+export function AboutPart({ version, onOpenLink, onTour }: { version: string; onOpenLink: (url: string) => void; onTour: () => void }) {
   const { t } = useI18n();
   const noticesId = useId();
   const privacyId = useId();
@@ -109,6 +109,11 @@ export function AboutPart({ version, onOpenLink }: { version: string; onOpenLink
         <strong>{t("app.name")}</strong> · {t("about.version", { version })}
       </p>
       <p>{t("about.what")}</p>
+      <p className="about-tour">
+        <button type="button" className="btn btn-ghost btn-small" onClick={onTour}>
+          {t("tour.again")}
+        </button>
+      </p>
 
       <section className="source" aria-labelledby="privacy-title">
         <h3 id="privacy-title" className="source-title">{t("about.privacyTitle")}</h3>

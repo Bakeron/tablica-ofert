@@ -353,6 +353,10 @@ pub fn update(conn: &mut Connection, id: i64, input: OfferInput, keep: &[String]
             _ => {}
         }
     }
+    // The form had no company ("? (…)") - the offer keeps its known one.
+    if crate::dups::company_hidden(&input.company) && !crate::dups::company_hidden(&old_company) {
+        input.company = old_company.clone();
+    }
     // Renewed: a newer publication date, or the ad was over and is open again.
     let newer = input.published_at.as_deref().is_some_and(|p| day(Some(p)) > day(published.as_deref()));
     let renewed = renew && (newer || closed);

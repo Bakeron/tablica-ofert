@@ -776,6 +776,7 @@ function SalaryRow({ name, row, onChange }: { name: string; row: SalaryForm; onC
         onChange={(e) => onChange({ period: e.target.value as SalaryPeriod })}
       >
         <option value="month">{t("add.periodMonth")}</option>
+        <option value="day">{t("add.periodDay")}</option>
         <option value="hour">{t("add.periodHour")}</option>
       </select>
     </>

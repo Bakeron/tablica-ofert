@@ -174,7 +174,7 @@ fn words(v: &serde_json::Value) -> Vec<String> {
     all.iter().map(|s| one_line(s, 60)).filter(|s| !s.is_empty()).collect()
 }
 
-/// Pay as a monthly or hourly range (the app's two periods); other periods stay only in the text.
+/// Pay as a monthly, daily or hourly range (the app's periods); other periods stay only in the text.
 fn salary(job: &Job) -> (Option<i64>, Option<i64>, Option<SalaryPeriod>) {
     let ok = |v: Option<f64>| v.filter(|v| v.is_finite() && *v > 0.0);
     let (min, max) = (ok(job.min_salary), ok(job.max_salary));
@@ -184,10 +184,11 @@ fn salary(job: &Job) -> (Option<i64>, Option<i64>, Option<SalaryPeriod>) {
     let (div, period) = match job.salary_period.as_deref().unwrap_or("annual") {
         "annual" => (12.0, SalaryPeriod::Month),
         "monthly" => (1.0, SalaryPeriod::Month),
+        "daily" => (1.0, SalaryPeriod::Day),
         "hourly" => (1.0, SalaryPeriod::Hour),
         _ => return (None, None, None),
     };
-    let round = |v: f64| if period == SalaryPeriod::Hour { v.round() as i64 } else { ((v / div / 100.0).round() * 100.0) as i64 };
+    let round = |v: f64| if period != SalaryPeriod::Month { v.round() as i64 } else { ((v / div / 100.0).round() * 100.0) as i64 };
     (min.map(round), max.map(round), Some(period))
 }
 

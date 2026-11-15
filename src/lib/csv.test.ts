@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExportRow } from "../api/types";
-import { CSV_LISTS, csvCells, csvDate, csvName, csvSeparator } from "./csv";
+import { CSV_LISTS, csvCell, csvCells, csvDate, csvFileName, csvName, csvSeparator, csvText } from "./csv";
 
 const row: ExportRow = {
   id: 1,
@@ -57,5 +57,17 @@ describe("csv", () => {
     for (const lang of ["pl", "en"] as const) {
       for (const list of CSV_LISTS) expect(csvName(list, lang)).toMatch(/^[a-z0-9-]{1,40}$/);
     }
+  });
+
+  it("writes the demo file like Rust: BOM, quotes, formulas made safe", () => {
+    expect(csvCell('Firma "Cudzysłów"')).toBe('"Firma ""Cudzysłów"""');
+    expect(csvCell("=SUMA(A1)")).toBe(`"'=SUMA(A1)"`);
+    expect(csvCell("-5")).toBe(`"'-5"`);
+    expect(csvCell("x".repeat(40_000))).toHaveLength(32_002);
+    expect(csvText([["a", "b"], ["ż", ""]], ";")).toBe('\uFEFF"a";"b"\r\n"ż";""\r\n');
+  });
+
+  it("names the demo file as the app does", () => {
+    expect(csvFileName("oferty", new Date("2026-11-05T08:04:09.123Z"))).toBe("tablica-oferty-20261105-080409.csv");
   });
 });
