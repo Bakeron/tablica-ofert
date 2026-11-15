@@ -93,7 +93,9 @@ export function MailSettings({
   // The result stays under the button - the app's error bar is behind this window.
   const howtoRef = useRef<HTMLDetailsElement>(null);
   const isGmail = settings.mail_host.trim().toLowerCase() === GMAIL_HOST;
-  const words = searchWords(settings.search_words, profiles);
+  // Only the profiles that work now - with "Several profiles" off, the first one (`profiles::active`).
+  const active = settings.multi_profile === "on" ? profiles : profiles.slice(0, 1);
+  const words = searchWords(settings.search_words, active);
   const [result, setResult] = useState<{ ok: boolean; text: string; detail?: string; appPassword?: boolean } | null>(null);
 
   async function test() {
@@ -199,7 +201,7 @@ export function MailSettings({
       >
         <summary>{t("mail.howto")}</summary>
         <p>{t("mail.howtoText")}</p>
-        <AlertData email={settings.mail_user} profiles={profiles} />
+        <AlertData email={settings.mail_user} profiles={active} />
         {words.length > 0 && <p className="hint">{t("mail.searchHint")}</p>}
         <ul className={words.length > 0 ? "portal-list portal-list-search" : "portal-list"}>
           {PORTALS.map((p) => (

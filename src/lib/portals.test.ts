@@ -67,6 +67,12 @@ describe("status, work mode, city, salary and English filters", () => {
     ]);
   });
 
+  it("an offer in several cities passes the filter of any of them", () => {
+    const both = row(["nfj"], [], { stage: "new", city: "Gdańsk, Gdynia", remote: "no" });
+    expect(applyFilters([both], { ...NO_FILTERS, city: ["Gdynia"] })).toEqual([both]);
+    expect(filterCounts([both], NO_FILTERS, "city").map((x) => x.value)).toEqual(["Gdańsk", "Gdynia"]);
+  });
+
   it("work mode and city are separate, each with several values at once", () => {
     expect(applyFilters(rows, { ...NO_FILTERS, city: ["Kraków"] })).toEqual([a]);
     expect(applyFilters(rows, { ...NO_FILTERS, mode: ["yes", "no"] })).toEqual([b, c]);

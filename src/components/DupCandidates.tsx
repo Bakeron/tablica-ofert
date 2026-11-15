@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { DupCandidate, DupVerdict } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
+import { DEMO } from "../lib/demo";
 import { companyLabel, fullDay, salaryFull } from "../lib/format";
 import { sourceLabel } from "./Board";
 
@@ -38,7 +39,7 @@ export function DupCandidates({
             </p>
             {w.sentVia && <p className="same-applied">{t("same.sentVia", { date: fullDay(w.sentVia.at, lang), source: sourceLabel(w.sentVia.source, t) })}</p>}
             {verdicts === "wait" && <p className="dup-ai">{t("dup.aiWait")}</p>}
-            {verdicts === "error" && <p className="dup-ai">{t("dup.aiError")}</p>}
+            {verdicts === "error" && <p className="dup-ai">{t(DEMO ? "error.demo" : "dup.aiError")}</p>}
             {verdict && (
               <p className={`dup-ai dup-ai-${verdict.same}`}>
                 <span className="dup-ai-mark">{t(`dup.ai.${verdict.same}`)}</span> {verdict.why}

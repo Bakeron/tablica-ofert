@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import type { Agenda, Contact, EventKind, LogKind } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
 import { fullDate, isWebUrl, localInputToUtc, nowLocalInput } from "../lib/format";
@@ -36,28 +36,47 @@ export function AgendaPart({
   showContacts: boolean;
 }) {
   const { t, lang } = useI18n();
-  const [eventForm, setEventForm] = useState<{ kind: EventKind; at: string; minutes: number; note: string } | null>(null);
+  // Minutes may be empty for a moment while a new number is typed ("" - the field asks for one).
+  const [eventForm, setEventForm] = useState<{ kind: EventKind; at: string; minutes: number | ""; note: string } | null>(null);
   const [contactForm, setContactForm] = useState<Contact | null>(null);
   const [logForm, setLogForm] = useState<{ at: string; kind: LogKind; note: string } | null>(null);
 
-  async function submitEvent(e: FormEvent) {
-    e.preventDefault();
-    if (!eventForm) return;
-    const at = localInputToUtc(eventForm.at);
-    if (!at) return;
-    if (await actions.addEvent({ ...eventForm, at })) setEventForm(null);
+  // A double click on "Save" saves once - the form closes only after the first save is done.
+  const saving = useRef(false);
+  async function once(work: () => Promise<void>) {
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      await work();
+    } finally {
+      saving.current = false;
+    }
   }
 
-  async function submitContact(e: FormEvent) {
+  function submitEvent(e: FormEvent) {
     e.preventDefault();
-    if (contactForm && (await actions.saveContact(contactForm))) setContactForm(null);
+    return once(async () => {
+      if (!eventForm) return;
+      const at = localInputToUtc(eventForm.at);
+      if (!at) return;
+      if (await actions.addEvent({ ...eventForm, at, minutes: Number(eventForm.minutes) || 60 })) setEventForm(null);
+    });
   }
 
-  async function submitLog(e: FormEvent) {
+  function submitContact(e: FormEvent) {
     e.preventDefault();
-    if (!logForm) return;
-    const at = localInputToUtc(logForm.at);
-    if (at && (await actions.addLog({ ...logForm, at }))) setLogForm(null);
+    return once(async () => {
+      if (contactForm && (await actions.saveContact(contactForm))) setContactForm(null);
+    });
+  }
+
+  function submitLog(e: FormEvent) {
+    e.preventDefault();
+    return once(async () => {
+      if (!logForm) return;
+      const at = localInputToUtc(logForm.at);
+      if (at && (await actions.addLog({ ...logForm, at }))) setLogForm(null);
+    });
   }
 
   return (
@@ -112,7 +131,7 @@ export function AgendaPart({
             </label>
             <label className="field">
               <span>{t("agenda.minutes")}</span>
-              <input type="number" min={5} max={1440} step={5} value={eventForm.minutes} onChange={(e) => setEventForm({ ...eventForm, minutes: Number(e.target.value) || 60 })} />
+              <input type="number" min={5} max={1440} step={5} required value={eventForm.minutes} onChange={(e) => setEventForm({ ...eventForm, minutes: e.target.value === "" ? "" : Number(e.target.value) })} />
             </label>
             <label className="field agenda-note">
               <span>{t("agenda.note")}</span>

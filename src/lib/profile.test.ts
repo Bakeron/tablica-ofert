@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { translate } from "../i18n";
-import { bestResult, emptyCriteria, isBin, leavesView, placeName, reasonText, sortedReasons, splitList, toAmount, viewFor } from "./profile";
+import { AMOUNT_PATTERN, bestResult, emptyCriteria, isBin, leavesView, placeName, reasonText, sortedReasons, splitList, toAmount, viewFor } from "./profile";
 
 const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => translate("pl", key, params);
 
@@ -14,6 +14,12 @@ describe("profile helpers", () => {
     expect(toAmount("12 000")).toBe(12000);
     expect(toAmount("12 500")).toBe(12500);
     expect(toAmount("62,5")).toBe(63);
+    expect(toAmount("12.000")).toBe(12000);
+    expect(toAmount("1,200,000")).toBe(1200000);
+    expect(toAmount("12.5")).toBe(13);
+    expect(new RegExp(`^(?:${AMOUNT_PATTERN})$`, "v").test("12 000,50")).toBe(true);
+    expect(new RegExp(`^(?:${AMOUNT_PATTERN})$`, "v").test("15k")).toBe(false);
+    expect(new RegExp(`^(?:${AMOUNT_PATTERN})$`, "v").test("-5000")).toBe(false);
     expect(toAmount("")).toBeNull();
     expect(toAmount("-5")).toBeNull();
     expect(toAmount("abc")).toBeNull();
@@ -69,6 +75,8 @@ describe("profile helpers", () => {
     expect(leavesView({ ...offer, filterResult: "fail" }, "today")).toBe("rejected");
     // The other tabs as before; the archive and the trash keep theirs.
     expect(leavesView({ ...offer, filterResult: "unsure", interest: "high" }, "review")).toBe("board");
+    // "All" holds "to check" too - an unsure offer without a mark stays there.
+    expect(leavesView({ ...offer, filterResult: "unsure", interest: null }, "board")).toBeNull();
     expect(leavesView({ ...offer, interest: "no" }, "archive")).toBeNull();
     // "Own" keeps its offers whatever the filter or the stage says; only "no" takes one away.
     expect(viewFor({ ...offer, own: true, filterResult: "fail" })).toBe("own");

@@ -162,7 +162,15 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
             verdicts={dups.verdicts}
             actions={(c) => (
               <>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => onJoin(c.was.id)}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-small"
+                  onClick={() => {
+                    // Joined - the list is out of date (a second "Join" would fail); "Check duplicates" again shows the rest.
+                    setDups(null);
+                    onJoin(c.was.id);
+                  }}
+                >
                   {t("dup.join")}
                 </button>
                 <button type="button" className="btn btn-ghost btn-small" onClick={() => onShowOffer(c.was.id)}>

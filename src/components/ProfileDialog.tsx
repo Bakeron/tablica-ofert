@@ -14,7 +14,7 @@ import type {
   SalaryRule,
 } from "../api/types";
 import { useI18n, type TextKey } from "../i18n";
-import { emptyCriteria, joinList, splitList, toAmount } from "../lib/profile";
+import { AMOUNT_PATTERN, emptyCriteria, joinList, splitList, toAmount } from "../lib/profile";
 import { CareersPanel, SuggestPanel, TidyDialog, suggestionsFrom, type Suggestion } from "./AiDialogs";
 import { DescriptionField } from "./DescriptionField";
 import { Help } from "./Help";
@@ -22,7 +22,7 @@ import { IconPlus, IconTrash } from "./Icons";
 import { CloseButton, Modal } from "./Modal";
 import { Reveal } from "./Reveal";
 import { FieldError, FieldErrorsProvider, useField, useFieldErrors } from "./FieldError";
-import { PROFILE_EXPERIENCE_MAX, PROFILE_NAME_MAX, PROFILE_WORD_MAX } from "../lib/limits";
+import { PROFILE_DESCRIPTION_MAX, PROFILE_EXPERIENCE_MAX, PROFILE_NAME_MAX, PROFILE_WORD_MAX } from "../lib/limits";
 
 const RADII = [0, 10, 20, 30, 50, 100];
 const MODES: Remote[] = ["yes", "hybrid", "no"];
@@ -642,7 +642,7 @@ export function ProfileFields({
             const row = form[which];
             const name = t(which === "uop" ? "profile.salaryUop" : "profile.salaryB2b");
             return (
-              <SalaryRow key={which} name={name} row={row} onChange={(patch) => setSalary(which, patch)} />
+              <SalaryRow key={which} id={which} name={name} row={row} onChange={(patch) => setSalary(which, patch)} />
             );
           })}
         </div>
@@ -677,6 +677,7 @@ export function ProfileFields({
         open
         before={tidy.before}
         proposal={tidy.proposal}
+        maxLength={tidy.field === "description" ? PROFILE_DESCRIPTION_MAX : PROFILE_EXPERIENCE_MAX}
         onClose={() => setTidy(null)}
         onAccept={(text) => {
           set(tidy.field, text);
@@ -749,20 +750,28 @@ function Chips<T extends string>({
   );
 }
 
-function SalaryRow({ name, row, onChange }: { name: string; row: SalaryForm; onChange: (patch: Partial<SalaryForm>) => void }) {
+function SalaryRow({ id, name, row, onChange }: { id: string; name: string; row: SalaryForm; onChange: (patch: Partial<SalaryForm>) => void }) {
   const { t } = useI18n();
+  const minField = useField(`profile-${id}-min`);
+  const expectedField = useField(`profile-${id}-expected`);
   return (
     <>
       <span className="salary-name">{name}</span>
       <input
         inputMode="numeric"
         aria-label={`${name}: ${t("profile.salaryMin")}`}
+        pattern={AMOUNT_PATTERN}
+        data-error={t("form.amount")}
+        {...minField}
         value={row.min}
         onChange={(e) => onChange({ min: e.target.value })}
       />
       <input
         inputMode="numeric"
         aria-label={`${name}: ${t("profile.salaryExpected")}`}
+        pattern={AMOUNT_PATTERN}
+        data-error={t("form.amount")}
+        {...expectedField}
         value={row.expected}
         onChange={(e) => onChange({ expected: e.target.value })}
       />
@@ -779,6 +788,8 @@ function SalaryRow({ name, row, onChange }: { name: string; row: SalaryForm; onC
         <option value="day">{t("add.periodDay")}</option>
         <option value="hour">{t("add.periodHour")}</option>
       </select>
+      <FieldError name={`profile-${id}-min`} />
+      <FieldError name={`profile-${id}-expected`} />
     </>
   );
 }

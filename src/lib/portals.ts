@@ -35,7 +35,8 @@ export function rowValues(row: Row, key: FilterKey): string[] {
     case "mode":
       return [...new Set(ads.map((a) => a.remote))];
     case "city":
-      return [...new Set(ads.flatMap((a) => (a.city ? [a.city] : [])))];
+      // "Kraków, Gdańsk" - the same offer in two cities passes when any of them is chosen.
+      return [...new Set(ads.flatMap((a) => (a.city ? a.city.split(",").map((c) => c.trim()).filter(Boolean) : [])))];
     case "salary":
       return row.salaryMin == null && row.salaryMax == null ? ["none"] : [row.salaryPeriod ?? "month"];
     case "english":

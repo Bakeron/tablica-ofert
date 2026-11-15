@@ -21,11 +21,11 @@ pub fn show(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
-/// "3 nowe oferty na tablicy" - Polish plural forms.
+/// "3 nowe oferty w Zebranych" (the tab they land in) - Polish plural forms.
 pub fn new_offers_text(count: i64, pl: bool) -> (String, String) {
     if !pl {
         let noun = if count == 1 { "offer" } else { "offers" };
-        return (format!("{count} new {noun} on the board"), "Tablica Ofert collected new offers that fit your profiles.".into());
+        return (format!("{count} new {noun} in Collected"), "Tablica Ofert collected new offers that fit your profiles.".into());
     }
     let last = count % 10;
     let teen = (12..=14).contains(&(count % 100));
@@ -36,7 +36,7 @@ pub fn new_offers_text(count: i64, pl: bool) -> (String, String) {
     } else {
         "nowych ofert"
     };
-    (format!("{count} {noun} na tablicy"), "Tablica Ofert zebrała nowe oferty pasujące do Twoich profili.".into())
+    (format!("{count} {noun} w Zebranych"), "Tablica Ofert zebrała nowe oferty pasujące do Twoich profili.".into())
 }
 
 #[cfg(test)]
@@ -45,11 +45,11 @@ mod tests {
 
     #[test]
     fn polish_plurals() {
-        assert_eq!(new_offers_text(1, true).0, "1 nowa oferta na tablicy");
-        assert_eq!(new_offers_text(3, true).0, "3 nowe oferty na tablicy");
-        assert_eq!(new_offers_text(5, true).0, "5 nowych ofert na tablicy");
-        assert_eq!(new_offers_text(13, true).0, "13 nowych ofert na tablicy");
-        assert_eq!(new_offers_text(22, true).0, "22 nowe oferty na tablicy");
-        assert_eq!(new_offers_text(1, false).0, "1 new offer on the board");
+        assert_eq!(new_offers_text(1, true).0, "1 nowa oferta w Zebranych");
+        assert_eq!(new_offers_text(3, true).0, "3 nowe oferty w Zebranych");
+        assert_eq!(new_offers_text(5, true).0, "5 nowych ofert w Zebranych");
+        assert_eq!(new_offers_text(13, true).0, "13 nowych ofert w Zebranych");
+        assert_eq!(new_offers_text(22, true).0, "22 nowe oferty w Zebranych");
+        assert_eq!(new_offers_text(1, false).0, "1 new offer in Collected");
     }
 }

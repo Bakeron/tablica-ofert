@@ -1,5 +1,7 @@
 # Tablica Ofert
 
+[![Testy](https://github.com/Bakeron/tablica-ofert/actions/workflows/tests.yml/badge.svg)](https://github.com/Bakeron/tablica-ofert/actions/workflows/tests.yml)
+
 Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe oferty z legalnych źródeł (alerty e-mail z portali, Adzuna, Remotive, Jooble, Himalayas, We Work Remotely, Remote OK), odsiewa je Twoimi filtrami, ocenia z pomocą AI (albo bez AI - ze słów) i przypomina o rozmowach. Ta sama oferta z kilku portali to jedno drzewko ogłoszeń, etapy rekrutacji mają historię. Bez konta i bez serwera - dane leżą na komputerze, w zaszyfrowanej bazie.
 
 **[Zobacz wersję demo w przeglądarce](https://oferty.szymonbakonis.pl)** (zmyślone dane, zmiany znikają po odświeżeniu) · **[Instrukcja ze zrzutami ekranu](https://oferty.szymonbakonis.pl/instrukcja/)**
@@ -20,7 +22,7 @@ Osobista tablica do szukania pracy na Windows (i Androida): sama zbiera nowe ofe
 - **Twarde filtry bez AI** - wynik „pasuje / do sprawdzenia / nie pasuje”. Filtr czyta całą treść oferty („Wrocław”, a w opisie „możliwa praca zdalna”; „raz w miesiącu w biurze”) i odrzuca tylko to, co na pewno nie pasuje. Oferty do sprawdzenia trafiają do „Do sprawdzenia”, odrzucone - do „Odrzucone przez filtr” (obie w Zebranych), zawsze z powodem.
 - **Oferty zbierają się same** - z alertów e-mail portali (JJIT, NFJ, Pracuj, theprotocol, Rocket Jobs, Bulldogjob, LinkedIn, Indeed, Jooble; skrzynka tylko do odczytu), z Adzuny i Jooble (darmowe klucze użytkownika) oraz Remotive, Himalayas, We Work Remotely i Remote OK (praca zdalna, bez kluczy; z dwóch ostatnich zostają tylko oferty ze słowami kluczowymi profilu). Przy starcie, co kilka godzin i - przez Harmonogram zadań Windows - także przy zamkniętej aplikacji, z powiadomieniem o nowych ofertach. Każde źródło pilnuje swoich limitów zapytań. Portali aplikacja nie przegląda automatem - nie pozwalają na to ich regulaminy.
 - **Oferta z treści strony** - link otwiera się w oknie podglądu działającym jak incognito, „Pobierz treść ze strony” zabiera tekst strony (albo wklejasz go sam), aplikacja obcina menu, „Podobne oferty” i stopkę, a pola uzupełnia AI albo zwykły kod. **Kontrola pól:** każde pole od AI musi być w treści oferty, a kwota, umowa, tryb pracy czy data obecna w treści przy pustym polu dostaje żółte „sprawdź” z fragmentem źródłowym.
-- **AI do wyboru, dwa poziomy** - darmowe (Groq, OpenRouter, Ollama na własnym komputerze) oceniają wszystko jako zgrubne sito, a płatny Claude Sonnet 5.5 czyta oferty dodane ręcznie i te, przy których klikniesz „Oceń dokładniej” (OpenAI i Gemini są w kodzie, na razie ukryte). Przy każdym dostawcy uczciwy opis dokładności, przy Claude licznik wydatków („wydane X z Y”, ostrzeżenie poniżej 10%) i szacowany koszt przed „Oceń wszystkie ponownie”. Jedno zapytanie na ofertę: brakujące pola, streszczenie, „Uwagi”, ocena dopasowania do każdego profilu z powodem i cytatem z oferty (cytat zostaje tylko, gdy naprawdę jest w ofercie). Dzienny limit zapytań, przy każdym dostawcy „Sprawdź połączenie” (powód błędu zwykłymi słowami), lista darmowych modeli i instrukcja zdobycia klucza, „Sprawdź mój komputer” i „Zainstaluj Ollamę za mnie” przy Ollamie. Na kliknięcie: wiadomość do rekrutera, pytania na rozmowę, „Czego mi brakuje”. W profilu: „Zaproponuj filtry”, „Zaproponuj zawody (AI)” (zawody, które łączą to, co już umiesz) i „Uporządkuj” opis z porównaniem obu wersji. Bez AI ocena liczy się ze słów.
+- **AI do wyboru: darmowe albo płatne, nigdy oba naraz** - darmowe (Groq, OpenRouter, Ollama na własnym komputerze) mogą same oceniać zebrane oferty, a gdy jeden dostawca odmówi, pytają następnego; płatny Claude Sonnet 5.5 jest wyraźnie dokładniejszy, ale pracuje tylko po Twoim kliknięciu, z dziennym limitem wydatków w $ (w zł po kursie NBP) (OpenAI i Gemini są w kodzie, na razie ukryte). Przy każdym dostawcy uczciwy opis dokładności, przy Claude licznik wydatków („wydane X z Y”, ostrzeżenie poniżej 10%) i szacowany koszt przed „Oceń wszystkie ponownie”. Jedno zapytanie na ofertę: brakujące pola, streszczenie, „Uwagi”, ocena dopasowania do każdego profilu z powodem i cytatem z oferty (cytat zostaje tylko, gdy naprawdę jest w ofercie). Dzienny limit zapytań, przy każdym dostawcy „Sprawdź połączenie” (powód błędu zwykłymi słowami), lista darmowych modeli i instrukcja zdobycia klucza, „Sprawdź mój komputer” i „Zainstaluj Ollamę za mnie” przy Ollamie. Na kliknięcie: wiadomość do rekrutera, pytania na rozmowę, „Czego mi brakuje”. W profilu: „Zaproponuj filtry”, „Zaproponuj zawody (AI)” (zawody, które łączą to, co już umiesz) i „Uporządkuj” opis z porównaniem obu wersji. Bez AI ocena liczy się ze słów.
 - **Terminy i kontakty** - rozmowy i terminy zadań z przypomnieniem dzień i godzinę przed, „brak odpowiedzi od 7 dni”, przyciski „Kalendarz Google” i, na komputerze, „Plik .ics”, kontakty i historia kontaktów przy ofercie.
 - **Kosz** - oferty „Nie dla mnie”, wygasłe i usunięte, każda ze znacznikiem, z wyszukiwarką; przywróć albo usuń na zawsze („Opróżnij kosz”); usunięta oferta nie wróci przy następnym pobieraniu.
 - **Dane** - kopia w pliku zaszyfrowanym własnym hasłem (da się ją wczytać na innym komputerze), eksport do Excela (CSV z ochroną przed formułami), „Usuń wszystkie dane”.
@@ -51,7 +53,19 @@ Zrzuty z wersji na PC, na zmianę w motywie jasnym i ciemnym (kliknij obraz, że
 | Dane | SQLite + SQLCipher | jeden plik, zaszyfrowany (są w nim notatki i kontakty); klucz w Menedżerze poświadczeń Windows - bez hasła do wpisywania |
 | Zapis | transakcje, migracje, 5 kopii przy starcie | zapis w całości albo wcale; błąd odczytu blokuje zapis zamiast startu z pustą listą |
 | Pismo | Barlow Condensed, Atkinson Hyperlegible Next (SIL OFL) | wąskie, równe litery na tablicę i krój pod czytelność w treści; wbudowane, bez internetu |
-| Testy | `cargo test` (ok. 310), Vitest (ok. 60), GitHub Actions | baza na zaszyfrowanym pliku tymczasowym, zmyślone maile z alertami i odpowiedzi API / AI; po każdym `push` to samo na czystym Windowsie |
+| Testy | `cargo test` (ok. 330), Vitest (ok. 90), GitHub Actions | baza na zaszyfrowanym pliku tymczasowym, zmyślone maile z alertami i odpowiedzi API / AI; po każdym `push` to samo na czystym Windowsie |
+
+## Budowa projektu
+
+| Folder | Co tam jest |
+|---|---|
+| `src/` | interfejs (React + TypeScript): `components/` - ekrany i okna, `lib/` - logika bez wyglądu (z testami `*.test.ts`), `api/` - wywołania zaplecza i ich typy (`types.ts` = `model.rs`), `i18n/` - teksty po polsku i angielsku, `demo/` i `api/mock.ts` - wersja demo z przykładowymi danymi |
+| `src-tauri/src/` | zaplecze (Rust): `commands.rs` - funkcje dla interfejsu (sprawdzają dane i oddają je dalej), `offers.rs` - oferty, `filter.rs` - twarde filtry, `ai/` - dostawcy AI, `sources/` - agregatory i alerty e-mail, `sync/` - synchronizacja z telefonem, `db.rs` + `migrations/` - baza i jej zmiany, `secrets.rs` - sejf systemu |
+| `src-tauri/gen/android/` | projekt Androida wygenerowany przez Tauri (z małą zmianą: „Udostępnij” z przeglądarki do aplikacji) |
+| `instrukcja/` | instrukcja dla użytkownika; zrzuty robi skrypt `npm run instrukcja` (Playwright) |
+| `scripts/` | budowa APK, zrzuty do instrukcji, lista licencji bibliotek |
+
+Prawie każdy plik Rust zaczyna się od krótkiego opisu, co robi i dlaczego.
 
 ## Instalacja
 

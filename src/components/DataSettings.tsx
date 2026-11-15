@@ -36,7 +36,7 @@ export function DataSettings({
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (mismatch || savePass.length < PASSWORD_MIN) return;
+    if (mismatch || [...savePass].length < PASSWORD_MIN) return;
     setBusy(true);
     try {
       const path = await api.saveCopy(savePass);
@@ -109,7 +109,7 @@ export function DataSettings({
         </div>
         <p className="hint">{t("data.passwordHint", { min: PASSWORD_MIN })}</p>
         <div>
-          <button type="submit" className="btn btn-sign btn-small" disabled={busy || mismatch || savePass.length < PASSWORD_MIN || savePass2 === ""}>
+          <button type="submit" className="btn btn-sign btn-small" disabled={busy || mismatch || [...savePass].length < PASSWORD_MIN || savePass2 === ""}>
             {t("data.save")}
           </button>
         </div>

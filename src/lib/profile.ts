@@ -45,9 +45,16 @@ export function splitList(text: string): string[] {
 
 export const joinList = (values: string[]) => values.join(", ");
 
-/** "12 000" / "12000" / "12,5" → whole number, empty → null. */
+/** What an amount field accepts: digits with spaces, dots or commas ("12 000", "12.000", "12,5").
+ *  Anything else ("15k", "-5000") gets a message under the field instead of quietly becoming empty. */
+export const AMOUNT_PATTERN = String.raw`\s*\d[\d\s.,]*`;
+
+/** "12 000" / "12000" / "12.000" / "12,5" → whole number, empty → null. */
 export function toAmount(value: string): number | null {
-  const digits = value.replace(/[\s ]/g, "").replace(",", ".");
+  let digits = value.replace(/[\s ]/g, "");
+  // "12.000" or "1,200,000": separators of thousands, not a fraction.
+  if (/^\d{1,3}([.,]\d{3})+$/.test(digits)) digits = digits.replace(/[.,]/g, "");
+  digits = digits.replace(",", ".");
   if (digits === "") return null;
   const n = Math.round(Number(digits));
   return Number.isFinite(n) && n >= 0 ? n : null;
@@ -104,7 +111,8 @@ export function leavesView(
 ): View | null {
   const target = viewFor(o);
   if (isBin(view)) return o.bin === "declined" && o.interest !== "no" ? target : null;
-  if (view !== "today") return target === view ? null : target;
+  // "All" in Collected holds "to check" too (offers.rs) - such an offer stays there.
+  if (view !== "today") return target === view || (view === "board" && target === "review") ? null : target;
   const recruiting = o.stage !== "new" && o.stage !== "interested";
   const rejected = o.filterResult === "fail" && !isKept(o);
   return o.interest === "no" || o.own || recruiting || o.expired || rejected ? target : null;

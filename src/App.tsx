@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createApi, type Api } from "./api";
-import { DEMO } from "./lib/demo";
+import { DEMO, DEMO_ERROR, DEMO_REPO } from "./lib/demo";
 import {
   DEFAULT_SETTINGS,
   aiOn,
@@ -32,7 +32,7 @@ import {
 } from "./api/types";
 import { AddOfferDialog } from "./components/AddOfferDialog";
 import { AssistDialog } from "./components/AiDialogs";
-import { Board, DEFAULT_SORT, sortRows, sourceLabel, type Sort, type SortKey } from "./components/Board";
+import { Board, DEFAULT_SORT, isClosed, sortRows, sourceLabel, type Sort, type SortKey } from "./components/Board";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FirstSteps } from "./components/FirstSteps";
 import { Tour, type TourStep } from "./components/Tour";
@@ -546,7 +546,8 @@ export default function App() {
       await reload();
       setToast({ text: rateSummary(report, t, lang) });
     } catch (e) {
-      // "AI is working…" must not stay next to the error.
+      // "AI is working…" must not stay next to the error. Busy = another AI run (e.g. AI on its own).
+      if (isAppError(e) && e.code === "busy") return setToast({ text: t("error.busyAi") });
       setToast(null);
       fail(e);
     }
@@ -704,22 +705,26 @@ export default function App() {
       .catch(() => {});
   }, [api, rows, settings.notify_reminders, replan, lang, t]);
 
-  // "Today" as Rust ranks it, the bin the last thrown in on top; the others the newest first.
-  const shownSort = sort ?? (view === "today" || isBin(view) ? null : DEFAULT_SORT);
+  // "Today" as Rust ranks it, "Own" in its groups (the CV to send on top, then recruitments, without
+  // a link lower), the bin the last thrown in on top; the others the newest first.
+  const shownSort = sort ?? (view === "today" || view === "own" || isBin(view) ? null : DEFAULT_SORT);
   const searched = useMemo(() => {
-    const list = keepOrder(shownSort === null ? rows : sortRows(rows, shownSort), browseOrder);
+    // Rust's order, with the finished offers in their own group below (as `sortRows` keeps them).
+    const ranked = isBin(view) ? rows : [...rows.filter((r) => !isClosed(r)), ...rows.filter(isClosed)];
+    const list = keepOrder(shownSort === null ? ranked : sortRows(rows, shownSort), browseOrder);
     const q = query.trim().toLocaleLowerCase();
     if (!q) return list;
     return list.filter((r) => [r.title, r.titleTranslated, r.company, r.city].some((v) => v?.toLocaleLowerCase().includes(q)));
-  }, [rows, shownSort, query, browseOrder]);
+  }, [rows, shownSort, query, browseOrder, view]);
   const sorted = useMemo(() => applyFilters(searched, filters), [searched, filters]);
   const filterChoices = useMemo(() => availableFilters(searched, filters), [searched, filters]);
   // A filter chosen (or a new list under it): an offer the filter hid does not stay on the card -
-  // also one hidden by English unticked (no filter chosen, so only a hidden one is swapped).
+  // also one hidden by English unticked or by the search (no filter chosen, so only a hidden one is swapped).
   useEffect(() => {
     const has = (list: OfferRow[], id: number) => list.some((r) => r.id === id || r.children.some((c) => c.id === id));
     if (filtering) setSelectedId((id) => (id !== null && has(sorted, id) ? id : (sorted[0]?.id ?? null)));
-    else setSelectedId((id) => (id !== null && !has(sorted, id) && has(searched, id) ? (sorted[0]?.id ?? null) : id));
+    // None chosen (the search found nothing a moment ago): the first offer of the list again.
+    else setSelectedId((id) => (id === null || (!has(sorted, id) && has(rows, id)) ? (sorted[0]?.id ?? null) : id));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the list or the filters change
   }, [searched, filters]);
 
@@ -804,9 +809,11 @@ export default function App() {
   /** A stage past "new" makes the offer the person's own (Rust `set_stage`) - it moves to "Own";
    *  "Undo" brings back the stage and, for a collected offer, its place in "Collected". */
   const setStage = (id: number, next: Stage) => {
-    const row = rows.find((r) => r.id === id);
+    // A child too - its own stage and the family's "own" come back with "Undo".
+    const row = rows.find((r) => r.id === id) ?? rows.flatMap((r) => r.children).find((c) => c.id === id);
+    const family = rows.find((r) => r.id === id || r.children.some((c) => c.id === id));
     const before = row?.stage ?? next;
-    const wasOwn = row?.own ?? true;
+    const wasOwn = family?.own ?? true;
     return changeKept(
       id,
       { stage: next, own: wasOwn || next !== "new" },
@@ -828,11 +835,18 @@ export default function App() {
     return setInterest(id, row?.interest === interest ? null : interest);
   };
 
+  /** The rows in the order the list shows them around `id`: a child's family unfolded (the list
+   *  opens it while a child is chosen), so the next of a child is its next sibling, not the top row. */
+  function shownAround(id: number): OfferRow[] {
+    return sorted.flatMap((r) => (r.children.some((c) => c.id === id) ? [r, ...r.children] : [r]));
+  }
+
   /** The row is about to leave the list: the next one (or the previous one at the end) becomes
    *  selected - with the card open, its card comes next (back to the list after the last one). */
   function selectNeighbour(id: number) {
-    const i = sorted.findIndex((r) => r.id === id);
-    const neighbour = sorted[i + 1] ?? sorted[i - 1];
+    const list = shownAround(id);
+    const i = list.findIndex((r) => r.id === id);
+    const neighbour = list[i + 1] ?? list[i - 1];
     if (id !== selectedId) return;
     setSelectedId(neighbour?.id ?? null);
     if (!neighbour) setCardOpen(false);
@@ -842,8 +856,9 @@ export default function App() {
   function goNext(id: number) {
     // Keys on the list: from the first decision on, the order stays (on the card it already does).
     if (browseOrder === null) setBrowseOrder(sorted.map((r) => r.id));
-    const i = sorted.findIndex((r) => r.id === id);
-    const next = sorted[i + 1];
+    const list = shownAround(id);
+    const i = list.findIndex((r) => r.id === id);
+    const next = list[i + 1];
     if (id !== selectedId || !next) return;
     setSelectedId(next.id);
     document.getElementById(`offer-${next.id}`)?.scrollIntoView({ block: "nearest" });
@@ -912,7 +927,8 @@ export default function App() {
   /** Selects offer `id` in the tab where it is now (all profiles together). */
   async function showOnBoard(id: number) {
     const shown = await api!.getOffer(id);
-    const target = viewFor(shown);
+    // In the bin (deleted, or expired = the archive) it is shown there, not where it would belong.
+    const target = shown.deletedAt ? "trash" : shown.archivedAt ? "archive" : viewFor(shown);
     setFreshIds(new Set([id]));
     if (view !== target || profileId !== null) {
       setPendingSelect(id);
@@ -1029,7 +1045,8 @@ export default function App() {
       // Show the offer in the tab where the filter put it (all profiles together).
       const added = await api.getOffer(outcome.id);
       // Added by hand = own (tab "Own"); a collected one stays in "Today" unless the filter rejected it.
-      const target = !added.own && view === "today" && added.filterResult !== "fail" ? "today" : viewFor(added);
+      // Joined with an offer in the archive (Bin → Expired): it is shown there.
+      const target = added.archivedAt ? "archive" : !added.own && view === "today" && added.filterResult !== "fail" ? "today" : viewFor(added);
       // A new offer is read back: every field as the person confirmed it on the screen.
       const lost = outcome.status === "added" ? lostFields(offer, added) : [];
       const text =
@@ -1143,6 +1160,8 @@ export default function App() {
 
   function openLink(url: string) {
     if (!isWebUrl(url)) return;
+    // The made-up offers and contacts of the demo point at example.com - no page to show.
+    if (DEMO && /^https?:\/\/([^/]+\.)?example\.com(\/|$)/i.test(url)) return fail(DEMO_ERROR);
     if ("__TAURI_INTERNALS__" in window) {
       import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url)).catch(fail);
     } else {
@@ -1278,6 +1297,10 @@ export default function App() {
                 {" · "}
                 <a href="/instrukcja/" target="_blank" rel="noopener">
                   {t("demo.guide")}
+                </a>
+                {" · "}
+                <a href={DEMO_REPO} target="_blank" rel="noopener noreferrer">
+                  {t("about.repo")}
                 </a>
               </>
             )}
@@ -1445,6 +1468,8 @@ export default function App() {
                   ? t("list.searchEmpty", { query: query.trim() })
                   : searched.length === 0
                   ? undefined
+                  : !filtering
+                    ? t("narrow.englishHidden")
                   : filters.portal.length === 1 && FILTER_KEYS.every((k) => k === "portal" || filters[k].length === 0)
                     ? t("portal.empty", { portal: sourceLabel(filters.portal[0], t) })
                     : t("narrow.empty")

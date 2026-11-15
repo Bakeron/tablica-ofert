@@ -19,7 +19,8 @@ export function lostFields(input: OfferInput, saved: OfferDetail): LostField[] {
     if (text(a) !== text(b)) lost.push(field);
   };
   same("title", input.title, saved.title);
-  same("company", input.company, saved.company);
+  // No company typed: the app saves its own "unknown company" mark (`offers::clean`) - not a loss.
+  if (text(input.company) !== null) same("company", input.company, saved.company);
   same("url", input.url, saved.url);
   same("city", input.city, saved.city);
   if ((input.remote ?? "unknown") !== saved.remote) lost.push("remote");

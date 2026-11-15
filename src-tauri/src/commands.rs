@@ -684,10 +684,12 @@ pub async fn background_status() -> AppResult<crate::scheduler::TaskStatus> {
 /// Turns the Task Scheduler task on or off and returns its real state.
 #[tauri::command]
 pub async fn set_background(state: State<'_, AppState>, on: bool) -> AppResult<crate::scheduler::TaskStatus> {
-    with_db(&state, |c| settings::set(c, "background_task", if on { "on" } else { "off" }))?;
-    tauri::async_runtime::spawn_blocking(move || crate::scheduler::sync(on))
+    let status = tauri::async_runtime::spawn_blocking(move || crate::scheduler::sync(on))
         .await
-        .map_err(|e| AppError::Invalid(e.to_string()))?
+        .map_err(|e| AppError::Invalid(e.to_string()))??;
+    // Saved after the Task Scheduler said yes - a refused task leaves the setting as it was.
+    with_db(&state, |c| settings::set(c, "background_task", if on { "on" } else { "off" }))?;
+    Ok(status)
 }
 
 // ---------- dates, contacts, calendar ----------
@@ -827,8 +829,9 @@ pub async fn wipe_all(state: State<'_, AppState>, app: tauri::AppHandle) -> AppR
     let dir = crate::data_dir(&app)?;
     // With Google Drive connected, the latest changes go there first - otherwise they would be
     // lost with this device. A failed sync stops the deleting (disconnect Drive to skip it).
-    let sync = with_db(&state, |c| crate::sync::status(c))?;
-    if sync.connected && sync.has_key {
+    // Only with synchronisation on: turned off, nothing goes to Drive (and no internet is needed).
+    let (sync, sync_on) = with_db(&state, |c| Ok((crate::sync::status(c)?, settings::is_on(c, "sync_drive")?)))?;
+    if sync_on && sync.connected && sync.has_key {
         crate::sync::run(&state, true).await?;
     }
     {

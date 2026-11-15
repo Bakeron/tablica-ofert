@@ -9,6 +9,7 @@ import { CloseButton, Modal } from "./Modal";
 import { SameOfferPanel } from "./SameOfferPanel";
 import { FieldError, FieldErrorsProvider, useFieldErrors } from "./FieldError";
 import { OFFER_LONG_MAX, OFFER_SHORT_MAX, OFFER_URL_MAX } from "../lib/limits";
+import { AMOUNT_PATTERN, toAmount } from "../lib/profile";
 
 const EMPTY = {
   title: "",
@@ -43,13 +44,6 @@ function dateOf(day: string, exact: string | null, end: boolean): string | null 
   if (day === "") return null;
   if (exact && dayOf(exact) === day) return exact;
   return `${day}T${end ? "21:59:59" : "00:00:00"}Z`;
-}
-
-function toNumber(value: string): number | null {
-  const digits = value.replace(/[\s ]/g, "").replace(",", ".");
-  if (digits === "") return null;
-  const n = Math.round(Number(digits));
-  return Number.isFinite(n) ? n : null;
 }
 
 const orNull = (value: string) => (value.trim() === "" ? null : value.trim());
@@ -291,8 +285,8 @@ export function AddOfferDialog({
       url: orNull(form.url),
       city: orNull(form.city),
       remote: form.remote,
-      salaryMin: toNumber(form.salaryMin),
-      salaryMax: toNumber(form.salaryMax),
+      salaryMin: toAmount(form.salaryMin),
+      salaryMax: toAmount(form.salaryMax),
       salaryCurrency: orNull(form.salaryCurrency),
       salaryPeriod: form.salaryPeriod,
       contract: orNull(form.contract),
@@ -435,6 +429,9 @@ export function AddOfferDialog({
             </span>
             <input
               required
+              // Spaces alone are no title (Rust trims and would refuse it with a technical error).
+              pattern=".*\S.*"
+              data-error={t("form.required")}
               maxLength={OFFER_SHORT_MAX}
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
@@ -492,11 +489,29 @@ export function AddOfferDialog({
           </label>
           <label className="field">
             <span>{t("add.fieldSalaryMin")}</span>
-            <input inputMode="numeric" value={form.salaryMin} onChange={(e) => set("salaryMin", e.target.value)} {...checked("salary")} />
+            <input
+              inputMode="numeric"
+              pattern={AMOUNT_PATTERN}
+              data-error={t("form.amount")}
+              value={form.salaryMin}
+              onChange={(e) => set("salaryMin", e.target.value)}
+              data-check={checked("salary")["data-check"]}
+              {...field("offer-salary-min", note("salary") && checkId("salary"))}
+            />
+            <FieldError name="offer-salary-min" />
           </label>
           <label className="field">
             <span>{t("add.fieldSalaryMax")}</span>
-            <input inputMode="numeric" value={form.salaryMax} onChange={(e) => set("salaryMax", e.target.value)} {...checked("salary")} />
+            <input
+              inputMode="numeric"
+              pattern={AMOUNT_PATTERN}
+              data-error={t("form.amount")}
+              value={form.salaryMax}
+              onChange={(e) => set("salaryMax", e.target.value)}
+              data-check={checked("salary")["data-check"]}
+              {...field("offer-salary-max", note("salary") && checkId("salary"))}
+            />
+            <FieldError name="offer-salary-max" />
           </label>
           {note("salary") && (
             <div className="check-row">

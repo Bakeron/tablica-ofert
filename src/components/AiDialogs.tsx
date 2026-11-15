@@ -13,12 +13,15 @@ export function TidyDialog({
   open,
   before,
   proposal,
+  maxLength,
   onAccept,
   onClose,
 }: {
   open: boolean;
   before: string;
   proposal: string;
+  /** The longest text the profile field takes - AI may write more. */
+  maxLength: number;
   onAccept: (text: string) => void;
   onClose: () => void;
 }) {
@@ -27,6 +30,8 @@ export function TidyDialog({
   useEffect(() => setText(proposal), [proposal]);
   const parts = wordDiff(before, text);
   const dropped = droppedWords(before, text);
+  // Counted in characters, as Rust counts them.
+  const over = [...text.trim()].length - maxLength;
   return (
     <Modal open={open} onClose={onClose} labelledBy="tidy-title" className="modal-wide">
       <div className="sheet">
@@ -80,13 +85,18 @@ export function TidyDialog({
         )}
         <label className="field">
           <span>{t("tidy.edit")}</span>
-          <textarea rows={8} maxLength={20000} value={text} onChange={(e) => setText(e.target.value)} />
+          <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} aria-invalid={over > 0 || undefined} />
+          {over > 0 && (
+            <span className="field-error" role="alert">
+              <IconWarning /> {t("tidy.tooLong", { max: maxLength, over })}
+            </span>
+          )}
         </label>
         <footer className="sheet-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             {t("tidy.reject")}
           </button>
-          <button type="button" className="btn btn-sign" disabled={!text.trim()} onClick={() => onAccept(text.trim())}>
+          <button type="button" className="btn btn-sign" disabled={!text.trim() || over > 0} onClick={() => onAccept(text.trim())}>
             {t("tidy.accept")}
           </button>
         </footer>

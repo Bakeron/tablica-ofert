@@ -50,7 +50,7 @@ export function useFieldErrors(open: boolean) {
       }
       batch.current.found[el.name] = message(el);
     },
-    onInputCapture: (e: FormEvent<HTMLFormElement>) => {
+    onInput: (e: FormEvent<HTMLFormElement>) => {
       const el = e.target as Checked;
       if (!el.name || !el.validity) return;
       // The app's own "fill in this field" text (App.tsx) would keep the field wrong after typing.

@@ -82,6 +82,8 @@ export function Modal({
       className={`modal ${className}`}
       aria-labelledby={labelledBy}
       data-leaving={leaving || undefined}
+      // On its way out nothing in it takes a click - a double click must not do the action twice.
+      inert={leaving || undefined}
       onMouseDown={(e) => (pressedOutside.current = outside(e))}
       onClick={(e) => {
         if (pressedOutside.current && outside(e)) softClose();

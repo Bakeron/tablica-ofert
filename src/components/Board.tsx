@@ -342,7 +342,9 @@ export function Board({ rows, emptyText, changeKey, view, selectedId, freshIds, 
                         onClick={(e) => {
                           // Folding is not choosing the row.
                           e.stopPropagation();
-                          fold(o.id, !isOpen(o.id));
+                          // With a child chosen, folding chooses the parent (as "back" does).
+                          if (isOpen(o.id)) foldBack(o.id);
+                          else fold(o.id, true);
                         }}
                       >
                         {/* One arrow that turns down - smoothly, with the children. */}

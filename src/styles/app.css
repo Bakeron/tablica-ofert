@@ -2521,6 +2521,11 @@ fieldset.plain {
   gap: 0.45rem 0.6rem;
 }
 
+/* A wrong amount: the message takes the whole row under its line. */
+.salary-grid > .field-error {
+  grid-column: 1 / -1;
+}
+
 .salary-head {
   font-size: 0.8rem;
   font-weight: 700;

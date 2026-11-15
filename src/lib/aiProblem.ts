@@ -33,7 +33,9 @@ export function rateSummary(report: RateReport, t: T, lang: string): string {
     // An error that came before any provider was asked (e.g. a busy run) has no problem line.
     if (report.problems.length === 0) {
       const known = ["net", "auth", "limit", "missing", "busy"];
-      parts.push(t((known.includes(report.error.code) ? `error.${report.error.code}` : "error.generic") as TextKey));
+      // "Busy" here is another AI run (a fetch or sync has its own message).
+      const code = report.error.code === "busy" ? "busyAi" : report.error.code;
+      parts.push(t((known.includes(report.error.code) ? `error.${code}` : "error.generic") as TextKey));
     }
   } else {
     parts.push(t("ai.rated", { count: report.rated, waiting: report.waiting }));

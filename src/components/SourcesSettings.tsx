@@ -111,6 +111,10 @@ export function SourcesSettings({
         result = { ok: true, text: t("src.testOk") };
       } catch (e) {
         const { key, detail } = describeError(e);
+        if (key === "error.demo") {
+          setChecks((c) => ({ ...c, [source]: { ok: false, text: t("error.demo") } }));
+          return;
+        }
         // The service's own failure gets the sentence of its kind; anything else the general one.
         const why = key === "error.generic" || key === "error.invalid" ? t(key as TextKey) : t(`src.problem.${sourceProblem(detail)}` as TextKey);
         result = { ok: false, text: `${t("src.testFailed")} ${why}` };

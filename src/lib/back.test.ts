@@ -6,7 +6,13 @@ let handler: (() => void) | null = null;
 const unregister = vi.fn();
 const listened = vi.fn();
 
+const demo = vi.hoisted(() => ({ on: false }));
 vi.mock("./platform", () => ({ isPhone: () => true }));
+vi.mock("./demo", () => ({
+  get DEMO() {
+    return demo.on;
+  },
+}));
 vi.mock("@tauri-apps/api/app", () => ({
   onBackButtonPress: async (h: () => void) => {
     listened();
@@ -100,5 +106,45 @@ describe("onBack", () => {
     await flush();
     expect(listened).not.toHaveBeenCalled();
     stop();
+  });
+});
+
+describe("onBack in the phone demo in its own browser tab", () => {
+  afterEach(() => {
+    demo.on = false;
+    vi.unstubAllGlobals();
+  });
+
+  it("the browser Back closes what is on top and leaves the page only with nothing to undo", async () => {
+    demo.on = true;
+    let pop: (() => void) | null = null;
+    const pushState = vi.fn();
+    const back = vi.fn();
+    const win: Record<string, unknown> = {};
+    win.top = win;
+    vi.stubGlobal("window", win);
+    vi.stubGlobal("history", { state: null, pushState, back });
+    vi.stubGlobal("addEventListener", (_: string, h: () => void) => (pop = h));
+    const onBack = await load();
+    const calls: string[] = [];
+    const stopCard = onBack(() => calls.push("card"));
+    expect(pushState).toHaveBeenCalledTimes(1);
+    pop!();
+    expect(calls).toEqual(["card"]);
+    expect(pushState).toHaveBeenCalledTimes(2);
+    stopCard();
+    pop!();
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(listened).not.toHaveBeenCalled();
+  });
+
+  it("inside the demo window on the home page Back belongs to that page", async () => {
+    demo.on = true;
+    const pushState = vi.fn();
+    vi.stubGlobal("window", { top: {} });
+    vi.stubGlobal("history", { state: null, pushState, back: vi.fn() });
+    const onBack = await load();
+    onBack(() => {})();
+    expect(pushState).not.toHaveBeenCalled();
   });
 });

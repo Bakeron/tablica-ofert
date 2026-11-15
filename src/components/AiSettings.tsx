@@ -118,6 +118,16 @@ export function AiSettings({
   const canRate = enabled.some((x) => x.ready && !x.usedUp);
   // A run started elsewhere (the board, AI on its own) or before this window was opened.
   const running = status?.running ?? false;
+  // Such a run ends without this window knowing - it looks again every few seconds until it is over
+  // (otherwise "Rating…" and "Stopping…" would stay until some setting changes).
+  useEffect(() => {
+    if (!running || rating) return;
+    const timer = window.setInterval(load, 3000);
+    return () => window.clearInterval(timer);
+  }, [running, rating, load]);
+  useEffect(() => {
+    if (!running && !rating) setStopping(false);
+  }, [running, rating]);
   // Nothing is waiting, so the same button sends everything to AI once more (e.g. a new model).
   const again = status !== null && status.waiting === 0 && status.rateAgain > 0;
   const confirm = useContext(ConfirmContext);
@@ -179,7 +189,8 @@ export function AiSettings({
   function rateNow() {
     // Paid Claude: how many offers and roughly what it costs - before anything is sent.
     const claude = of("anthropic");
-    if (paid && status && confirm && claude) {
+    // Nothing to send (0 offers) costs nothing - no question about "0 offers, about 0.10 zł".
+    if (paid && status && confirm && claude && (again ? status.rateAgain : status.waiting) > 0) {
       const count = again ? status.rateAgain : status.waiting;
       const cost = claudeCostText(count, claude.model, lang);
       confirm(
@@ -272,7 +283,8 @@ export function AiSettings({
                 </div>
                 <OllamaModels
                   api={api}
-                  want={machine?.model ?? settings.ai_model_ollama ?? ""}
+                  // An empty "Model" field means the default model (as Rust reads it).
+                  want={machine?.model ?? (settings.ai_model_ollama || st?.defaultModel || "")}
                   current={st?.model ?? ""}
                   onPick={(model) => onChange("ai_model_ollama", model)}
                   url={settings.ollama_url}
@@ -646,7 +658,7 @@ function RunResult({ report }: { report: RateReport }) {
         <p className="source-warn">
           <IconWarning /> {t("ai.stopped")}
           {report.problems.length === 0 &&
-            ` ${t((known.includes(report.error.code) ? `error.${report.error.code}` : "error.generic") as TextKey)}`}
+            ` ${t((known.includes(report.error.code) ? `error.${report.error.code === "busy" ? "busyAi" : report.error.code}` : "error.generic") as TextKey)}`}
         </p>
       ) : (
         <p className="source-state">{t("ai.rated", { count: report.rated, waiting: report.waiting })}</p>
@@ -755,7 +767,12 @@ function TopUp({
           value={settings.ai_topup_date}
           onChange={(e) => {
             const v = e.target.value;
-            if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) onChange("ai_topup_date", v);
+            // A day from the future (typed by hand - `max` does not stop typing) counts as today.
+            if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) onChange("ai_topup_date", v > today ? today : v);
+          }}
+          // Left empty with a sum typed = today, as the hint says (on leaving - not while a new day is typed).
+          onBlur={(e) => {
+            if (e.target.value === "" && usd) onChange("ai_topup_date", today);
           }}
         />
         <span className="hint">{t("ai.topupDateHint")}</span>

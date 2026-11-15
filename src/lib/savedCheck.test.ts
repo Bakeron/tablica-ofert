@@ -55,6 +55,11 @@ describe("checking a new offer after saving", () => {
     expect(lostFields(future, { ...saved, publishedAt: "2026-11-11T12:00:00Z" } as OfferDetail)).toEqual([]);
   });
 
+  it("no company typed - the app's own unknown-company mark is not a loss", () => {
+    const noCompany: OfferInput = { ...input, company: "  " };
+    expect(lostFields(noCompany, { ...saved, company: "? (a1b2c3)" } as OfferDetail)).toEqual([]);
+  });
+
   it("an empty salary stays empty, without a currency", () => {
     const none: OfferInput = { ...input, salaryMin: null, salaryMax: null };
     const plain = { ...saved, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryPeriod: null } as OfferDetail;

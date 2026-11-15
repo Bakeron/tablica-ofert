@@ -7,6 +7,7 @@ import { onBack } from "../lib/back";
 import { stoppedConnect } from "../lib/syncConnect";
 import { cancelScan, isPhone, openAppSettings, scanSyncKey } from "../lib/platform";
 import { TEXT_MAX } from "../lib/limits";
+import { DEMO, DEMO_ERROR } from "../lib/demo";
 import { rememberUnfolded, settingsMemory } from "../lib/settingsMemory";
 import { IconArrowOut, IconWarning } from "./Icons";
 import { Reveal } from "./Reveal";
@@ -100,10 +101,15 @@ export function SyncSettings({
   }, [qr]);
 
   useEffect(() => () => void (polling.current = false), []);
+  const starting = useRef(false);
 
   async function connect() {
+    // A double click starts one login, not two.
+    if (polling.current || starting.current) return;
+    starting.current = true;
     try {
       const c = await api.syncLoginStart();
+      starting.current = false;
       setCode(c);
       polling.current = true;
       const until = Date.now() + c.expiresIn * 1000;
@@ -128,8 +134,12 @@ export function SyncSettings({
           return;
         }
       }
+      // The code ran out of time with nobody typing it in - said, not just gone.
+      polling.current = false;
       setCode(null);
+      onToast(t("sync.codeTimedOut"));
     } catch (e) {
+      starting.current = false;
       polling.current = false;
       setCode(null);
       onError(e);
@@ -363,6 +373,7 @@ export function SyncSettings({
                   type="button"
                   className="btn btn-sign btn-small"
                   onClick={async () => {
+                    if (DEMO) return onError(DEMO_ERROR);
                     setScanning(true);
                     try {
                       const found = await scanSyncKey();
