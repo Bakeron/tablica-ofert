@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { Captured, CheckedField, Draft, DupVerdict, FieldNote, LowFunds, OfferInput, Remote, SalaryPeriod, SameField, SameOffer } from "../api/types";
+import type { Captured, CheckedField, Draft, Posting, DupVerdict, FieldNote, LowFunds, OfferInput, Remote, SalaryPeriod, SameField, SameOffer } from "../api/types";
 import { lowFundsLine } from "../lib/aiProblem";
 import { formDirty } from "../lib/formDirty";
 import { IconWarning } from "./Icons";
@@ -86,6 +86,7 @@ function Check({ note }: { note: FieldNote | undefined }) {
           <b className="check-mark">{t("check.mark")}</b> {why}
         </span>
       )}
+      {note.fromPage && <span className="check-src">{t("check.fromPage")}</span>}
       {note.fragment && (
         <span className="check-src">
           {t("check.source")} <q>{note.fragment}</q>
@@ -154,7 +155,7 @@ export function AddOfferDialog({
   onJudge: (offer: OfferInput, ids: number[]) => Promise<DupVerdict[] | null>;
   /** "Take the text from the page": opens the page, takes its text, closes it. */
   onCapture: (url: string) => Promise<Captured | null>;
-  onFill: (text: string, title: string | null) => Promise<Draft | null>;
+  onFill: (text: string, title: string | null, posting: Posting | null) => Promise<Draft | null>;
 }) {
   const { t, lang } = useI18n();
   const { errors, formProps, field } = useFieldErrors(open);
@@ -163,6 +164,8 @@ export function AddOfferDialog({
   const [link, setLink] = useState("");
   const [pasted, setPasted] = useState("");
   const [pageTitle, setPageTitle] = useState<string | null>(null);
+  // The page's data for search engines - with the text taken from the page, like its title.
+  const [posting, setPosting] = useState<Posting | null>(null);
   const [working, setWorking] = useState<"capture" | "fill" | null>(null);
   const [filledBy, setFilledBy] = useState<"ai" | "code" | null>(null);
   const [readingId, setReadingId] = useState<string | null>(null);
@@ -198,6 +201,7 @@ export function AddOfferDialog({
     setLink("");
     setPasted("");
     setPageTitle(null);
+    setPosting(null);
     setWorking(null);
     setFilledBy(null);
     setNotes([]);
@@ -228,17 +232,18 @@ export function AddOfferDialog({
     if (!page) return;
     setPasted(page.text);
     setPageTitle(page.title);
+    setPosting(page.posting);
     setLink(page.url);
-    await fill(page.text, page.title, page.url);
+    await fill(page.text, page.title, page.url, page.posting);
   }
 
-  async function fill(text = pasted, title = pageTitle, url = link) {
+  async function fill(text = pasted, title = pageTitle, url = link, page = posting) {
     if (!text.trim()) return;
     setWorking("fill");
     // The last fill's "AI filled in the fields" must not stand while a new one is still running.
     setFilledBy(null);
     const mine = round.current;
-    const draft = await onFill(text, title);
+    const draft = await onFill(text, title, page);
     if (round.current !== mine) return;
     setWorking(null);
     if (!draft) return;
@@ -306,6 +311,7 @@ export function AddOfferDialog({
     setLink("");
     setPasted("");
     setPageTitle(null);
+    setPosting(null);
     setFilledBy(null);
     setNotes([]);
     onClose();
@@ -388,7 +394,13 @@ export function AddOfferDialog({
             <div className="quick-row">
               <label className="field">
                 <span>{t("quick.link")}</span>
-                <input type="url" maxLength={OFFER_URL_MAX} placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} />
+                <input type="url" maxLength={OFFER_URL_MAX} placeholder="https://" value={link}
+                  onChange={(e) => {
+                    setLink(e.target.value);
+                    // Another page - the data of the one taken before is not about it.
+                    setPosting(null);
+                  }}
+                />
               </label>
               <button
                 type="button"

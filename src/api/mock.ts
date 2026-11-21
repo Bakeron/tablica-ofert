@@ -1178,18 +1178,18 @@ export function createMockApi(): Api {
       // A rough copy of `fieldcheck` - enough to see the marks in screenshots.
       const line = (re: RegExp) => lines.find((l) => re.test(l)) ?? null;
       const notes: FieldNote[] = [];
-      if (ai && lines[1]) notes.push({ field: "company", problem: null, fragment: lines[1], more: null });
-      if (money) notes.push({ field: "salary", problem: null, fragment: money, more: null });
-      else if (line(/\d.*(brutto|netto)/i)) notes.push({ field: "salary", problem: "missing", fragment: line(/\d.*(brutto|netto)/i), more: null });
-      if (/zdaln|remote/i.test(text)) notes.push({ field: "remote", problem: null, fragment: line(/zdaln|remote/i), more: null });
+      if (ai && lines[1]) notes.push({ field: "company", problem: null, fragment: lines[1], more: null, fromPage: false });
+      if (money) notes.push({ field: "salary", problem: null, fragment: money, more: null, fromPage: false });
+      else if (line(/\d.*(brutto|netto)/i)) notes.push({ field: "salary", problem: "missing", fragment: line(/\d.*(brutto|netto)/i), more: null, fromPage: false });
+      if (/zdaln|remote/i.test(text)) notes.push({ field: "remote", problem: null, fragment: line(/zdaln|remote/i), more: null, fromPage: false });
       if (/b2b/i.test(text) && /umow\S* o prac/i.test(text))
-        notes.push({ field: "contract", problem: "more", fragment: line(/umow\S* o prac/i), more: "UoP" });
-      if (/\b(junior|mid|senior)\b/i.test(text)) notes.push({ field: "level", problem: "missing", fragment: line(/\b(junior|mid|senior)\b/i), more: null });
+        notes.push({ field: "contract", problem: "more", fragment: line(/umow\S* o prac/i), more: "UoP", fromPage: false });
+      if (/\b(junior|mid|senior)\b/i.test(text)) notes.push({ field: "level", problem: "missing", fragment: line(/\b(junior|mid|senior)\b/i), more: null, fromPage: false });
       const ago = line(/^\d+ (dni|dzień) temu$/i);
       const publishedAt = ago ? new Date(Date.now() - Number(ago.split(" ")[0]) * 86_400_000).toISOString() : null;
-      if (ago) notes.push({ field: "published", problem: null, fragment: ago, more: null });
+      if (ago) notes.push({ field: "published", problem: null, fragment: ago, more: null, fromPage: false });
       const until = line(/ważna do:? *\d\d\.\d\d\.\d{4}/i);
-      if (until) notes.push({ field: "expires", problem: "missing", fragment: until, more: null });
+      if (until) notes.push({ field: "expires", problem: "missing", fragment: until, more: null, fromPage: false });
       return {
         title: title || lines[0] || null,
         company: ai ? (lines[1] ?? null) : null,
@@ -1223,6 +1223,7 @@ export function createMockApi(): Api {
         title: "Tester manualny (k/m)",
         text: "Tester manualny (k/m)\nZmyślona Firma Testowa\nWrocław · praca zdalna\n9 000 - 11 000 zł brutto\n\nTestujemy aplikację do rezerwacji. Umowa o pracę.\n\n(Przykład z podglądu - w aplikacji tu jest tekst otwartej strony.)",
         expiredPhrase: "oferta wygasła",
+        posting: null,
       };
     },
     async fetchPage(url) {

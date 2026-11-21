@@ -12,6 +12,7 @@ import {
   type CareerIdea,
   type Captured,
   type Draft,
+  type Posting,
   type Criteria,
   type FetchReport,
   type Interest,
@@ -602,10 +603,10 @@ export default function App() {
     }
   }
 
-  async function fillOffer(text: string, title: string | null): Promise<Draft | null> {
+  async function fillOffer(text: string, title: string | null, posting: Posting | null): Promise<Draft | null> {
     if (!api) return null;
     try {
-      return await api.fillOffer(text, title);
+      return await api.fillOffer(text, title, posting);
     } catch (e) {
       fail(e);
       return null;

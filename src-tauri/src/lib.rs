@@ -19,6 +19,7 @@ mod keycopy;
 mod model;
 mod notify;
 mod offers;
+mod posting;
 mod learn;
 mod preview;
 mod profiles;

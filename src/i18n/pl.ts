@@ -1004,6 +1004,7 @@ export const pl = {
   "check.missing.expires": "w treści jest termin ważności oferty, a pole puste",
   "check.more": "w treści jest też: {more}",
   "check.source": "Z treści:",
+  "check.fromPage": "Z danych, które strona podaje wyszukiwarkom",
   "add.lost": "Oferta zapisana, ale te pola zapisały się inaczej niż na ekranie: {fields}. Sprawdź je w ofercie.",
   "add.lostSalary": "Widełki",
   "full.button": "Uzupełnij pełny opis",

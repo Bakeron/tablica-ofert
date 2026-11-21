@@ -14,6 +14,7 @@ import type {
   EventKind,
   LogKind,
   Captured,
+  Posting,
   Draft,
   Criteria,
   CareerIdea,
@@ -152,7 +153,7 @@ export interface Api {
   /** Folder chosen in the system window; null = closed. */
   pickFolder(): Promise<string | null>;
   /** Fields from a pasted text or a page: AI when set up, plain code otherwise. */
-  fillOffer(text: string, title: string | null): Promise<Draft>;
+  fillOffer(text: string, title: string | null, posting: Posting | null): Promise<Draft>;
   /** Opens the offer page in the preview window. */
   openPreview(url: string): Promise<void>;
   /** "Take the text from the page" in the preview window. */
@@ -294,7 +295,7 @@ async function tauriApi(): Promise<Api> {
     ollamaPull: (model) => invoke("ollama_pull", { model }),
     ollamaInstall: (program, models) => invoke("ollama_install", { program, models }),
     pickFolder: () => invoke("pick_folder"),
-    fillOffer: (text, title) => invoke("fill_offer", { text, title }),
+    fillOffer: (text, title, posting) => invoke("fill_offer", { text, title, posting }),
     openPreview: (url) => invoke("open_preview", { url }),
     capturePreview: () => invoke("capture_preview"),
     fetchPage: (url) => invoke("fetch_page", { url }),

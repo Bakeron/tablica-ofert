@@ -1004,6 +1004,7 @@ export const en: Record<keyof typeof pl, string> = {
   "check.missing.expires": "the text says until when the offer is open, the field is empty",
   "check.more": "the text also has: {more}",
   "check.source": "From the text:",
+  "check.fromPage": "From the data the page gives search engines",
   "add.lost": "Offer saved, but these fields were saved differently than on the screen: {fields}. Check them in the offer.",
   "add.lostSalary": "Salary",
   "full.button": "Fill in the full description",

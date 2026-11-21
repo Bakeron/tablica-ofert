@@ -1,6 +1,7 @@
 //! Dates of an offer from its text: when it was published and until when it is open.
 //! Written dates ("04.12.2026", "26 lis", "11 November 2026") and dates counted from the moment
-//! the text was taken ("1 godz. temu", "za 2 dni wygasa", "zostało 23 dni") - plain code, no AI.
+//! the text was taken ("1 godz. temu", "za 2 dni wygasa", "zostało 23 dni") or from the
+//! publication ("Ważne przez 30 dni" on Useme) - plain code, no AI.
 
 use time::format_description::well_known::Rfc3339;
 use time::{Date, Duration, Month, OffsetDateTime, Time};
@@ -19,12 +20,12 @@ const PUBLISHED_WORDS: &[&str] = &["opublikowan", "publikacj", "dodano", "data d
 /// Words of a line that gives the end of the offer.
 const EXPIRES_WORDS: &[&str] = &[
     "wazn", "wygas", "zostal", "aplikuj do", "termin skladania", "termin nadsylania", "termin aplikacji", "przyjmujemy zgloszenia do",
-    "expires", "valid until", "valid till", "deadline", "apply by", "apply before", "closing date", "days left",
+    "expires", "valid until", "valid till", "valid for", "deadline", "apply by", "apply before", "closing date", "days left",
 ];
 
 /// A date without a time: published = its midnight, open until = the end of that day in Poland
 /// (21:59:59 UTC stays the same day in winter and in summer). The form uses the same hours.
-fn on_day(day: Date, kind: Kind) -> OffsetDateTime {
+pub(crate) fn on_day(day: Date, kind: Kind) -> OffsetDateTime {
     let time = match kind {
         Kind::Published => Time::MIDNIGHT,
         Kind::Expires => Time::from_hms(21, 59, 59).unwrap_or(Time::MIDNIGHT),
@@ -154,6 +155,10 @@ fn relative(words: &[&str], kind: Kind, now: OffsetDateTime) -> Vec<OffsetDateTi
             out.push(now + Duration::days(days));
         }
     }
+    // "Ważne przez 30 dni" counts from the publication, not from now (`after_published`).
+    if period(words).is_some() {
+        return out;
+    }
     let past = if has(PAST) {
         true
     } else if has(FUTURE) {
@@ -180,6 +185,39 @@ fn relative(words: &[&str], kind: Kind, now: OffsetDateTime) -> Vec<OffsetDateTi
     out
 }
 
+/// "ważne przez 30 dni", "valid for 30 days": how long the offer is open from its publication.
+/// Not with "jeszcze", "left"... - "ważna jeszcze przez 5 dni" is what is left from now.
+fn period(words: &[&str]) -> Option<Duration> {
+    if words.iter().any(|w| FUTURE.contains(w)) {
+        return None;
+    }
+    words.windows(3).find_map(|w| {
+        if !matches!(w[0], "przez" | "for") {
+            return None;
+        }
+        let count = i32::try_from(small_number(w[1])?).ok()?;
+        Some(unit(w[2])? * count)
+    })
+}
+
+fn words_of(phrase: &str) -> Vec<String> {
+    normalize(phrase).split(' ').filter(|w| !w.is_empty()).map(str::to_string).collect()
+}
+
+fn has_period(phrase: &str) -> bool {
+    let words = words_of(phrase);
+    period(&words.iter().map(String::as_str).collect::<Vec<_>>()).is_some()
+}
+
+/// The end of an offer open for a period ("ważne przez 30 dni") - from the publication date the
+/// text gives; without it nothing (counting from now would move the end with every reading).
+fn after_published(phrase: &str, text: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
+    let words = words_of(phrase);
+    let span = period(&words.iter().map(String::as_str).collect::<Vec<_>>())?;
+    let (_, dates) = lines_with(text, Kind::Published, now).into_iter().next()?;
+    Some(on_day((*dates.first()? + span).date(), Kind::Expires))
+}
+
 /// Every date a line (or a phrase) gives, the written ones first.
 fn all_in(line: &str, kind: Kind, now: OffsetDateTime) -> Vec<OffsetDateTime> {
     let n = normalize(line);
@@ -200,6 +238,13 @@ pub fn of_phrase(phrase: &str, offer_text: &str, kind: Kind, now: OffsetDateTime
     if p.is_empty() || p.len() > 100 || !format!(" {} ", normalize(offer_text)).contains(&format!(" {p} ")) {
         return None;
     }
+    // "30 dni" copied from "Ważne przez 30 dni" is a period too.
+    let text_words = format!(" {} ", normalize(offer_text));
+    let after = [" przez ", " for "].iter().any(|w| text_words.contains(&format!("{w}{p} ")));
+    if kind == Kind::Expires && (after || has_period(phrase)) {
+        let phrase = if after && !has_period(phrase) { format!("przez {p}") } else { phrase.to_string() };
+        return after_published(&phrase, offer_text, now).and_then(rfc);
+    }
     all_in(phrase, kind, now).into_iter().next().and_then(rfc)
 }
 
@@ -215,6 +260,14 @@ fn age_line(n: &str) -> bool {
 fn lines_with(text: &str, kind: Kind, now: OffsetDateTime) -> Vec<(String, Vec<OffsetDateTime>)> {
     let words = if kind == Kind::Published { PUBLISHED_WORDS } else { EXPIRES_WORDS };
     let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    // A period ("Ważne przez 30 dni") counts from the publication, other phrases from `alone`.
+    let dated = |phrase: &str, alone: &str| -> Vec<OffsetDateTime> {
+        if kind == Kind::Expires && has_period(phrase) {
+            after_published(phrase, text, now).into_iter().collect()
+        } else {
+            all_in(alone, kind, now)
+        }
+    };
     let mut out = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let n = normalize(line);
@@ -223,14 +276,15 @@ fn lines_with(text: &str, kind: Kind, now: OffsetDateTime) -> Vec<(String, Vec<O
         let label = if kind == Kind::Published { "od:" } else { "do:" };
         let labelled = line.to_lowercase().starts_with(label) && n.split(' ').count() <= 5;
         let named = labelled || words.iter().any(|w| spaced.contains(&format!(" {w}")));
-        let dates = if named || (kind == Kind::Published && age_line(&n)) { all_in(line, kind, now) } else { Vec::new() };
+        let dates = if named || (kind == Kind::Published && age_line(&n)) { dated(line, line) } else { Vec::new() };
         if !dates.is_empty() {
             out.push((one_line(line, 200), dates));
         } else if named && n.split(' ').count() <= 4 {
             if let Some(next) = lines.get(i + 1).filter(|l| normalize(l).split(' ').count() <= 6) {
-                let dates = all_in(next, kind, now);
+                let joined = format!("{line} {next}");
+                let dates = dated(&joined, next);
                 if !dates.is_empty() {
-                    out.push((one_line(&format!("{line} {next}"), 200), dates));
+                    out.push((one_line(&joined, 200), dates));
                 }
             }
         }
@@ -328,12 +382,36 @@ mod tests {
             (include_str!("trim_pages/justjoin.txt"), "Senior Software Engineer", Some("2026-11-11"), None),
             (include_str!("trim_pages/nofluff.txt"), "Senior Frontend Developer", None, Some("2026-12-04")),
             (include_str!("trim_pages/plain.txt"), "Specjalista ds. obsługi zamówień", None, None),
+            // "Ważne przez 30 dni" from the publication; "Ważne przez 29 dni" under it is another job's.
+            (include_str!("trim_pages/useme.txt"), "Programista WordPress z AI | Stała współpraca", Some("2026-11-04"), Some("2026-12-04")),
         ];
         for (page, title, published, expires) in cases {
             let text = crate::trim::page_text(page, Some(title));
             assert_eq!(found(&text, Kind::Published).map(|d| day(&d)).as_deref(), published, "{title}");
             assert_eq!(found(&text, Kind::Expires).map(|d| day(&d)).as_deref(), expires, "{title}");
         }
+    }
+
+    #[test]
+    fn a_period_counts_from_the_publication() {
+        let text = "Opublikowano
+2026-11-04
+Ważne przez
+30 dni";
+        assert_eq!(found(text, Kind::Expires).as_deref(), Some("2026-12-04T21:59:59Z"));
+        assert_eq!(found("Opublikowano 2026-11-04
+Ważne przez 2 tygodnie", Kind::Expires).map(|d| day(&d)).as_deref(), Some("2026-11-18"));
+        assert_eq!(found("Posted: 04.11.2026
+Valid for 30 days", Kind::Expires).map(|d| day(&d)).as_deref(), Some("2026-12-04"));
+        // Without the publication date nothing - not 30 days from now.
+        assert_eq!(found("Ważne przez
+30 dni", Kind::Expires), None);
+        // "jeszcze" - what is left, from now.
+        assert_eq!(found("Ważna jeszcze przez 5 dni", Kind::Expires).map(|d| day(&d)).as_deref(), Some("2026-11-16"));
+        // AI's phrase, also only the "30 dni" part of it.
+        assert_eq!(of_phrase("Ważne przez 30 dni", text, Kind::Expires, now()).as_deref(), Some("2026-12-04T21:59:59Z"));
+        assert_eq!(of_phrase("30 dni", text, Kind::Expires, now()).as_deref(), Some("2026-12-04T21:59:59Z"));
+        assert_eq!(line_of("2026-12-04T21:59:59Z", text, Kind::Expires, now()).as_deref(), Some("Ważne przez 30 dni"));
     }
 
     #[test]

@@ -619,7 +619,12 @@ pub async fn ai_tidy(state: State<'_, AppState>, text: String) -> AppResult<Stri
 /// Fields from a pasted text or a preview page: AI when it is set up, plain code otherwise
 /// (also when AI fails - the person fills in the rest).
 #[tauri::command]
-pub async fn fill_offer(state: State<'_, AppState>, text: String, title: Option<String>) -> AppResult<crate::extract::Draft> {
+pub async fn fill_offer(
+    state: State<'_, AppState>,
+    text: String,
+    title: Option<String>,
+    posting: Option<crate::posting::Posting>,
+) -> AppResult<crate::extract::Draft> {
     let text = crate::trim::page_text(&crate::text::cut(&text, 100_000), title.as_deref());
     let ai_set = with_db(&state, |c| Ok(!settings::get(c, "ai_providers")?.is_empty()))?;
     let mut draft = None;
@@ -629,6 +634,10 @@ pub async fn fill_offer(state: State<'_, AppState>, text: String, title: Option<
     let mut draft = draft.unwrap_or_else(|| crate::extract::from_text(&text, title.as_deref()));
     // Every value checked against the text: made up, left out, and where it comes from.
     draft.notes = crate::fieldcheck::check(&draft, &text);
+    // The page's own data for search engines comes before what was read from its text.
+    if let Some(posting) = posting.map(crate::posting::Posting::checked) {
+        posting.apply(&mut draft);
+    }
     Ok(draft)
 }
 

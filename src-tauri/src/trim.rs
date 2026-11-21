@@ -1,6 +1,7 @@
 //! Cleaning the text of an offer page before it goes to AI and into the offer description:
 //! cuts "similar offers" (other salaries, other companies - AI could take a number from a
-//! neighbouring offer), the footer, cookie banners and the menu at the top.
+//! neighbouring offer), lists of answers to the offer, the footer, cookie banners and the
+//! menu at the top.
 //!
 //! Works on plain text, so it helps both with the text taken from the preview window and with
 //! a text pasted after Ctrl+A / Ctrl+C. Cleaning twice gives the same text as cleaning once.
@@ -57,7 +58,19 @@ const SIMILAR: &[&str] = &[
     "you may also like",
     "other offers from this company",
     "more jobs from this company",
+    // Useme and other freelance job boards: "zlecenie" is their word for an offer.
+    "najnowsze zlecenia z kategorii",
+    "najnowsze zlecenia",
+    "podobne zlecenia",
+    "inne zlecenia",
+    "inne zlecenia tego zleceniodawcy",
 ];
+
+/// Headings of a list of answers in the middle of an offer page (normalized, whole line) -
+/// other people with their own dates ("2 dni temu"). The list ends before the first line of
+/// `ANSWERS_END` (the rest of the offer, e.g. Useme's side panel with the budget).
+const ANSWERS: &[&str] = &["wyslane oferty", "oferty freelancerow", "submitted offers"];
+const ANSWERS_END: &[&str] = &["budzet", "budget"];
 
 /// Menu items and skip links at the very top of a page (normalized, whole line).
 const MENU: &[&str] = &[
@@ -181,6 +194,16 @@ fn is_one_of(line: &str, list: &[&str]) -> bool {
     !n.is_empty() && list.contains(&n.as_str())
 }
 
+/// A heading of a list: like `is_one_of`, also with a count after it ("Wysłane oferty (198)").
+fn is_heading(line: &str, list: &[&str]) -> bool {
+    let n = normalize(line);
+    let n = match n.rsplit_once(' ') {
+        Some((head, count)) if count.chars().all(|c| c.is_ascii_digit()) => head,
+        _ => n.as_str(),
+    };
+    !n.is_empty() && list.contains(&n)
+}
+
 /// A line of a cookie banner: mentions cookies and consent / privacy, or is short.
 fn is_cookie_line(line: &str) -> bool {
     let n = words(line);
@@ -205,10 +228,17 @@ fn chars_before(lines: &[&str], end: usize) -> usize {
 
 /// Everything from the first "similar offers" heading that has the offer above it.
 fn cut_similar(lines: &mut Vec<&str>) {
-    let at = (0..lines.len()).find(|&i| is_one_of(lines[i], SIMILAR) && chars_before(lines, i) >= MIN_BEFORE);
+    let at = (0..lines.len()).find(|&i| is_heading(lines[i], SIMILAR) && chars_before(lines, i) >= MIN_BEFORE);
     if let Some(at) = at {
         lines.truncate(at);
     }
+}
+
+/// A list of answers to the offer, from its heading to the next part of the offer (or the end).
+fn drop_answers(lines: &mut Vec<&str>) {
+    let Some(at) = (0..lines.len()).find(|&i| is_heading(lines[i], ANSWERS) && chars_before(lines, i) >= MIN_BEFORE) else { return };
+    let end = (at + 1..lines.len()).find(|&i| is_one_of(lines[i], ANSWERS_END)).unwrap_or(lines.len());
+    lines.drain(at..end);
 }
 
 /// Cookie banner lines, with their buttons.
@@ -266,6 +296,7 @@ pub fn page_text(text: &str, title: Option<&str>) -> String {
     let text = squeeze(text);
     let mut lines: Vec<&str> = text.lines().collect();
     cut_similar(&mut lines);
+    drop_answers(&mut lines);
     drop_cookies(&mut lines);
     cut_footer(&mut lines);
     cut_menu(&mut lines, title);
@@ -283,6 +314,7 @@ mod tests {
     const JUSTJOIN: &str = include_str!("trim_pages/justjoin.txt");
     const NOFLUFF: &str = include_str!("trim_pages/nofluff.txt");
     const PLAIN: &str = include_str!("trim_pages/plain.txt");
+    const USEME: &str = include_str!("trim_pages/useme.txt");
 
     fn check(page: &str, title: Option<&str>, keep: &[&str], gone: &[&str]) -> String {
         let out = page_text(page, title);
@@ -340,6 +372,32 @@ mod tests {
             &["Senior Backend Developer (JS/TS) – Data Domain", "Zmyślone IT", "18 000 – 24 000 PLN", "Oferta ważna do"],
             &["ZOBACZ PODOBNE OFERTY", "26 250 – 30 450", "OTRZYMUJ DOPASOWANE OFERTY", "ZALOGUJ SIĘ"],
         );
+    }
+
+    #[test]
+    fn useme() {
+        for title in [Some("Programista WordPress z AI | Stała współpraca"), None] {
+            let out = check(
+                USEME,
+                title,
+                &["Programista WordPress z AI", "Zmyślone Studio", "Opublikowano", "Wymagane funkcje", "Budżet", "Do negocjacji", "Ważne przez", "30 dni"],
+                &["Wysłane oferty", "Przykładowy Freelancer", "20 godzin temu", "Pokaż więcej ofert", "Najnowsze zlecenia", "3000,00 PLN", "B2B", "Copyright"],
+            );
+            assert!(out.contains("Zwiń opis
+Budżet"), "{out}");
+        }
+    }
+
+    #[test]
+    fn a_list_of_answers_without_its_end_goes_to_the_end() {
+        let offer = "Opis stanowiska i obowiązki w zespole. ".repeat(10);
+        let page = format!("Tester
+{offer}
+Oferty freelancerów (3)
+Jan Przykładowy
+2 dni temu");
+        assert_eq!(page_text(&page, None), squeeze(&format!("Tester
+{offer}")));
     }
 
     #[test]

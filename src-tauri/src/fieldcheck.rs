@@ -45,6 +45,8 @@ pub struct FieldNote {
     /// The line of the offer the value comes from (or the line the empty field should take).
     pub fragment: Option<String>,
     pub more: Option<String>,
+    /// The value comes from the data the page gives search engines (`posting.rs`), not its text.
+    pub from_page: bool,
 }
 
 const FRAGMENT: usize = 200;
@@ -133,7 +135,7 @@ fn money_line(n: &str) -> bool {
 }
 
 fn note(field: Field, problem: Option<Problem>, fragment: Option<String>) -> Option<FieldNote> {
-    (problem.is_some() || fragment.is_some()).then_some(FieldNote { field, problem, fragment, more: None })
+    (problem.is_some() || fragment.is_some()).then_some(FieldNote { field, problem, fragment, more: None, from_page: false })
 }
 
 /// Notes for the fields of `d` read from `text` (the offer's text after cutting the rest of
@@ -208,7 +210,7 @@ fn check_at(d: &Draft, text: &str, now: time::OffsetDateTime) -> Vec<FieldNote> 
             if !found {
                 notes.extend(note(Field::Contract, Some(Problem::NotInText), fragment));
             } else if !named.is_empty() && !missing.is_empty() {
-                notes.push(FieldNote { field: Field::Contract, problem: Some(Problem::More), fragment, more: Some(missing.join(", ")) });
+                notes.push(FieldNote { field: Field::Contract, problem: Some(Problem::More), fragment, more: Some(missing.join(", ")), from_page: false });
             } else {
                 notes.extend(note(Field::Contract, None, fragment));
             }

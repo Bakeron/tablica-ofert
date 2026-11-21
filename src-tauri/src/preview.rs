@@ -88,7 +88,9 @@ b=document.body.innerText;
 }finally{for(var i=hidden.length-1;i>=0;i--){var x=hidden[i];if(x[1]===null)x[0].removeAttribute('style');else x[0].setAttribute('style',x[1]);}}
 if(b.length<200&&full.length>b.length)b=full;
 var h=document.querySelector('h1');h=h?h.innerText:document.title;
-var d=JSON.stringify({u:location.href,h:String(h||'').slice(0,300),t:String(b).slice(0,__MAX__)});
+var j=[];document.querySelectorAll('script[type="application/ld+json"]').forEach(function(s){var x=s.textContent||'';
+if(j.length<__SCRIPTS__&&x.length<=__SCRIPT__&&x.indexOf('JobPosting')>=0)j.push(x);});
+var d=JSON.stringify({u:location.href,h:String(h||'').slice(0,300),t:String(b).slice(0,__MAX__),j:j});
 location.href='https://__HOST__/__CODE__#'+encodeURIComponent(d);}catch(e){}})();"#;
 
 /// Waiting for the text of the page: one-time code and where to send the answer.
@@ -103,6 +105,8 @@ pub struct Captured {
     pub text: String,
     /// The phrase saying the offer is over - only a proposal for the person, nothing happens by itself.
     pub expired_phrase: Option<String>,
+    /// The data the page gives search engines (dates, company, salary) - `posting.rs`.
+    pub posting: Option<crate::posting::Posting>,
 }
 
 /// A phrase from `EXPIRED_PHRASES` in the title or near the top of the page. Whole words only,
@@ -245,13 +249,16 @@ pub fn parse_capture(json: &str) -> Option<Captured> {
         u: String,
         h: String,
         t: String,
+        #[serde(default)]
+        j: Vec<String>,
     }
     let raw: Raw = serde_json::from_str(json).ok()?;
     let url = crate::offers::safe_url(Some(raw.u)).ok().flatten()?;
     let title = one_line(&raw.h, 300);
     let text = crate::trim::page_text(&cut(&squeeze(&raw.t), MAX_TEXT), Some(&title));
     let expired_phrase = expired_phrase(&title, &text);
-    Some(Captured { url, title, text, expired_phrase })
+    let posting = crate::posting::of_scripts(&raw.j);
+    Some(Captured { url, title, text, expired_phrase, posting })
 }
 
 #[cfg_attr(mobile, allow(dead_code))]
@@ -285,7 +292,12 @@ pub async fn capture(app: &AppHandle) -> AppResult<Captured> {
         *slot = Some((code.clone(), sender));
     }
     // `code` is hex - safe inside the script.
-    let script = CAPTURE_SCRIPT.replace("__MAX__", &MAX_TEXT.to_string()).replace("__HOST__", CAPTURE_HOST).replace("__CODE__", &code);
+    let script = CAPTURE_SCRIPT
+        .replace("__MAX__", &MAX_TEXT.to_string())
+        .replace("__SCRIPTS__", &crate::posting::MAX_SCRIPTS.to_string())
+        .replace("__SCRIPT__", &crate::posting::MAX_SCRIPT.to_string())
+        .replace("__HOST__", CAPTURE_HOST)
+        .replace("__CODE__", &code);
     window.eval(&script).map_err(|e| AppError::Invalid(e.to_string()))?;
     match tokio::time::timeout(Duration::from_secs(8), receiver).await {
         Ok(Ok(captured)) => Ok(captured),
@@ -309,6 +321,9 @@ mod tests {
         assert_eq!(ok.title, "Frontend Developer");
         assert_eq!(ok.text, "Opis\n\noferty");
         assert_eq!(ok.expired_phrase, None);
+        assert_eq!(ok.posting, None);
+        let with = parse_capture(r#"{"u":"https://example.com/oferta/1","h":"Tester","t":"Opis","j":["{\"@type\":\"JobPosting\",\"validThrough\":\"2026-12-04\"}"]}"#).unwrap();
+        assert_eq!(with.posting.and_then(|p| p.expires_at).as_deref(), Some("2026-12-04T21:59:59Z"));
         assert!(parse_capture(r#"{"u":"javascript:alert(1)","h":"x","t":"y"}"#).is_none());
         assert!(parse_capture("not json").is_none());
     }

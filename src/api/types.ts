@@ -858,6 +858,8 @@ export interface FieldNote {
   /** The line of the offer the value comes from. */
   fragment: string | null;
   more: string | null;
+  /** The value comes from the data the page gives search engines, not from its text. */
+  fromPage: boolean;
 }
 
 /** Text taken from the page in the preview window. */
@@ -867,6 +869,19 @@ export interface Captured {
   text: string;
   /** The phrase saying the offer is over - only a proposal for the person. */
   expiredPhrase: string | null;
+  /** The data the page gives search engines (mirrors `posting::Posting`). */
+  posting: Posting | null;
+}
+
+/** Dates, company and salary an offer page gives search engines (schema.org JobPosting). */
+export interface Posting {
+  publishedAt: string | null;
+  expiresAt: string | null;
+  company: string | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  salaryPeriod: SalaryPeriod | null;
 }
 
 /** The Task Scheduler task as Windows reports it. */
