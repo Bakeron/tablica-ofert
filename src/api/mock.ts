@@ -39,6 +39,8 @@ const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString
 
 export function createMockApi(): Api {
   const firstRun = typeof location !== "undefined" && new URLSearchParams(location.search).has("firstrun");
+  const langValue = typeof location !== "undefined" ? new URLSearchParams(location.search).get("lang") : null;
+  const langParam = langValue === "pl" || langValue === "en" ? langValue : null;
   let nextId = 1;
   const offers = new Map<number, OfferDetail>();
   /** offer id → profile id → filter result */
@@ -109,6 +111,8 @@ export function createMockApi(): Api {
     source_remotive: "on",
     // The demo shows a working setup: paid Claude chosen, a few sources on (nothing is called).
     ...(DEMO ? { ai_mode: "claude", source_himalayas: "on", source_weworkremotely: "on", source_mail: "on", mail_user: "alerty.przyklad@example.com" } : {}),
+    // `?lang=en` / `?lang=pl` - a link (e.g. from the English README) opens the demo in that language; anything else is ignored.
+    ...(langParam ? { language: langParam } : {}),
   };
   const secrets: SecretHints = DEMO ? { "ai-key-anthropic": "••••demo", "mail-password": "••••demo" } : {};
   const secretValues: Partial<Record<SecretName, string>> = {};

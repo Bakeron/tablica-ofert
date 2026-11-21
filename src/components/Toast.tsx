@@ -1,4 +1,4 @@
-import { createContext, useContext, type CSSProperties } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, type CSSProperties } from "react";
 import { useI18n, type TextKey } from "../i18n";
 import type { WorkProgress } from "../api/types";
 import { IconWarning } from "./Icons";
@@ -193,17 +193,43 @@ export function ToastView({ inWindow = false }: { inWindow?: boolean }) {
             </button>
           )}
           <CloseButton small onClick={close} />
-          {/* Time left: shrinks to nothing as the message goes; held = full again, and a new
-              key on release starts it from full, like the timer. */}
-          <span
-            key={held ? "held" : "run"}
-            className="toast-bar"
-            data-held={held || undefined}
-            style={{ "--toast-ms": `${ms}ms` } as CSSProperties}
-            aria-hidden="true"
-          />
+          <ToastBar held={held} ms={ms} />
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Time left: shrinks to nothing as the message goes. Held - it glides back to full from
+ * where it was (not a jump), and on release it starts from full again, like the timer.
+ */
+function ToastBar({ held, ms }: { held: boolean; ms: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // When the current shrinking started (0 = not yet) - tells how much was left at the hold.
+  const start = useRef(0);
+  const grow = useRef<Animation | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!held) {
+      grow.current?.cancel();
+      grow.current = null;
+      start.current = performance.now();
+      return;
+    }
+    if (!start.current) return;
+    const left = Math.max(0, 1 - (performance.now() - start.current) / ms);
+    grow.current =
+      el.animate?.([{ transform: `scaleX(${left})` }, { transform: "scaleX(1)" }], { duration: 450, easing: "ease-out" }) ?? null;
+  }, [held, ms]);
+  return (
+    <span
+      ref={ref}
+      className="toast-bar"
+      data-held={held || undefined}
+      style={{ "--toast-ms": `${ms}ms` } as CSSProperties}
+      aria-hidden="true"
+    />
   );
 }

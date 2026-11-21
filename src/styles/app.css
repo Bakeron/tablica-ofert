@@ -2684,7 +2684,7 @@ fieldset.plain {
 }
 
 /* Time left before the message goes by itself: shrinks from full to nothing. Held (pointer
-   over it, focus inside) - full and dimmed, it waits. */
+   over it, focus inside) - it glides back to full (Toast.tsx), then dims softly, it waits. */
 .toast-bar {
   position: absolute;
   left: 0;
@@ -2694,11 +2694,13 @@ fieldset.plain {
   background: var(--signal);
   transform-origin: left;
   animation: toast-time var(--toast-ms) linear forwards;
+  transition: opacity 0.25s ease;
 }
 
 .toast-bar[data-held] {
   animation: none;
   opacity: 0.45;
+  transition: opacity 0.35s ease 0.45s;
 }
 
 @keyframes toast-time {

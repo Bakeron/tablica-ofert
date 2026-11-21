@@ -2,7 +2,7 @@
 
 [![Testy](https://github.com/Bakeron/tablica-ofert/actions/workflows/tests.yml/badge.svg)](https://github.com/Bakeron/tablica-ofert/actions/workflows/tests.yml)
 
-Porządek we własnym szukaniu pracy. Wkleja się link do ogłoszenia, a aplikacja wypełnia kartę oferty sama albo z pomocą AI (darmowe modele albo płatny Claude Sonnet). To samo ogłoszenie z kilku portali zwija się w jedną ofertę, więc CV nie trafia dwa razy w to samo miejsce. Aplikacja umie też sama zbierać oferty z agregatorów i maili z alertami portali.
+Aplikacja do prowadzenia własnych rekrutacji w jednym miejscu. Wkleja się link do ogłoszenia, a aplikacja wypełnia kartę oferty sama albo z pomocą AI (darmowe modele albo płatny Claude Sonnet). To samo ogłoszenie z kilku portali zwija się w jedną ofertę, więc CV nie trafia dwa razy w to samo miejsce. Aplikacja umie też sama zbierać oferty z agregatorów i maili z alertami portali.
 
 Działa na Windows i Androidzie. Nie ma konta ani serwera, a dane leżą na urządzeniu w zaszyfrowanej bazie.
 
@@ -134,4 +134,4 @@ Tablica Ofert ("Job Board") is a personal job-search organizer for Windows and A
 
 Technologies: Tauri 2, Rust, React + TypeScript, SQLite with SQLCipher, Android.
 
-Demo with made-up data: [oferty.szymonbakonis.pl](https://oferty.szymonbakonis.pl). All the code was written by Claude Code, while I designed the flow, kept an eye on the tests and reviewed every change. The full description is in Polish above.
+Demo with made-up data: [oferty.szymonbakonis.pl](https://oferty.szymonbakonis.pl/?lang=en). All the code was written by Claude Code, while I designed the flow, kept an eye on the tests and reviewed every change. The full description is in Polish above.
