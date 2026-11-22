@@ -1209,6 +1209,14 @@ details[open]::details-content {
   color: var(--ink-dim);
 }
 
+/* How long the person has waited - plain small text, the stage word stays the main mark. */
+.status-age {
+  align-self: center;
+  font-size: 0.78rem;
+  color: var(--paper-dim);
+  white-space: nowrap;
+}
+
 .tag-flag {
   background: none;
   border: 1.5px dashed currentColor;

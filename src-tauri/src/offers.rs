@@ -1244,6 +1244,37 @@ pub fn set_stage(conn: &mut Connection, id: i64, stage: Stage) -> AppResult<()> 
     Ok(())
 }
 
+/// The person's own date of the current stage ("the CV went on Monday", "they called yesterday"):
+/// the stage stays, its time and its latest history entry move. Never in the future.
+pub fn set_stage_date(conn: &mut Connection, id: i64, at: &str) -> AppResult<()> {
+    let wrong = || AppError::Invalid("date has a wrong format".into());
+    let parsed = OffsetDateTime::parse(at.trim(), &Rfc3339).map_err(|_| wrong())?;
+    let now = OffsetDateTime::now_utc();
+    if parsed > now + time::Duration::minutes(5) || parsed.year() < 2000 {
+        return Err(AppError::Invalid("the stage date must not be in the future".into()));
+    }
+    let at = parsed.to_offset(time::UtcOffset::UTC).replace_nanosecond(0).map_err(|_| wrong())?.format(&Rfc3339).map_err(|_| wrong())?;
+    let tx = conn.transaction()?;
+    let stage: Stage = tx
+        .query_row("SELECT stage FROM offers WHERE id = ?1", [id], |r| r.get(0))
+        .optional()?
+        .ok_or(AppError::NotFound)?;
+    tx.execute("UPDATE offers SET stage_changed_at = ?2, user_changed_at = ?3 WHERE id = ?1", params![id, at, clock::now()])?;
+    let entry: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM stage_history WHERE offer_id = ?1 AND stage = ?2 ORDER BY at DESC, id DESC LIMIT 1",
+            params![id, stage],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match entry {
+        Some(entry) => tx.execute("UPDATE stage_history SET at = ?2 WHERE id = ?1", params![entry, at])?,
+        None => tx.execute("INSERT INTO stage_history (offer_id, stage, at) VALUES (?1, ?2, ?3)", params![id, stage, at])?,
+    };
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn set_interest(conn: &Connection, id: i64, interest: Option<Interest>) -> AppResult<()> {
     changed(conn.execute(
         "UPDATE offers SET interest = ?2, user_changed_at = ?3 WHERE id = ?1",
@@ -2113,6 +2144,22 @@ mod tests {
         let stages: Vec<Stage> = d.history.iter().map(|e| e.stage).collect();
         assert_eq!(stages, vec![Stage::Interested, Stage::Applied, Stage::HrInterview]);
         assert_eq!(d.row.stage, Stage::HrInterview);
+    }
+
+    #[test]
+    fn stage_date_moves_the_current_stage_only() {
+        let mut conn = test_db();
+        let id = id_of(add(&mut conn, offer("Dev", "Firma F", "manual")).unwrap());
+        set_stage(&mut conn, id, Stage::Applied).unwrap();
+        set_stage_date(&mut conn, id, "2026-11-02T09:30:00+01:00").unwrap();
+        let d = detail(&conn, id).unwrap();
+        assert_eq!(d.row.stage_changed_at, "2026-11-02T08:30:00Z");
+        let applied: Vec<&str> = d.history.iter().filter(|e| e.stage == Stage::Applied).map(|e| e.at.as_str()).collect();
+        assert_eq!(applied, vec!["2026-11-02T08:30:00Z"]);
+        assert_eq!(d.history.len(), 2);
+        assert!(matches!(set_stage_date(&mut conn, id, "2999-01-01T00:00:00Z"), Err(AppError::Invalid(_))));
+        assert!(matches!(set_stage_date(&mut conn, id, "wczoraj"), Err(AppError::Invalid(_))));
+        assert!(matches!(set_stage_date(&mut conn, 999, "2026-11-02T08:30:00Z"), Err(AppError::NotFound)));
     }
 
     #[test]

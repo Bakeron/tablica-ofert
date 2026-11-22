@@ -41,6 +41,9 @@ export function createMockApi(): Api {
   const firstRun = typeof location !== "undefined" && new URLSearchParams(location.search).has("firstrun");
   const langValue = typeof location !== "undefined" ? new URLSearchParams(location.search).get("lang") : null;
   const langParam = langValue === "pl" || langValue === "en" ? langValue : null;
+  // The website demo has no AI behind it, so AI is off there (no buttons that can only fail);
+  // `?ai` turns paid Claude on for the guide's screenshots of the AI parts.
+  const aiParam = typeof location !== "undefined" && new URLSearchParams(location.search).has("ai");
   let nextId = 1;
   const offers = new Map<number, OfferDetail>();
   /** offer id → profile id → filter result */
@@ -109,8 +112,9 @@ export function createMockApi(): Api {
     // The guide in bubbles: in the website demo for every visitor; in the preview after first steps or with `?tour`.
     tour: DEMO || firstRun || (typeof location !== "undefined" && new URLSearchParams(location.search).has("tour")) ? "pending" : "done",
     source_remotive: "on",
-    // The demo shows a working setup: paid Claude chosen, a few sources on (nothing is called).
-    ...(DEMO ? { ai_mode: "claude", source_himalayas: "on", source_weworkremotely: "on", source_mail: "on", mail_user: "alerty.przyklad@example.com" } : {}),
+    // The demo shows a working setup: a few sources on (nothing is called); AI only with `?ai`.
+    ...(DEMO && aiParam ? { ai_mode: "claude" } : {}),
+    ...(DEMO ? { source_himalayas: "on", source_weworkremotely: "on", source_mail: "on", mail_user: "alerty.przyklad@example.com" } : {}),
     // `?lang=en` / `?lang=pl` - a link (e.g. from the English README) opens the demo in that language; anything else is ignored.
     ...(langParam ? { language: langParam } : {}),
   };
@@ -750,6 +754,13 @@ export function createMockApi(): Api {
         o.stageChangedAt = now();
         o.history.push({ stage, at: o.stageChangedAt });
       }
+    },
+    async setStageDate(id, at) {
+      const o = find(id);
+      o.stageChangedAt = at;
+      const last = [...o.history].reverse().find((h) => h.stage === o.stage);
+      if (last) last.at = at;
+      else o.history.push({ stage: o.stage, at });
     },
     async setInterest(id, interest) {
       find(id).interest = interest;

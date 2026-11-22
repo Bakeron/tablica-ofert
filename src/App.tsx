@@ -202,7 +202,9 @@ export default function App() {
   /** What fetching or AI is doing now - the line at the bottom. */
   const [work, setWork] = useState<WorkProgress | null>(null);
   const [experiencePrev, setExperiencePrev] = useState<string | null>(null);
-  const [assist, setAssist] = useState<{ kind: AssistKind; text: string; busy: boolean } | null>(null);
+  /** The window "Questions for the interview" and the like; `error` = the call failed - said in the
+   *  window itself, which stays open (closing it took the message away before it could be read). */
+  const [assist, setAssist] = useState<{ kind: AssistKind; text: string; busy: boolean; error?: { text: string; detail: string; settings: boolean } } | null>(null);
   /** The preview window shows the page of this offer ("Fill in the full description"). */
   const [fullFor, setFullFor] = useState<{ id: number; title: string; url: string } | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -561,8 +563,10 @@ export default function App() {
       const text = await api.aiAssist(id, kind);
       setAssist({ kind, text, busy: false });
     } catch (e) {
-      setAssist(null);
-      fail(e);
+      const { key, detail } = describeError(e);
+      // Claude's own daily limit or no AI set up: the way out is in Settings → AI.
+      const settings = key === "error.budget" || key === "error.missing";
+      setAssist({ kind, text: "", busy: false, error: { text: t(key as TextKey), detail: key === "error.budget" ? "" : detail, settings } });
     }
   }
 
@@ -1499,6 +1503,7 @@ export default function App() {
             ref={cardHeading}
             offer={detail}
             onStage={(stage: Stage) => cardId !== null && setStage(cardId, stage)}
+            onStageDate={(at) => cardId !== null && run(() => api!.setStageDate(cardId, at))}
             onInterest={(i) => cardId !== null && setInterest(cardId, i)}
             onFavorite={(f) => cardId !== null && setFavorite(cardId, f)}
             onOwn={() => cardId !== null && toOwn(cardId)}
@@ -1647,6 +1652,11 @@ export default function App() {
           title={assist ? t(`assist.${assist.kind}`) : ""}
           text={assist?.text ?? ""}
           busy={assist?.busy ?? false}
+          error={assist?.error ?? null}
+          onOpenAiSettings={() => {
+            setAssist(null);
+            openSettings("ai");
+          }}
           onClose={() => setAssist(null)}
           onCopied={(ok) => setToast({ text: ok ? t("mail.copied") : t("mail.copyFailed") })}
         />

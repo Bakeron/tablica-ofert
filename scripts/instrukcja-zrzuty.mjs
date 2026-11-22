@@ -407,7 +407,8 @@ try {
     );
     const page = await context.newPage();
     try {
-      await page.goto(url);
+      // `?ai` - the demo with paid Claude chosen, so the guide shows the AI buttons.
+      await page.goto(`${url}?ai`);
       await page.locator("dialog.tour[open]").waitFor();
       await wait(page, 400);
       if (!shot.tour) {

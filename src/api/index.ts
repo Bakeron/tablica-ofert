@@ -77,6 +77,8 @@ export interface Api {
   /** "Detach" a child (`parent = null`), or put it back under its parent ("Undo"). */
   setOfferParent(id: number, parent: number | null): Promise<void>;
   setStage(id: number, stage: Stage): Promise<void>;
+  /** The person's own date of the current stage (UTC, RFC 3339). */
+  setStageDate(id: number, at: string): Promise<void>;
   setInterest(id: number, interest: Interest | null): Promise<void>;
   setFavorite(id: number, favorite: boolean): Promise<void>;
   /** "To own": the offer moves to "Own"; `false` = back to "Collected". */
@@ -246,6 +248,7 @@ async function tauriApi(): Promise<Api> {
     answerRenewed: (id, resent) => invoke("answer_renewed", { id, resent }),
     setOfferParent: (id, parent) => invoke("set_offer_parent", { id, parent }),
     setStage: (id, stage) => invoke("set_stage", { id, stage }),
+    setStageDate: (id, at) => invoke("set_stage_date", { id, at }),
     setInterest: (id, interest) => invoke("set_interest", { id, interest }),
     setFavorite: (id, favorite) => invoke("set_favorite", { id, favorite }),
     setOwn: (id, own) => invoke("set_own", { id, own }),

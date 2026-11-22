@@ -1,5 +1,5 @@
 import type { Lang, T } from "../i18n";
-import type { OfferRow, SourceLink } from "../api/types";
+import type { OfferRow, SourceLink, Stage } from "../api/types";
 import { FOLLOW_UP_DAYS } from "./limits";
 
 const DAY = 86_400_000;
@@ -146,3 +146,34 @@ export function nowLocalInput(now = new Date()): string {
 export function translatedTitle(o: Pick<OfferRow, "titleTranslated" | "translationLang">, lang: Lang): string | null {
   return o.translationLang === lang && o.titleTranslated ? o.titleTranslated : null;
 }
+
+/** The local day of a moment as a value for <input type="date"> ("2026-11-05"). */
+export function localDayInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The same moment moved to another local day (the hour stays), never later than now - UTC, RFC 3339. */
+export function onLocalDay(iso: string, day: string, now = new Date()): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const base = new Date(iso);
+  const d = Number.isNaN(base.getTime()) ? new Date(now) : base;
+  d.setFullYear(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 2000) return null;
+  const at = d.getTime() > now.getTime() ? now : d;
+  return at.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** Whole days on the person's own calendar from a moment to now (0 = today). */
+export function daysSince(iso: string, now = new Date()): number | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = (x: Date) => Date.UTC(x.getFullYear(), x.getMonth(), x.getDate());
+  return Math.max(0, Math.round((day(now) - day(d)) / DAY));
+}
+
+/** Stages where the person waits for the company - the list shows how long ("12 days ago"). */
+export const WAITING_STAGES: readonly Stage[] = ["applied", "replied", "hr_interview", "tech_stage", "job_offer"];

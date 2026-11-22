@@ -256,6 +256,12 @@ pub async fn set_stage(state: State<'_, AppState>, id: i64, stage: Stage) -> App
     with_db(&state, |c| offers::set_stage(c, id, stage))
 }
 
+/// The person's own date of the current stage (marked later than it happened).
+#[tauri::command]
+pub async fn set_stage_date(state: State<'_, AppState>, id: i64, at: String) -> AppResult<()> {
+    with_db(&state, |c| offers::set_stage_date(c, id, &at))
+}
+
 /// "Expired" on the card: nobody touched it - to the archive; otherwise marked "expired".
 #[tauri::command]
 pub async fn set_expired(state: State<'_, AppState>, id: i64) -> AppResult<offers::ExpiredBy> {

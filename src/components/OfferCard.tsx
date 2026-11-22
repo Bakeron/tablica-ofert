@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { STAGES, type AssistKind, type DupCandidate, type DupVerdict, type Interest, type OfferDetail, type ProfileFilter, type Stage } from "../api/types";
 import { plural, useI18n } from "../i18n";
-import { companyLabel, fullDate, fullDay, isWebUrl, linksByCity, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
+import { companyLabel, fullDate, fullDay, isWebUrl, linksByCity, localDayInput, onLocalDay, placeLabel, salaryFull, shownScore, signedPoints, translatedTitle } from "../lib/format";
 import { useAppearOn } from "../lib/presence";
 import { LEARN_MAX_POINTS, LOW_KEYWORD_SCORE, OFFER_NOTES_MAX } from "../lib/limits";
 import { isPhone } from "../lib/platform";
@@ -24,6 +24,8 @@ const HIMALAYAS_URL = "https://himalayas.app/";
 interface Props {
   offer: OfferDetail | null;
   onStage: (stage: Stage) => void;
+  /** The date of the current stage changed by hand (UTC, RFC 3339). */
+  onStageDate: (at: string) => void;
   onInterest: (interest: Interest | null) => void;
   onFavorite: (favorite: boolean) => void;
   /** With the offer the note was written in - the card may already show the next one when it is saved. */
@@ -80,7 +82,7 @@ interface Props {
 
 /** Offer details shaped like a boarding pass: key data on the stub above the perforation. */
 export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCard(
-  { offer, onStage, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, onOwn, onOwnChange, onRenewed, onShowOffer, onDetach, onDupAnswer, onFindDuplicates, onJudgeDuplicates, onJoin, expiredPage, onKeepExpiredPage, onSwipe, aiOn, claudeOn, onRateAgain, onRatePrecise, onTranslate, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
+  { offer, onStage, onStageDate, onInterest, onFavorite, onNotes, onOpenLink, onTrash, onRestore, onPurge, onExpired, onOwn, onOwnChange, onRenewed, onShowOffer, onDetach, onDupAnswer, onFindDuplicates, onJudgeDuplicates, onJoin, expiredPage, onKeepExpiredPage, onSwipe, aiOn, claudeOn, onRateAgain, onRatePrecise, onTranslate, onAssist, onOpenAiSettings, onFullText, onBackToList, agenda, showDates, showContacts },
   headingRef,
 ) {
   const { t, lang } = useI18n();
@@ -507,6 +509,22 @@ export const OfferCard = forwardRef<HTMLHeadingElement, Props>(function OfferCar
                 ))}
               </select>
             </label>
+            {offer.stage !== "new" && (
+              <label className="field field-inline">
+                <span className="pass-label">{t("card.stageDate")}</span>
+                <input
+                  type="date"
+                  value={localDayInput(offer.stageChangedAt)}
+                  max={localDayInput(new Date().toISOString())}
+                  aria-describedby="stage-date-hint"
+                  onChange={(e) => {
+                    const at = onLocalDay(offer.stageChangedAt, e.target.value);
+                    if (at && at !== offer.stageChangedAt) onStageDate(at);
+                  }}
+                />
+                <span id="stage-date-hint" className="hint">{t("card.stageDateHint")}</span>
+              </label>
+            )}
             {/* Own or collected - one for the whole job (every ad of the family); added by hand = own. */}
             <label className="choice-item own-check">
               <input type="checkbox" checked={offer.own} onChange={(e) => onOwnChange(e.target.checked)} />

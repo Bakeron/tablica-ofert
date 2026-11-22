@@ -111,6 +111,8 @@ export function AssistDialog({
   title,
   text,
   busy,
+  error,
+  onOpenAiSettings,
   onClose,
   onCopied,
 }: {
@@ -118,6 +120,9 @@ export function AssistDialog({
   title: string;
   text: string;
   busy: boolean;
+  /** The call failed: the message stays in the window until it is closed. */
+  error: { text: string; detail: string; settings: boolean } | null;
+  onOpenAiSettings: () => void;
   onClose: () => void;
   onCopied: (ok: boolean) => void;
 }) {
@@ -133,6 +138,20 @@ export function AssistDialog({
         </header>
         {busy ? (
           <p role="status">{t("assist.busy")}</p>
+        ) : error ? (
+          <div className="alert" role="alert">
+            <IconWarning />
+            <div>
+              <strong>{t("error.title")}: </strong>
+              {error.text}
+              {error.detail && (
+                <details>
+                  <summary>{t("error.details")}</summary>
+                  <code>{error.detail}</code>
+                </details>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             <p className="hint">{t("assist.note")}</p>
@@ -146,14 +165,22 @@ export function AssistDialog({
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             {t("settings.close")}
           </button>
-          <button
-            type="button"
-            className="btn btn-sign"
-            disabled={busy || !value.trim()}
-            onClick={() => navigator.clipboard.writeText(value).then(() => onCopied(true), () => onCopied(false))}
-          >
-            {t("mail.copy")}
-          </button>
+          {error ? (
+            error.settings && (
+              <button type="button" className="btn btn-sign" onClick={onOpenAiSettings}>
+                {t("ai.openSettings")}
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sign"
+              disabled={busy || !value.trim()}
+              onClick={() => navigator.clipboard.writeText(value).then(() => onCopied(true), () => onCopied(false))}
+            >
+              {t("mail.copy")}
+            </button>
+          )}
         </footer>
       </div>
     </Modal>

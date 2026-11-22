@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { translate, type TextKey } from "../i18n";
-import { addedLabel, companyLabel, isWebUrl, linksByCity, needsFollowUp, placeLabel, salaryFull, salaryShort, shownScore, signedPoints } from "./format";
+import { addedLabel, companyLabel, daysSince, localDayInput, onLocalDay, isWebUrl, linksByCity, needsFollowUp, placeLabel, salaryFull, salaryShort, shownScore, signedPoints } from "./format";
 
 const t = (key: TextKey, params?: Record<string, string | number>) => translate("pl", key, params);
 
@@ -64,6 +64,20 @@ describe("dates", () => {
     expect(needsFollowUp({ stage: "applied", stageChangedAt: sent }, now.getTime())).toBe(false);
     expect(needsFollowUp({ stage: "applied", stageChangedAt: sent }, now.getTime() + 86_400_000)).toBe(true);
     expect(needsFollowUp({ stage: "hr_interview", stageChangedAt: sent }, now.getTime() + 86_400_000)).toBe(false);
+  });
+
+  it("moves a stage to another day, keeps the hour, never past now", () => {
+    const at = new Date(2026, 10, 2, 9, 30).toISOString();
+    expect(localDayInput(at)).toBe("2026-11-02");
+    expect(onLocalDay(at, "2026-10-28", now)).toBe(new Date(2026, 9, 28, 9, 30).toISOString().replace(/\.\d{3}Z$/, "Z"));
+    expect(onLocalDay(at, "2026-12-01", now)).toBe(now.toISOString().replace(/\.\d{3}Z$/, "Z"));
+    expect(onLocalDay(at, "", now)).toBeNull();
+  });
+
+  it("counts calendar days since a stage", () => {
+    expect(daysSince(new Date(2026, 10, 2, 8, 0).toISOString(), now)).toBe(0);
+    expect(daysSince(new Date(2026, 10, 1, 23, 0).toISOString(), now)).toBe(1);
+    expect(daysSince(new Date(2026, 9, 20, 12, 0).toISOString(), now)).toBe(13);
   });
 });
 

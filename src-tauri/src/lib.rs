@@ -149,6 +149,7 @@ pub fn run() {
             commands::join_offers,
             commands::answer_duplicate,
             commands::set_stage,
+            commands::set_stage_date,
             commands::set_interest,
             commands::set_favorite,
             commands::set_own,
